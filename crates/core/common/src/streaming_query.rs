@@ -329,6 +329,9 @@ pub struct StreamingQuery {
     /// The single-network cursor for the previously processed range. This may be provided by the
     /// consumer (as a multi-network cursor) and converted to this single-network cursor.
     prev_cursor: Option<NetworkCursor>,
+    /// Job ID for tracing. Recorded on execute_microbatch spans so it's
+    /// searchable in Jaeger even when parent spans are still open.
+    job_id: Option<metadata_db::jobs::JobId>,
 }
 
 impl StreamingQuery {
@@ -350,6 +353,7 @@ impl StreamingQuery {
         destination: Option<Arc<PhysicalTable>>,
         microbatch_max_interval: u64,
         keep_alive_interval: u64,
+        job_id: Option<metadata_db::jobs::JobId>,
     ) -> Result<StreamingQueryHandle, SpawnError> {
         let (tx, rx) = mpsc::channel(10);
 
@@ -442,6 +446,7 @@ impl StreamingQuery {
             preserve_block_num,
             network,
             blocks_table,
+            job_id,
         };
 
         let execute_span = tracing::info_span!("streaming_query_execute");
@@ -488,7 +493,7 @@ impl StreamingQuery {
 
     /// Execute a single microbatch for the given range. Returns `true` if this was the final
     /// batch (i.e. `range.end() == self.end_block`).
-    #[instrument(skip_all, err, fields(start_block = %range.start(), end_block = %range.end()))]
+    #[instrument(skip_all, err, fields(start_block = %range.start(), end_block = %range.end(), job_id = self.job_id.map(tracing::field::display)))]
     async fn execute_microbatch(
         &mut self,
         ctx: &ExecContext,

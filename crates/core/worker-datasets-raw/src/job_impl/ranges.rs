@@ -118,6 +118,7 @@ pub(super) async fn materialize_ranges<S: BlockStreamer + Send + Sync>(
             compactors_by_table: compactors_by_table.clone(),
             id: i as u32,
             metrics: ctx.metrics.clone(),
+            job_id: ctx.job_id,
             progress_tracker: progress_tracker.clone(),
             verify,
         });
@@ -427,6 +428,8 @@ struct MaterializePartition<S: BlockStreamer> {
     id: u32,
     /// Metrics registry
     metrics: Option<Arc<metrics::MetricsRegistry>>,
+    /// Job ID for tracing
+    job_id: Option<metadata_db::jobs::JobId>,
     /// A progress tracker which logs the overall progress of all partitions.
     progress_tracker: Arc<ProgressTracker>,
     /// Enable cryptographic verification of EVM block data
@@ -473,6 +476,7 @@ impl<S: BlockStreamer> MaterializePartition<S> {
         fields(
             start_block = %range.start(),
             end_block = %range.end(),
+            job_id = self.job_id.map(tracing::field::display),
         )
     )]
     async fn run_range(&self, range: RangeInclusive<BlockNum>) -> Result<(), RunRangeError> {

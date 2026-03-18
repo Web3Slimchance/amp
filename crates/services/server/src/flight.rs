@@ -285,6 +285,7 @@ impl Service {
                 None,
                 self.config.server_microbatch_max_interval,
                 self.config.keep_alive_interval,
+                None, // no job_id for query path
             )
             .await
             .map_err(|err| Error::StreamingExecutionError(Box::new(err)))?;

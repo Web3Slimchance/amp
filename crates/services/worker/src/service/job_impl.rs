@@ -64,6 +64,7 @@ pub(super) fn new(
         match job_desc {
             JobDescriptor::MaterializeRaw(desc) => {
                 let ctx = amp_worker_datasets_raw::job_ctx::Context {
+                    job_id: Some(writer),
                     config: amp_worker_datasets_raw::job_ctx::Config {
                         poll_interval: job_ctx.config.poll_interval,
                         progress_interval: job_ctx
@@ -92,6 +93,7 @@ pub(super) fn new(
             }
             JobDescriptor::MaterializeDerived(desc) => {
                 let ctx = amp_worker_datasets_derived::job_ctx::Context {
+                    job_id: Some(writer),
                     config: amp_worker_datasets_derived::job_ctx::Config {
                         keep_alive_interval: job_ctx.config.keep_alive_interval,
                         max_mem_mb: job_ctx.config.max_mem_mb,

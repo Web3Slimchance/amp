@@ -3,7 +3,7 @@ use std::{sync::Arc, time::Duration};
 use amp_data_store::DataStore;
 use amp_worker_core::{ParquetConfig, metrics::MetricsRegistry, progress::ProgressReporter};
 use common::{datasets_cache::DatasetsCache, udfs::eth_call::EthCallUdfsCache};
-use metadata_db::{MetadataDb, NotificationMultiplexerHandle};
+use metadata_db::{MetadataDb, NotificationMultiplexerHandle, jobs::JobId};
 
 /// Job context for raw dataset materialization.
 ///
@@ -12,6 +12,9 @@ use metadata_db::{MetadataDb, NotificationMultiplexerHandle};
 /// dispatching a raw dataset job.
 #[derive(Clone)]
 pub struct Context {
+    /// Job ID for tracing. Recorded on inner spans so it's searchable in Jaeger
+    /// even when outer spans (materialize_raw_job) are still open.
+    pub job_id: Option<JobId>,
     /// Job configuration parameters.
     pub config: Config,
     /// Connection pool for the metadata database.

@@ -38,7 +38,7 @@ use crate::job_ctx::Context;
 
 /// Materializes a derived dataset table
 #[allow(clippy::too_many_arguments)]
-#[tracing::instrument(skip_all, fields(table = %table.table_name()), err)]
+#[tracing::instrument(skip_all, fields(table = %table.table_name(), job_id = ctx.job_id.map(tracing::field::display)), err)]
 pub async fn materialize_table(
     ctx: Context,
     manifest: &DerivedManifest,
