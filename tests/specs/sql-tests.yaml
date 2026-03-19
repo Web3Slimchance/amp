@@ -466,8 +466,13 @@
 
 - name: implicit_cross_join_explicit_columns
   query: SELECT block_num(), logs.address FROM eth_rpc.blocks, eth_rpc.logs logs limit 1
-  failure: |
-    block_num() is only supported in streaming queries
+  results: |
+    [{"block_num()": 15000000, "address": "c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"}]
+
+- name: batch_block_num_with_special_column
+  query: SELECT _block_num, block_num(), block_num FROM eth_rpc.blocks
+  results: |
+    [{"_block_num": 15000000, "block_num()": 15000000, "block_num": 15000000}]
 
 - name: select_alias_starting_with_underscore
   query: |

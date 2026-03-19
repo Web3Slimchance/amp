@@ -1,0 +1,114 @@
+# Batch block_num() tests using Anvil
+#
+# Tests that block_num() works in batch queries with various operators.
+# Uses multiple blocks so that Sort, Distinct, and Limit produce
+# observable differences.
+
+- anvil: {}
+
+- name: mine_blocks
+  anvil_mine: 3
+
+- name: dump_blocks
+  dataset: _/anvil_rpc@0.0.0
+  end: 3
+
+# Simple projection
+- name: batch_block_num_simple
+  query: SELECT block_num(), block_num FROM anvil_rpc.blocks ORDER BY block_num()
+  results: |
+    [
+      {"block_num()": 0, "block_num": 0},
+      {"block_num()": 1, "block_num": 1},
+      {"block_num()": 2, "block_num": 2},
+      {"block_num()": 3, "block_num": 3}
+    ]
+
+# Filter
+- name: batch_block_num_filter
+  query: SELECT block_num() FROM anvil_rpc.blocks WHERE block_num() >= 2 ORDER BY block_num()
+  results: |
+    [
+      {"block_num()": 2},
+      {"block_num()": 3}
+    ]
+
+# Sort
+- name: batch_block_num_sort_desc
+  query: SELECT block_num() FROM anvil_rpc.blocks ORDER BY block_num() DESC
+  results: |
+    [
+      {"block_num()": 3},
+      {"block_num()": 2},
+      {"block_num()": 1},
+      {"block_num()": 0}
+    ]
+
+# Limit
+- name: batch_block_num_limit
+  query: SELECT block_num() FROM anvil_rpc.blocks ORDER BY block_num() LIMIT 2
+  results: |
+    [
+      {"block_num()": 0},
+      {"block_num()": 1}
+    ]
+
+# Sort + Limit
+- name: batch_block_num_sort_desc_limit
+  query: SELECT block_num() FROM anvil_rpc.blocks ORDER BY block_num() DESC LIMIT 2
+  results: |
+    [
+      {"block_num()": 3},
+      {"block_num()": 2}
+    ]
+
+# Distinct
+- name: batch_block_num_distinct
+  query: |
+    SELECT DISTINCT block_num()
+    FROM (
+      SELECT block_num() FROM anvil_rpc.blocks
+      UNION ALL
+      SELECT block_num() FROM anvil_rpc.blocks
+    )
+    ORDER BY "block_num()"
+  results: |
+    [
+      {"block_num()": 0},
+      {"block_num()": 1},
+      {"block_num()": 2},
+      {"block_num()": 3}
+    ]
+
+# Aggregate with block_num() group key
+- name: batch_block_num_aggregate
+  query: |
+    SELECT block_num(), COUNT(*) AS cnt
+    FROM (
+      SELECT block_num() FROM anvil_rpc.blocks
+      UNION ALL
+      SELECT block_num() FROM anvil_rpc.blocks
+    )
+    GROUP BY block_num()
+    ORDER BY "block_num()"
+  results: |
+    [
+      {"block_num()": 0, "cnt": 2},
+      {"block_num()": 1, "cnt": 2},
+      {"block_num()": 2, "cnt": 2},
+      {"block_num()": 3, "cnt": 2}
+    ]
+
+# Join
+- name: batch_block_num_join
+  query: |
+    SELECT block_num(), child.block_num, parent.block_num AS parent_num
+    FROM anvil_rpc.blocks child
+    JOIN anvil_rpc.blocks parent ON child.parent_hash = parent.hash
+    ORDER BY block_num()
+  results: |
+    [
+      {"block_num()": 1, "block_num": 1, "parent_num": 0},
+      {"block_num()": 2, "block_num": 2, "parent_num": 1},
+      {"block_num()": 3, "block_num": 3, "parent_num": 2}
+    ]

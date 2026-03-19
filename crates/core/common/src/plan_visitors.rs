@@ -158,10 +158,6 @@ impl TreeNodeRewriter for BlockNumPropagator {
     fn f_up(&mut self, node: Self::Node) -> Result<Transformed<Self::Node>, DataFusionError> {
         use LogicalPlan::*;
 
-        // Check that the op is actually incremental
-        let op_kind = incremental_op_kind(&node, BlockNumForm::Udf)
-            .map_err(|e| DataFusionError::External(e.into()))?;
-
         // Step 1: Replace block_num() UDF in all expressions of this node using
         // the currently accumulated _block_num expression.
         //
@@ -392,10 +388,11 @@ impl TreeNodeRewriter for BlockNumPropagator {
                             on,
                         ))))
                     }
-                    DistinctKind::All(_) => Err(df_err(format!(
-                        "incremental_op_kind should have already rejected Distinct::All: {:?}",
-                        op_kind
-                    ))),
+                    // Distinct All is transparent: _block_num passes through.
+                    all @ DistinctKind::All(_) => Ok(Transformed::new_transformed(
+                        LogicalPlan::Distinct(all),
+                        was_replaced,
+                    )),
                 }
             }
 
@@ -407,12 +404,14 @@ impl TreeNodeRewriter for BlockNumPropagator {
                 Ok(Transformed::new_transformed(node, was_replaced))
             }
 
-            // These variants would have already errored in `incremental_op_kind` above
-            Limit(_) | Sort(_) | Window(_) | RecursiveQuery(_) | Statement(_) | Dml(_) | Ddl(_)
-            | Copy(_) | Extension(_) => Err(df_err(format!(
-                "incremental_op_kind should have already rejected this node type: {:?}",
-                op_kind
-            ))),
+            // These nodes are transparent: _block_num passes through unchanged.
+            Sort(_) | Limit(_) => Ok(Transformed::new_transformed(node, was_replaced)),
+
+            // Unsupported for block_num() propagation.
+            Window(_) | RecursiveQuery(_) | Statement(_) | Dml(_) | Ddl(_) | Copy(_)
+            | Extension(_) => {
+                plan_err!("block_num() is not supported in this query")
+            }
         }
     }
 }

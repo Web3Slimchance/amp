@@ -48,7 +48,7 @@ use common::{
     detached_logical_plan::{AttachPlanError, DetachedLogicalPlan},
     exec_env::ExecEnv,
     memory_pool::TieredMemoryPool,
-    plan_visitors::plan_has_block_num_udf,
+    plan_visitors::{plan_has_block_num_udf, unproject_special_block_num_column},
     sql::{ResolveFunctionReferencesError, ResolveTableReferencesError, resolve_table_references},
     sql_str::SqlStr,
     streaming_query::{QueryMessage, StreamingQuery},
@@ -185,30 +185,48 @@ impl Service {
     ) -> Result<QueryResultStream, Error> {
         let query_start_time = std::time::Instant::now();
         let dataset_labels = catalog_dataset_labels(&catalog);
-        let schema = {
-            let schema = plan.schema();
-            let schema: &arrow::datatypes::Schema = schema.as_ref().as_ref();
-            Arc::new(schema.clone())
-        };
 
         // If not streaming or metadata db is not available, execute once
         if !is_streaming {
+            // Try to propagate block_num() if present; error if propagation fails.
+            let had_block_num_udf = plan_has_block_num_udf(&plan);
+            let had_block_num_col =
+                plan.schema().fields().iter().any(|f| {
+                    f.name() == datasets_common::block_num::RESERVED_BLOCK_NUM_COLUMN_NAME
+                });
+            let mut plan = plan;
+            if had_block_num_udf {
+                plan = plan.propagate_block_num().map_err(|_| {
+                    Error::PlanSql(
+                        DataFusionError::Plan(
+                            "block_num() is not supported in this query. \
+                             Try selecting the _block_num column directly instead."
+                                .to_string(),
+                        )
+                        .context("amp::invalid_input"),
+                    )
+                })?;
+            }
+
             let ctx = ExecContextBuilder::new(self.env.clone())
                 .with_isolate_pool(self.isolate_pool.clone())
                 .for_catalog(catalog, false)
                 .await
                 .map_err(Error::CreateExecContext)?;
 
-            let plan = plan.attach_to(&ctx).map_err(Error::AttachPlan)?;
+            let mut plan = plan.attach_to(&ctx).map_err(Error::AttachPlan)?;
 
-            if plan_has_block_num_udf(&plan) {
-                return Err(Error::PlanSql(
-                    datafusion::error::DataFusionError::Plan(
-                        "block_num() is only supported in streaming queries".to_string(),
-                    )
-                    .context("amp::invalid_input"),
-                ));
+            // Remove _block_num system column added by propagation, but only if the
+            // user didn't explicitly select _block_num in their query.
+            if had_block_num_udf && !had_block_num_col {
+                plan = unproject_special_block_num_column(plan)
+                    .map_err(|e| Error::PlanSql(e.context("amp::internal_error")))?;
             }
+            let schema = {
+                let schema = plan.schema();
+                let schema: &arrow::datatypes::Schema = schema.as_ref().as_ref();
+                Arc::new(schema.clone())
+            };
 
             let block_ranges = ctx
                 .common_ranges(&plan)
@@ -249,6 +267,12 @@ impl Service {
                 Ok(stream)
             }
         } else {
+            let schema = {
+                let schema = plan.schema();
+                let schema: &arrow::datatypes::Schema = schema.as_ref().as_ref();
+                Arc::new(schema.clone())
+            };
+
             // is_incremental returns an error if query contains DDL, DML, etc.
             if let Err(e) = plan.is_incremental() {
                 return Err(Error::InvalidQuery(format!(

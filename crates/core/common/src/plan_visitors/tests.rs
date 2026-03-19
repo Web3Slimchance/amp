@@ -1400,9 +1400,9 @@ mod udf_mode_rejection {
     use super::*;
 
     #[test]
-    fn propagate_block_num_with_raw_block_num_in_group_by_fails() {
-        // GROUP BY _block_num (without block_num() UDF) must be rejected by the
-        // propagator, which uses BlockNumForm::Udf.  Users must write block_num().
+    fn propagate_block_num_with_raw_block_num_in_group_by_succeeds() {
+        // GROUP BY _block_num (without block_num() UDF) is accepted by the propagator.
+        // The streaming path validates this separately via is_incremental().
         use datafusion::functions_aggregate::count::count;
 
         //* Given
@@ -1415,21 +1415,14 @@ mod udf_mode_rejection {
             .build()
             .expect("should build plan");
 
-        //* When
-        let err = propagate_block_num(plan)
-            .expect_err("should reject raw _block_num in GROUP BY")
-            .to_string();
-
-        //* Then
-        assert!(
-            err.contains("Aggregate"),
-            "should reject raw _block_num GROUP BY, got: {err}"
-        );
+        //* When / Then
+        propagate_block_num(plan).expect("should accept raw _block_num in GROUP BY");
     }
 
     #[test]
-    fn propagate_block_num_with_raw_block_num_in_distinct_on_fails() {
-        // DISTINCT ON (_block_num) (without block_num() UDF) must be rejected.
+    fn propagate_block_num_with_raw_block_num_in_distinct_on_succeeds() {
+        // DISTINCT ON (_block_num) (without block_num() UDF) is accepted by the propagator.
+        // The streaming path validates this separately via is_incremental().
 
         //* Given
         let plan = LogicalPlanBuilder::from(simple_scan("t"))
@@ -1442,16 +1435,8 @@ mod udf_mode_rejection {
             .build()
             .expect("should build plan");
 
-        //* When
-        let err = propagate_block_num(plan)
-            .expect_err("should reject raw _block_num in DISTINCT ON")
-            .to_string();
-
-        //* Then
-        assert!(
-            err.contains("Distinct"),
-            "should reject raw _block_num DISTINCT ON, got: {err}"
-        );
+        //* When / Then
+        propagate_block_num(plan).expect("should accept raw _block_num in DISTINCT ON");
     }
 }
 
