@@ -348,7 +348,7 @@
             {
               "name": "chain_id",
               "type": "UInt64",
-              "nullable": false
+              "nullable": true
             },
             {
               "name": "gas_limit",
@@ -357,6 +357,11 @@
             },
             {
               "name": "gas_used",
+              "type": "UInt64",
+              "nullable": false
+            },
+            {
+              "name": "receipt_cumulative_gas_used",
               "type": "UInt64",
               "nullable": false
             },
@@ -383,7 +388,7 @@
                   0
                 ]
               },
-              "nullable": false
+              "nullable": true
             },
             {
               "name": "gas_price",
@@ -401,6 +406,13 @@
               "nullable": false
             },
             {
+              "name": "state_root",
+              "type": {
+                "FixedSizeBinary": 32
+              },
+              "nullable": true
+            },
+            {
               "name": "value",
               "type": "Utf8",
               "nullable": true
@@ -415,19 +427,109 @@
               "type": {
                 "FixedSizeBinary": 32
               },
-              "nullable": false
+              "nullable": true
             },
             {
               "name": "s",
               "type": {
                 "FixedSizeBinary": 32
               },
-              "nullable": false
+              "nullable": true
             },
             {
               "name": "v_parity",
               "type": "Boolean",
-              "nullable": false
+              "nullable": true
+            },
+            {
+              "name": "signature",
+              "type": {
+                "Struct": [
+                  {
+                    "name": "type",
+                    "data_type": "Utf8",
+                    "nullable": false,
+                    "dict_id": 0,
+                    "dict_is_ordered": false,
+                    "metadata": {}
+                  },
+                  {
+                    "name": "r",
+                    "data_type": {
+                      "FixedSizeBinary": 32
+                    },
+                    "nullable": false,
+                    "dict_id": 0,
+                    "dict_is_ordered": false,
+                    "metadata": {}
+                  },
+                  {
+                    "name": "s",
+                    "data_type": {
+                      "FixedSizeBinary": 32
+                    },
+                    "nullable": false,
+                    "dict_id": 0,
+                    "dict_is_ordered": false,
+                    "metadata": {}
+                  },
+                  {
+                    "name": "y_parity",
+                    "data_type": "Boolean",
+                    "nullable": true,
+                    "dict_id": 0,
+                    "dict_is_ordered": false,
+                    "metadata": {}
+                  },
+                  {
+                    "name": "pub_key_x",
+                    "data_type": {
+                      "FixedSizeBinary": 32
+                    },
+                    "nullable": true,
+                    "dict_id": 0,
+                    "dict_is_ordered": false,
+                    "metadata": {}
+                  },
+                  {
+                    "name": "pub_key_y",
+                    "data_type": {
+                      "FixedSizeBinary": 32
+                    },
+                    "nullable": true,
+                    "dict_id": 0,
+                    "dict_is_ordered": false,
+                    "metadata": {}
+                  },
+                  {
+                    "name": "pre_hash",
+                    "data_type": "Boolean",
+                    "nullable": true,
+                    "dict_id": 0,
+                    "dict_is_ordered": false,
+                    "metadata": {}
+                  },
+                  {
+                    "name": "webauthn_data",
+                    "data_type": "Binary",
+                    "nullable": true,
+                    "dict_id": 0,
+                    "dict_is_ordered": false,
+                    "metadata": {}
+                  },
+                  {
+                    "name": "key_id",
+                    "data_type": {
+                      "FixedSizeBinary": 20
+                    },
+                    "nullable": true,
+                    "dict_id": 0,
+                    "dict_is_ordered": false,
+                    "metadata": {}
+                  }
+                ]
+              },
+              "nullable": true
             },
             {
               "name": "fee_token",
@@ -441,7 +543,7 @@
               "type": {
                 "FixedSizeBinary": 32
               },
-              "nullable": false
+              "nullable": true
             },
             {
               "name": "calls",
@@ -484,7 +586,7 @@
                   "metadata": {}
                 }
               },
-              "nullable": false
+              "nullable": true
             },
             {
               "name": "fee_payer_signature",
@@ -599,28 +701,93 @@
                     "metadata": {}
                   },
                   {
-                    "name": "r",
+                    "name": "signature",
                     "data_type": {
-                      "FixedSizeBinary": 32
+                      "Struct": [
+                        {
+                          "name": "type",
+                          "data_type": "Utf8",
+                          "nullable": false,
+                          "dict_id": 0,
+                          "dict_is_ordered": false,
+                          "metadata": {}
+                        },
+                        {
+                          "name": "r",
+                          "data_type": {
+                            "FixedSizeBinary": 32
+                          },
+                          "nullable": false,
+                          "dict_id": 0,
+                          "dict_is_ordered": false,
+                          "metadata": {}
+                        },
+                        {
+                          "name": "s",
+                          "data_type": {
+                            "FixedSizeBinary": 32
+                          },
+                          "nullable": false,
+                          "dict_id": 0,
+                          "dict_is_ordered": false,
+                          "metadata": {}
+                        },
+                        {
+                          "name": "y_parity",
+                          "data_type": "Boolean",
+                          "nullable": true,
+                          "dict_id": 0,
+                          "dict_is_ordered": false,
+                          "metadata": {}
+                        },
+                        {
+                          "name": "pub_key_x",
+                          "data_type": {
+                            "FixedSizeBinary": 32
+                          },
+                          "nullable": true,
+                          "dict_id": 0,
+                          "dict_is_ordered": false,
+                          "metadata": {}
+                        },
+                        {
+                          "name": "pub_key_y",
+                          "data_type": {
+                            "FixedSizeBinary": 32
+                          },
+                          "nullable": true,
+                          "dict_id": 0,
+                          "dict_is_ordered": false,
+                          "metadata": {}
+                        },
+                        {
+                          "name": "pre_hash",
+                          "data_type": "Boolean",
+                          "nullable": true,
+                          "dict_id": 0,
+                          "dict_is_ordered": false,
+                          "metadata": {}
+                        },
+                        {
+                          "name": "webauthn_data",
+                          "data_type": "Binary",
+                          "nullable": true,
+                          "dict_id": 0,
+                          "dict_is_ordered": false,
+                          "metadata": {}
+                        },
+                        {
+                          "name": "key_id",
+                          "data_type": {
+                            "FixedSizeBinary": 20
+                          },
+                          "nullable": true,
+                          "dict_id": 0,
+                          "dict_is_ordered": false,
+                          "metadata": {}
+                        }
+                      ]
                     },
-                    "nullable": false,
-                    "dict_id": 0,
-                    "dict_is_ordered": false,
-                    "metadata": {}
-                  },
-                  {
-                    "name": "s",
-                    "data_type": {
-                      "FixedSizeBinary": 32
-                    },
-                    "nullable": false,
-                    "dict_id": 0,
-                    "dict_is_ordered": false,
-                    "metadata": {}
-                  },
-                  {
-                    "name": "y_parity",
-                    "data_type": "Boolean",
                     "nullable": false,
                     "dict_id": 0,
                     "dict_is_ordered": false,
@@ -664,28 +831,93 @@
                         "metadata": {}
                       },
                       {
-                        "name": "r",
+                        "name": "signature",
                         "data_type": {
-                          "FixedSizeBinary": 32
+                          "Struct": [
+                            {
+                              "name": "type",
+                              "data_type": "Utf8",
+                              "nullable": false,
+                              "dict_id": 0,
+                              "dict_is_ordered": false,
+                              "metadata": {}
+                            },
+                            {
+                              "name": "r",
+                              "data_type": {
+                                "FixedSizeBinary": 32
+                              },
+                              "nullable": false,
+                              "dict_id": 0,
+                              "dict_is_ordered": false,
+                              "metadata": {}
+                            },
+                            {
+                              "name": "s",
+                              "data_type": {
+                                "FixedSizeBinary": 32
+                              },
+                              "nullable": false,
+                              "dict_id": 0,
+                              "dict_is_ordered": false,
+                              "metadata": {}
+                            },
+                            {
+                              "name": "y_parity",
+                              "data_type": "Boolean",
+                              "nullable": true,
+                              "dict_id": 0,
+                              "dict_is_ordered": false,
+                              "metadata": {}
+                            },
+                            {
+                              "name": "pub_key_x",
+                              "data_type": {
+                                "FixedSizeBinary": 32
+                              },
+                              "nullable": true,
+                              "dict_id": 0,
+                              "dict_is_ordered": false,
+                              "metadata": {}
+                            },
+                            {
+                              "name": "pub_key_y",
+                              "data_type": {
+                                "FixedSizeBinary": 32
+                              },
+                              "nullable": true,
+                              "dict_id": 0,
+                              "dict_is_ordered": false,
+                              "metadata": {}
+                            },
+                            {
+                              "name": "pre_hash",
+                              "data_type": "Boolean",
+                              "nullable": true,
+                              "dict_id": 0,
+                              "dict_is_ordered": false,
+                              "metadata": {}
+                            },
+                            {
+                              "name": "webauthn_data",
+                              "data_type": "Binary",
+                              "nullable": true,
+                              "dict_id": 0,
+                              "dict_is_ordered": false,
+                              "metadata": {}
+                            },
+                            {
+                              "name": "key_id",
+                              "data_type": {
+                                "FixedSizeBinary": 20
+                              },
+                              "nullable": true,
+                              "dict_id": 0,
+                              "dict_is_ordered": false,
+                              "metadata": {}
+                            }
+                          ]
                         },
-                        "nullable": false,
-                        "dict_id": 0,
-                        "dict_is_ordered": false,
-                        "metadata": {}
-                      },
-                      {
-                        "name": "s",
-                        "data_type": {
-                          "FixedSizeBinary": 32
-                        },
-                        "nullable": false,
-                        "dict_id": 0,
-                        "dict_is_ordered": false,
-                        "metadata": {}
-                      },
-                      {
-                        "name": "y_parity",
-                        "data_type": "Boolean",
                         "nullable": false,
                         "dict_id": 0,
                         "dict_is_ordered": false,
