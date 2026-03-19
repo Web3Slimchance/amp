@@ -7,7 +7,6 @@
 use std::time::Duration;
 
 use amp_client::AmpClient;
-use common::BlockNum;
 use datasets_common::reference::Reference;
 use monitoring::logging;
 use sqlx::PgPool;
@@ -15,7 +14,11 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
-use crate::{config::SyncConfig, engine::Engine, task::StreamTask};
+use crate::{
+    config::{SyncConfig, TableMapping},
+    engine::Engine,
+    task::{StreamTask, StreamTaskConfig},
+};
 
 /// Maximum number of restart attempts per table
 const MAX_RESTART_ATTEMPTS: u32 = 10;
@@ -25,18 +28,6 @@ const INITIAL_BACKOFF_SECS: u64 = 1;
 
 /// Maximum backoff duration in seconds (5 minutes)
 const MAX_BACKOFF_SECS: u64 = 300;
-
-/// Configuration for a single table's streaming task.
-#[derive(Clone)]
-struct TableTaskConfig {
-    table_name: String,
-    dataset: Reference,
-    engine: Engine,
-    client: AmpClient,
-    pool: PgPool,
-    retention: BlockNum,
-    shutdown: CancellationToken,
-}
 
 /// Manages streaming tasks for multiple tables with restart logic and graceful shutdown.
 pub struct StreamManager {
@@ -54,14 +45,14 @@ impl StreamManager {
     ///
     /// # Arguments
     ///
-    /// * `tables` - List of table names to sync
+    /// * `mappings` - Table mappings (source → destination)
     /// * `dataset` - Fully resolved dataset reference
     /// * `config` - Ampsync configuration
     /// * `engine` - Database engine for table operations
     /// * `client` - Amp client for streaming queries
     /// * `pool` - PostgreSQL connection pool
     pub fn new(
-        tables: &[String],
+        mappings: &[TableMapping],
         dataset: Reference,
         config: &SyncConfig,
         engine: Engine,
@@ -70,13 +61,18 @@ impl StreamManager {
     ) -> Self {
         let shutdown = CancellationToken::new();
 
-        let tasks = tables
+        let tasks = mappings
             .iter()
-            .map(|table_name| {
-                info!("Creating stream for table: {}", table_name);
+            .map(|mapping| {
+                info!(
+                    source = %mapping.source,
+                    destination = %mapping.destination,
+                    "Creating stream for table"
+                );
 
-                let task_config = TableTaskConfig {
-                    table_name: table_name.clone(),
+                let task_config = StreamTaskConfig {
+                    source_table: mapping.source.clone(),
+                    destination_table: mapping.destination.clone(),
                     dataset: dataset.clone(),
                     engine: engine.clone(),
                     client: client.clone(),
@@ -86,7 +82,11 @@ impl StreamManager {
                 };
 
                 let handle = tokio::spawn(Self::run_task_with_restart(task_config));
-                info!("Spawned task for table: {}", table_name);
+                info!(
+                    source = %mapping.source,
+                    destination = %mapping.destination,
+                    "Spawned task for table"
+                );
                 handle
             })
             .collect();
@@ -95,20 +95,20 @@ impl StreamManager {
     }
 
     /// Runs a single table's streaming task with automatic restart on failure.
-    async fn run_task_with_restart(config: TableTaskConfig) {
+    async fn run_task_with_restart(config: StreamTaskConfig) {
         let mut restart_count = 0;
 
         loop {
             // Check shutdown before (re)starting
             if config.shutdown.is_cancelled() {
-                info!(table = %config.table_name, "shutdown_before_restart");
+                info!(table = %config.destination_table, "shutdown_before_restart");
                 break;
             }
 
             // Build and run task
             match Self::build_and_run_task(&config).await {
                 Ok(()) => {
-                    info!(table = %config.table_name, "task_stopped_cleanly");
+                    info!(table = %config.destination_table, "task_stopped_cleanly");
                     break;
                 }
                 Err(err) => {
@@ -116,7 +116,7 @@ impl StreamManager {
 
                     if restart_count >= MAX_RESTART_ATTEMPTS {
                         error!(
-                            table = %config.table_name,
+                            table = %config.destination_table,
                             error = %err,
                             error_source = logging::error_source(err.as_ref()),
                             restart_count = restart_count,
@@ -127,7 +127,7 @@ impl StreamManager {
 
                     let backoff_duration = calculate_backoff(restart_count);
                     warn!(
-                        table = %config.table_name,
+                        table = %config.destination_table,
                         error = %err,
                         error_source = logging::error_source(err.as_ref()),
                         restart_count = restart_count,
@@ -143,19 +143,11 @@ impl StreamManager {
 
     /// Builds and runs a single streaming task.
     async fn build_and_run_task(
-        config: &TableTaskConfig,
+        config: &StreamTaskConfig,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let task = StreamTask::new(
-            config.table_name.clone(),
-            config.dataset.clone(),
-            config.engine.clone(),
-            config.client.clone(),
-            config.pool.clone(),
-            config.retention,
-            config.shutdown.clone(),
-        )
-        .await
-        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+        let task = StreamTask::new(config.clone())
+            .await
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
 
         task.run()
             .await

@@ -11,6 +11,21 @@ use tracing::{debug, error, info, instrument, warn};
 
 use crate::engine::Engine;
 
+/// Configuration for creating a [`StreamTask`].
+#[derive(Clone)]
+pub struct StreamTaskConfig {
+    /// Source table name in the dataset (used for streaming queries).
+    pub source_table: String,
+    /// Destination table name in PostgreSQL (used for create/insert/delete).
+    pub destination_table: String,
+    pub dataset: Reference,
+    pub engine: Engine,
+    pub client: AmpClient,
+    pub pool: PgPool,
+    pub retention: BlockNum,
+    pub shutdown: CancellationToken,
+}
+
 /// Errors that occur during stream task execution
 #[derive(Debug, thiserror::Error)]
 pub enum StreamTaskError {
@@ -101,7 +116,7 @@ pub enum StreamTaskError {
 /// The task respects the `CancellationToken` for clean shutdown. When cancelled,
 /// it stops processing new events and allows the current event to complete.
 pub struct StreamTask {
-    table_name: String,
+    destination_table: String,
     dataset: Reference,
     stream: TransactionalStream,
     engine: Engine,
@@ -120,13 +135,7 @@ impl StreamTask {
     /// 6. Returns a configured StreamTask ready to run
     ///
     /// # Arguments
-    /// - `table_name`: Target table name
-    /// - `dataset`: Fully resolved dataset reference (for stream ID)
-    /// - `engine`: Database engine for table creation
-    /// - `client`: AmpClient instance
-    /// - `pool`: Database connection pool (for creating state store)
-    /// - `retention`: Retention window in blocks
-    /// - `shutdown`: Cancellation token for graceful shutdown
+    /// - `config`: Stream task configuration (source/destination tables, dataset, engine, etc.)
     ///
     /// # Errors
     ///
@@ -134,22 +143,27 @@ impl StreamTask {
     /// - State store creation fails
     /// - Stream creation fails
     /// - Table creation fails
-    pub async fn new(
-        table_name: String,
-        dataset: Reference,
-        engine: Engine,
-        client: AmpClient,
-        pool: PgPool,
-        retention: BlockNum,
-        shutdown: CancellationToken,
-    ) -> Result<Self, StreamTaskError> {
-        // Build streaming query
-        let query = crate::sql::streaming_query(&dataset, &table_name);
+    pub async fn new(config: StreamTaskConfig) -> Result<Self, StreamTaskError> {
+        let StreamTaskConfig {
+            source_table,
+            destination_table,
+            dataset,
+            engine,
+            client,
+            pool,
+            retention,
+            shutdown,
+        } = config;
 
-        // Create state store for this table using fully qualified dataset reference
-        let stream_id = format!("{}:{}", dataset, table_name);
+        // Build streaming query using the source table name (dataset table)
+        let query = crate::sql::streaming_query(&dataset, &source_table);
+
+        // State store key uses the destination table name so different destinations
+        // get independent stream positions.
+        let stream_id = format!("{}:{}", dataset, destination_table);
         info!(
-            table = %table_name,
+            source_table = %source_table,
+            destination_table = %destination_table,
             stream_id = %stream_id,
             "creating_state_store"
         );
@@ -162,7 +176,8 @@ impl StreamTask {
 
         // Create transactional stream
         info!(
-            table = %table_name,
+            source_table = %source_table,
+            destination_table = %destination_table,
             query = %query,
             retention_blocks = retention,
             "creating_transactional_stream"
@@ -179,25 +194,25 @@ impl StreamTask {
         // Get schema from stream
         let schema = stream.schema();
         info!(
-            table = %table_name,
+            destination_table = %destination_table,
             num_fields = schema.fields().len(),
             "retrieved_schema_from_stream"
         );
 
-        // Create table using stream schema
-        info!(table = %table_name, "creating_table");
+        // Create destination table using stream schema (idempotent via IF NOT EXISTS)
+        info!(destination_table = %destination_table, "creating_table");
         engine
-            .create_table(&table_name, schema)
+            .create_table(&destination_table, schema)
             .await
             .map_err(|err| StreamTaskError::CreateTable {
-                table_name: table_name.clone(),
+                table_name: destination_table.clone(),
                 source: Box::new(err),
             })?;
 
-        info!(table = %table_name, "table_created");
+        info!(destination_table = %destination_table, "table_created");
 
         Ok(Self {
-            table_name,
+            destination_table,
             dataset,
             stream,
             engine,
@@ -225,11 +240,11 @@ impl StreamTask {
     /// Returns an error if:
     /// - Event processing fails (database operation error)
     /// - State commit fails (PostgreSQL connection error)
-    #[instrument(skip(self), fields(table = %self.table_name, dataset = %self.dataset))]
+    #[instrument(skip(self), fields(table = %self.destination_table, dataset = %self.dataset))]
     pub async fn run(self) -> Result<(), StreamTaskError> {
         // Destructure self to avoid borrowing issues with non-Sync types
         let Self {
-            table_name,
+            destination_table,
             dataset: _,
             mut stream,
             engine,
@@ -250,7 +265,7 @@ impl StreamTask {
                 event_result = stream.next() => {
                     match event_result {
                         Some(Ok((event, commit))) => {
-                            if let Err(e) = Self::handle_event(&table_name, &engine, event, commit).await {
+                            if let Err(e) = Self::handle_event(&destination_table, &engine, event, commit).await {
                                 error!(error = %e, error_source = logging::error_source(&e), "event_handling_failed");
                                 return Err(e);
                             }
@@ -262,7 +277,7 @@ impl StreamTask {
                         None => {
                             error!("stream_ended_unexpectedly");
                             return Err(StreamTaskError::UnexpectedStreamEnd {
-                                table_name: table_name.clone(),
+                                table_name: destination_table.clone(),
                             });
                         }
                     }
@@ -290,9 +305,9 @@ impl StreamTask {
     /// Returns an error if database operations or state commits fail. Errors
     /// cause the entire task to fail, requiring a restart (with automatic Undo
     /// cleanup via gap detection).
-    #[instrument(skip(engine, event, commit), fields(table = %table_name))]
+    #[instrument(skip(engine, event, commit), fields(table = %destination_table))]
     async fn handle_event(
-        table_name: &str,
+        destination_table: &str,
         engine: &Engine,
         event: TransactionEvent,
         commit: amp_client::CommitHandle,
@@ -315,22 +330,22 @@ impl StreamTask {
                 // Add _tx_id and _row_index columns
                 let batch_with_metadata = crate::arrow::add_transaction_metadata(batch, id)
                     .map_err(|err| StreamTaskError::AddMetadata {
-                        table_name: table_name.to_string(),
+                        table_name: destination_table.to_string(),
                         source: err,
                     })?;
 
                 // Insert to database
                 engine
-                    .insert_batch(table_name, batch_with_metadata)
+                    .insert_batch(destination_table, batch_with_metadata)
                     .await
                     .map_err(|err| StreamTaskError::InsertBatch {
-                        table_name: table_name.to_string(),
+                        table_name: destination_table.to_string(),
                         source: err,
                     })?;
 
                 // Commit state (marks transaction as durable)
                 commit.await.map_err(|err| StreamTaskError::CommitState {
-                    table_name: table_name.to_string(),
+                    table_name: destination_table.to_string(),
                     source: err,
                 })?;
 
@@ -357,16 +372,16 @@ impl StreamTask {
 
                 // Delete rows by transaction ID range
                 engine
-                    .delete_by_tx_range(table_name, invalidate_start, invalidate_end)
+                    .delete_by_tx_range(destination_table, invalidate_start, invalidate_end)
                     .await
                     .map_err(|err| StreamTaskError::DeleteByTxRange {
-                        table_name: table_name.to_string(),
+                        table_name: destination_table.to_string(),
                         source: err,
                     })?;
 
                 // Commit state (acknowledges cleanup)
                 commit.await.map_err(|err| StreamTaskError::CommitState {
-                    table_name: table_name.to_string(),
+                    table_name: destination_table.to_string(),
                     source: err,
                 })?;
 
@@ -394,7 +409,7 @@ impl StreamTask {
                 // Just commit (state managed by amp-client)
                 // No database operations needed for watermarks
                 commit.await.map_err(|err| StreamTaskError::CommitState {
-                    table_name: table_name.to_string(),
+                    table_name: destination_table.to_string(),
                     source: err,
                 })?;
 
