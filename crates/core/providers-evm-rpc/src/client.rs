@@ -483,7 +483,9 @@ impl BlockStreamer for Client {
             true => BlockNumberOrTag::Finalized,
             false => BlockNumberOrTag::Latest,
         };
-        let _permit = self.limiter.acquire();
+        let _permit = self.limiter.acquire().await.map_err(|_| {
+            LatestBlockError::from(anyhow::anyhow!("rate limiter semaphore closed"))
+        })?;
         let block = self
             .client
             .with_metrics("eth_getBlockByNumber", async |c| {
