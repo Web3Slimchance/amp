@@ -1,7 +1,7 @@
 {
   "kind": "tempo",
   "network": "testnet",
-  "start_block": 0,
+  "start_block": 9069931,
   "finalized_blocks_only": false,
   "tables": {
     "blocks": {

@@ -316,8 +316,14 @@ async fn gen_manifest_produces_expected_tempo_json() {
 
     //* When
     let mut out = Vec::new();
-    let result =
-        generate::generate_manifest(&kind, network.parse().unwrap(), None, false, &mut out).await;
+    let result = generate::generate_manifest(
+        &kind,
+        network.parse().unwrap(),
+        Some(9069931),
+        false,
+        &mut out,
+    )
+    .await;
 
     //* Then
     assert!(result.is_ok(), "manifest generation should succeed");

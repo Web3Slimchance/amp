@@ -250,7 +250,9 @@ gen:
     cp -f $(ls -t target/debug/build/datasets-solana-gen-*/out/tables.md | head -1) {{GEN_TABLE_SCHEMAS_OUTDIR}}/solana.md
     echo "  {{GEN_TABLE_SCHEMAS_OUTDIR}}/solana.md"
 
-    # Tempo (table schema only)
+    # Tempo (provider + table schema)
+    cp -f $(ls -t target/debug/build/amp-providers-tempo-gen-*/out/schema.json | head -1) {{GEN_PROVIDER_SCHEMAS_OUTDIR}}/tempo.spec.json
+    echo "  {{GEN_PROVIDER_SCHEMAS_OUTDIR}}/tempo.spec.json"
     cp -f $(ls -t target/debug/build/datasets-tempo-gen-*/out/tables.md | head -1) {{GEN_TABLE_SCHEMAS_OUTDIR}}/tempo.md
     echo "  {{GEN_TABLE_SCHEMAS_OUTDIR}}/tempo.md"
 
@@ -382,6 +384,16 @@ update-solana-storage-proto BRANCH="master":
 [group: 'codegen']
 gen-solana-storage-proto:
     RUSTFLAGS="--cfg gen_proto" cargo check -p solana-storage-proto
+
+### Tempo
+
+# Generate Tempo provider config JSON schema
+[group: 'codegen']
+gen-tempo-provider-schema DEST_DIR=GEN_PROVIDER_SCHEMAS_OUTDIR:
+    RUSTFLAGS="--cfg gen_schema_provider" cargo check -p amp-providers-tempo-gen
+    @mkdir -p {{DEST_DIR}}
+    @cp -f $(ls -t target/debug/build/amp-providers-tempo-gen-*/out/schema.json | head -1) {{DEST_DIR}}/tempo.spec.json
+    @echo "Schema generated and copied to {{DEST_DIR}}/tempo.spec.json"
 
 ### Static (provider only)
 

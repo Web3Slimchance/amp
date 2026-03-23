@@ -9,6 +9,7 @@ amp-providers-common = { path = "../providers-common" }
 amp-providers-evm-rpc = { path = "../providers-evm-rpc" }
 amp-providers-firehose = { path = "../providers-firehose" }
 amp-providers-solana = { path = "../providers-solana" }
+amp-providers-tempo = { path = "../providers-tempo" }
 async-stream.workspace = true
 datasets-common = { path = "../datasets-common" }
 datasets-raw = { path = "../datasets-raw" }

@@ -7,6 +7,7 @@ use amp_providers_common::{
 use amp_providers_evm_rpc::kind::EvmRpcProviderKind;
 use amp_providers_firehose::kind::FirehoseProviderKind;
 use amp_providers_solana::kind::SolanaProviderKind;
+use amp_providers_tempo::kind::TempoProviderKind;
 use async_stream::stream;
 use datasets_common::{block_num::BlockNum, network_id::NetworkId};
 use datasets_raw::{
@@ -75,6 +76,21 @@ pub async fn create(
                 name,
                 source: ProviderClientError::Firehose(err),
             })
+    } else if header.kind == TempoProviderKind {
+        let typed_config =
+            config
+                .try_into_config()
+                .map_err(|err| CreateClientError::ConfigParse {
+                    name: name.clone(),
+                    source: err,
+                })?;
+        amp_providers_tempo::client(name.clone(), typed_config, meter)
+            .await
+            .map(BlockStreamClient::Tempo)
+            .map_err(|err| CreateClientError::ProviderClient {
+                name,
+                source: ProviderClientError::Tempo(err),
+            })
     } else {
         Err(CreateClientError::UnsupportedKind {
             kind: header.kind.to_string(),
@@ -88,6 +104,7 @@ pub enum BlockStreamClient {
     EvmRpc(amp_providers_evm_rpc::Client),
     Solana(amp_providers_solana::Client),
     Firehose(Box<amp_providers_firehose::Client>),
+    Tempo(amp_providers_tempo::Client),
 }
 
 impl BlockStreamer for BlockStreamClient {
@@ -118,6 +135,12 @@ impl BlockStreamer for BlockStreamClient {
                         yield item;
                     }
                 }
+                Self::Tempo(client) => {
+                    let stream = client.block_stream(start_block, end_block).await;
+                    for await item in stream {
+                        yield item;
+                    }
+                }
             }
         }
     }
@@ -130,6 +153,7 @@ impl BlockStreamer for BlockStreamClient {
             Self::EvmRpc(client) => client.latest_block(finalized).await,
             Self::Solana(client) => client.latest_block(finalized).await,
             Self::Firehose(client) => client.latest_block(finalized).await,
+            Self::Tempo(client) => client.latest_block(finalized).await,
         }
     }
 
@@ -138,6 +162,7 @@ impl BlockStreamer for BlockStreamClient {
             Self::EvmRpc(client) => client.bucket_size(),
             Self::Solana(client) => client.bucket_size(),
             Self::Firehose(client) => client.bucket_size(),
+            Self::Tempo(client) => client.bucket_size(),
         }
     }
 
@@ -146,6 +171,7 @@ impl BlockStreamer for BlockStreamClient {
             Self::EvmRpc(client) => client.provider_name(),
             Self::Solana(client) => client.provider_name(),
             Self::Firehose(client) => client.provider_name(),
+            Self::Tempo(client) => client.provider_name(),
         }
     }
 }
@@ -228,6 +254,13 @@ pub enum ProviderClientError {
     /// invalid gRPC endpoints, connection issues, or authentication failures.
     #[error("failed to create Firehose client")]
     Firehose(#[source] amp_providers_firehose::error::ClientError),
+
+    /// Failed to create Tempo RPC client.
+    ///
+    /// This occurs during initialization of the Tempo RPC client, which may fail due to
+    /// invalid RPC URLs, connection issues, or authentication failures.
+    #[error("failed to create Tempo RPC client")]
+    Tempo(#[source] amp_providers_tempo::error::ClientError),
 }
 
 impl crate::retryable::RetryableErrorExt for ProviderClientError {
@@ -237,6 +270,9 @@ impl crate::retryable::RetryableErrorExt for ProviderClientError {
             Self::EvmRpc(_) => true,
             Self::Solana(err) => err.is_retryable(),
             Self::Firehose(err) => err.is_retryable(),
+            Self::Tempo(err) => {
+                matches!(err, amp_providers_tempo::error::ClientError::Transport(_))
+            }
         }
     }
 }
