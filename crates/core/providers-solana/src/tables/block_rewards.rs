@@ -14,7 +14,7 @@ use solana_clock::Slot;
 
 use crate::{
     error::{RowConversionError, RowConversionResult},
-    of1_client, rpc_client, tables,
+    old_faithful, rpc_client, tables,
 };
 
 pub const TABLE_NAME: &str = "block_rewards";
@@ -170,17 +170,17 @@ pub struct BlockRewards {
 impl BlockRewards {
     pub(crate) fn from_of1_rewards(
         slot: Slot,
-        rewards: Option<of1_client::DecodedBlockRewards>,
+        rewards: Option<old_faithful::DecodedBlockRewards>,
     ) -> RowConversionResult<Self> {
         let rewards: Vec<Reward> = rewards
             .map(|rewards| {
                 let rewards = match rewards {
-                    of1_client::DecodedField::Proto(proto_rewards) => proto_rewards
+                    old_faithful::DecodedField::Proto(proto_rewards) => proto_rewards
                         .rewards
                         .into_iter()
                         .map(TryInto::try_into)
                         .collect::<RowConversionResult<_>>()?,
-                    of1_client::DecodedField::Bincode(bincode_rewards) => {
+                    old_faithful::DecodedField::Bincode(bincode_rewards) => {
                         bincode_rewards.into_iter().map(Into::into).collect()
                     }
                 };

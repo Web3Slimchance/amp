@@ -1,4 +1,4 @@
-use std::num::NonZeroU32;
+use std::{num::NonZeroU32, path::PathBuf};
 
 use amp_providers_common::{network_id::NetworkId, redacted::Redacted};
 use headers::{HeaderName, HeaderValue};
@@ -40,9 +40,16 @@ pub struct SolanaProviderConfig {
     /// Optional rate limit for RPC calls per second.
     pub max_rpc_calls_per_second: Option<NonZeroU32>,
 
-    /// Controls when to use the Solana archive for historical data.
+    /// Controls when to use the Old Faithful CAR archive for historical data.
     #[serde(default)]
     pub use_archive: UseArchive,
+
+    /// Optional local path to the Old Faithful CAR archive directory for historical data.
+    ///
+    /// The directory is expected to have pre-downloaded CAR files that follow the naming
+    /// pattern established in [crate::old_faithful::car_filename]. This will be ensured
+    /// if the `solana-car-download` example is used to populate the directory.
+    pub archive_dir: Option<PathBuf>,
 
     /// Commitment level for RPC requests.
     #[serde(default)]

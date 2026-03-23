@@ -10,8 +10,8 @@ pub struct MetricsRegistry {
     /// Total number of Solana RPC errors encountered
     pub rpc_errors: telemetry::metrics::Counter,
 
-    /// Total number of OF1 CAR file downloads
-    pub of1_car_downloads: telemetry::metrics::Counter,
+    /// Total number of OF1 CAR files processed
+    pub of1_cars_processed: telemetry::metrics::Counter,
     /// Duration of OF1 CAR file downloads
     pub of1_car_download_duration: telemetry::metrics::Histogram<f64>,
     /// Size of downloaded OF1 CAR files in bytes
@@ -39,10 +39,10 @@ impl MetricsRegistry {
                 "solana_rpc_errors_total",
                 "Total number of Solana RPC errors",
             ),
-            of1_car_downloads: telemetry::metrics::Counter::new(
+            of1_cars_processed: telemetry::metrics::Counter::new(
                 meter,
-                "solana_of1_car_downloads_total",
-                "Total number of OF1 CAR file downloads",
+                "solana_of1_cars_processed_total",
+                "Total number of OF1 CAR files processed",
             ),
             of1_car_download_duration: telemetry::metrics::Histogram::new_f64(
                 meter,
@@ -91,8 +91,8 @@ impl MetricsRegistry {
         self.rpc_errors.inc_with_kvs(&kv_pairs);
     }
 
-    /// Record OF1 CAR file download
-    pub(crate) fn record_of1_car_download(
+    /// Record OF1 CAR file processed
+    pub(crate) fn record_of1_car_processed(
         &self,
         duration_secs: f64,
         epoch: u64,
@@ -104,7 +104,7 @@ impl MetricsRegistry {
             telemetry::metrics::KeyValue::new("network", network.to_string()),
             telemetry::metrics::KeyValue::new("epoch", epoch.to_string()),
         ];
-        self.of1_car_downloads.inc_with_kvs(&kv_pairs);
+        self.of1_cars_processed.inc_with_kvs(&kv_pairs);
         self.of1_car_download_duration
             .record_with_kvs(duration_secs, &kv_pairs);
     }

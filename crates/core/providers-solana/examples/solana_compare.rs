@@ -7,7 +7,7 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use amp_providers_solana::{
     commitment_config, config::SolanaProviderConfig, non_empty_of1_slot, non_empty_rpc_slot,
-    of1_client, rpc_client, tables,
+    old_faithful, rpc_client, tables,
 };
 use anyhow::Context;
 use backon::{ExponentialBuilder, Retryable};
@@ -81,11 +81,13 @@ async fn main() -> anyhow::Result<()> {
         commitment: Some(commitment_config(provider_cfg.commitment)),
     };
 
-    let of1_stream = of1_client::stream(
+    let of1_stream = old_faithful::stream(
         start_slot,
         end_slot,
         reqwest,
         rpc_client.clone(),
+        // Local CAR archive source, None = use official archive.
+        None,
         get_block_config,
         // Metrics, we don't need to record them.
         None,

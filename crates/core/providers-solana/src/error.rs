@@ -1,8 +1,8 @@
+use std::path::PathBuf;
+
 use amp_providers_common::network_id::NetworkId;
 use datasets_raw::{client::BlockStreamError, rows::TableRowError};
 use yellowstone_faithful_car_parser as car_parser;
-
-use crate::of1_client;
 
 pub type SlotConversionResult<T> = Result<T, SlotConversionError>;
 pub type RowConversionResult<T> = Result<T, RowConversionError>;
@@ -253,7 +253,7 @@ impl SlotConversionError {
 /// (Content Addressable aRchive) files. These errors cover RPC communication,
 /// file handling, and CAR parsing failures.
 #[derive(Debug, thiserror::Error)]
-pub enum Of1StreamError {
+pub enum OldFaithfulStreamError {
     /// Failed to communicate with the Solana RPC client.
     ///
     /// This occurs when querying the RPC for slot information or block data,
@@ -267,7 +267,7 @@ pub enum Of1StreamError {
     /// CAR files, which may include HTTP errors, unsupported range requests, or
     /// other file access problems.
     #[error("failed to stream CAR file")]
-    FileStream(#[source] of1_client::CarReaderError),
+    FileStream(#[source] CarReaderError),
 
     /// Encountered an unexpected node type while reading a block from CAR.
     ///
@@ -376,35 +376,73 @@ pub enum Of1StreamError {
     BlocktimeOverflow { slot: u64, blocktime: u64 },
 }
 
-impl From<Of1StreamError> for BlockStreamError {
-    fn from(value: Of1StreamError) -> Self {
+impl From<OldFaithfulStreamError> for BlockStreamError {
+    fn from(value: OldFaithfulStreamError) -> Self {
         // There is no catch-all here on purpose, to force consideration of
         // each error type when mapping to recoverable vs fatal.
         match value {
-            Of1StreamError::FileStream(of1_client::CarReaderError::Io(_))
-            | Of1StreamError::FileStream(of1_client::CarReaderError::Http(
-                reqwest::StatusCode::NOT_FOUND,
-            ))
-            | Of1StreamError::FileStream(of1_client::CarReaderError::RangeRequestUnsupported)
-            | Of1StreamError::UnexpectedNode { .. }
-            | Of1StreamError::MissingNode { .. }
-            | Of1StreamError::RewardSlotMismatch { .. }
-            | Of1StreamError::Zstd { .. }
-            | Of1StreamError::Bincode(_)
-            | Of1StreamError::DecodeField { .. }
-            | Of1StreamError::NodeParse(_)
-            | Of1StreamError::DataframeReassembly(_)
-            | Of1StreamError::DecodeBase58(_)
-            | Of1StreamError::TryIntoArray { .. }
-            | Of1StreamError::BlocktimeOverflow { .. } => BlockStreamError::Fatal(value.into()),
-
-            Of1StreamError::RpcClient(_)
-            | Of1StreamError::FileStream(of1_client::CarReaderError::Http(_))
-            | Of1StreamError::FileStream(of1_client::CarReaderError::Reqwest(_)) => {
+            // Archive has been exhausted, not actually an error but classified as fatal
+            // to stop the stream.
+            OldFaithfulStreamError::FileStream(CarReaderError::FileNotFound)
+            // Fatal errors.
+            | OldFaithfulStreamError::FileStream(CarReaderError::Io(_))
+            | OldFaithfulStreamError::FileStream(CarReaderError::RangeRequestUnsupported)
+            | OldFaithfulStreamError::UnexpectedNode { .. }
+            | OldFaithfulStreamError::MissingNode { .. }
+            | OldFaithfulStreamError::RewardSlotMismatch { .. }
+            | OldFaithfulStreamError::Zstd { .. }
+            | OldFaithfulStreamError::Bincode(_)
+            | OldFaithfulStreamError::DecodeField { .. }
+            | OldFaithfulStreamError::NodeParse(_)
+            | OldFaithfulStreamError::DataframeReassembly(_)
+            | OldFaithfulStreamError::DecodeBase58(_)
+            | OldFaithfulStreamError::TryIntoArray { .. }
+            | OldFaithfulStreamError::BlocktimeOverflow { .. } => {
+                BlockStreamError::Fatal(value.into())
+            }
+            // Recoverable errors.
+            OldFaithfulStreamError::RpcClient(_)
+            | OldFaithfulStreamError::FileStream(CarReaderError::Http(_))
+            | OldFaithfulStreamError::FileStream(CarReaderError::Reqwest(_)) => {
                 BlockStreamError::Recoverable(value.into())
             }
         }
     }
+}
+
+/// Errors that can occur during streaming of Solana blocks from Old Faithful v1 (OF1) CAR files.
+#[derive(Debug, thiserror::Error)]
+pub enum CarReaderError {
+    /// The requested CAR file was not found.
+    ///
+    /// This most likely means that the currently available content of the Old Faithful
+    /// archive has been exhausted.
+    #[error("CAR file not found")]
+    FileNotFound,
+
+    /// IO error when reading the CAR file.
+    ///
+    /// This can occur due to network issues, file corruption, or other problems when
+    /// accessing the CAR file.
+    #[error("IO error: {0}")]
+    Io(#[source] std::io::Error),
+    /// Reqwest error when connecting to or reading from the CAR file.
+    ///
+    /// This can occur due to network issues, timeouts, or other problems when making
+    /// HTTP requests to access the CAR file.
+    #[error("Reqwest error: {0}")]
+    Reqwest(#[source] reqwest::Error),
+    /// The server responded with an HTTP error status code when trying to access the CAR file.
+    ///
+    /// This can occur due to network issues, server problems, or if the CAR file is not available.
+    #[error("HTTP error: {0}")]
+    Http(reqwest::StatusCode),
+    /// The server does not support HTTP range requests.
+    ///
+    /// This is a non-recoverable error because the Old Faithful reader relies on range requests
+    /// to be able to resume interrupted downloads without re-downloading the entire CAR.
+    #[error("server does not support range requests")]
+    RangeRequestUnsupported,
 }
 
 /// Error during Solana client initialization or operation.
@@ -423,6 +461,13 @@ pub enum ClientError {
     /// `http` or `https`.
     #[error("unsupported Solana RPC provider URL scheme: {scheme}")]
     UnsupportedUrlScheme { scheme: String },
+
+    /// The configured archive directory for Old Faithful CAR files is invalid.
+    ///
+    /// This occurs when the path specified for accessing local CAR files is not valid,
+    /// such as if the directory does not exist, is not a directory, or is not accessible.
+    #[error("invalid archive directory: {0}")]
+    InvalidArchiveDirectory(PathBuf),
 }
 
 impl amp_providers_common::retryable::RetryableErrorExt for ClientError {
@@ -430,6 +475,7 @@ impl amp_providers_common::retryable::RetryableErrorExt for ClientError {
         match self {
             Self::UnsupportedNetwork { .. } => false,
             Self::UnsupportedUrlScheme { .. } => false,
+            Self::InvalidArchiveDirectory(_) => false,
         }
     }
 }

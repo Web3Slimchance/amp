@@ -27,7 +27,7 @@ pub mod config;
 pub mod error;
 pub mod kind;
 pub mod metrics;
-pub mod of1_client;
+pub mod old_faithful;
 pub mod rpc_client;
 pub mod tables;
 
@@ -68,6 +68,13 @@ pub fn client(
         }
     }
 
+    match config.archive_dir {
+        Some(dir) if !dir.is_dir() => {
+            return Err(ClientError::InvalidArchiveDirectory(dir));
+        }
+        _ => {}
+    }
+
     let commitment = commitment_config(config.commitment);
 
     // Resolve authentication configuration
@@ -103,6 +110,7 @@ pub fn client(
         config.network,
         name,
         config.use_archive,
+        config.archive_dir,
         commitment,
         meter,
     );

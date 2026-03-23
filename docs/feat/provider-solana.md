@@ -39,16 +39,18 @@ For the complete field reference, see the [config schema](../schemas/providers/s
 kind = "solana"
 network = "mainnet"
 rpc_provider_url = "${SOLANA_MAINNET_RPC_URL}"
-of1_car_directory = "${SOLANA_OF1_CAR_DIRECTORY}"
 
 # Archive mode: "always" (default), "auto", or "never"
 # - "always": Always use archive, even for recent data
-# - "auto": RPC for recent slots (last 10k), archive for historical
+# - "auto": RPC for recent slots, archive for historical
 # - "never": Never use archive, RPC-only mode
 use_archive = "always"
 
+# Archive dir: Optional local directory for pre-downloaded
+# CAR files (if not using Old Faithful directly)
+# archive_dir = "path/to/pre-downloaded/car/files"
+
 max_rpc_calls_per_second = 50
-keep_of1_car_files = false
 ```
 
 ## Architecture
@@ -64,21 +66,21 @@ The provider supports three archive modes controlled by the `use_archive` config
 ```
 Historical Data                    Real-time Data
      ↓                                  ↓
-Old Faithful Archive → CAR files → RPC endpoint
+Old Faithful Archive → CAR files →  RPC endpoint
      ↓                                  ↓
-  Download epoch CAR              getBlock calls
+  Stream epoch CAR                 getBlock calls
      ↓                                  ↓
-  Process locally                 Stream blocks
-     ↓                                  ↓
-  Delete CAR (optional)           Continuous sync
+  Process in-memory                Stream blocks
+                                        ↓
+                                  Continuous sync
 ```
 
 ### Data Sources
 
-| Stage | Source | Data |
-|-------|--------|------|
+| Stage      | Source                                  | Data                              |
+| ---------- | --------------------------------------- | --------------------------------- |
 | Historical | Old Faithful (`files.old-faithful.net`) | Archived epoch CAR files (~745GB) |
-| Real-time | Solana RPC | Live blocks via JSON-RPC |
+| Real-time  | Solana RPC                              | Live blocks via JSON-RPC          |
 
 ## Usage
 
@@ -86,19 +88,15 @@ Old Faithful Archive → CAR files → RPC endpoint
 
 ```bash
 export SOLANA_MAINNET_RPC_URL="https://api.mainnet-beta.solana.com"
-export SOLANA_OF1_CAR_DIRECTORY="/data/solana/car"
 ```
 
 ### CAR File Management
 
-By default, CAR files are deleted after processing to save disk space:
+Solana extractor supports reading pre-downloaded CAR files from a local directory.
+To use this feature, set the `archive_dir` configuration field to the path where your CAR files are stored:
 
 ```toml
-# Delete CAR files after processing (default)
-keep_of1_car_files = false
-
-# Retain CAR files for debugging or reprocessing
-keep_of1_car_files = true
+archive_dir = "path/to/pre-downloaded/car/files"
 ```
 
 ### Rate Limiting
@@ -114,12 +112,12 @@ max_rpc_calls_per_second = 50
 
 ### Extracted Tables
 
-| Table | Key Fields |
-|-------|------------|
+| Table           | Key Fields                                              |
+| --------------- | ------------------------------------------------------- |
 | `block_headers` | slot, parent_slot, block_hash, block_height, block_time |
-| `transactions` | slot, tx_index, signatures, status, fee, balances |
-| `messages` | slot, tx_index, message fields |
-| `instructions` | slot, tx_index, program_id_index, accounts, data |
+| `transactions`  | slot, tx_index, signatures, status, fee, balances       |
+| `messages`      | slot, tx_index, message fields                          |
+| `instructions`  | slot, tx_index, program_id_index, accounts, data        |
 
 ### Slot Handling
 

@@ -23,6 +23,7 @@ datasets-raw = { path = "../datasets-raw" }
 futures.workspace = true
 fs-err.workspace = true
 governor.workspace = true
+memmap2.workspace = true
 headers = { workspace = true }
 monitoring = { path = "../monitoring" }
 prost.workspace = true

@@ -117,6 +117,7 @@ hex = "0.4.3"
 indicatif = "0.18"
 indoc = "2.0.6"
 itertools = "0.14.0"
+memmap2 = "0.9"
 opentelemetry = { version = "0.31", features = ["trace"] }
 opentelemetry-otlp = { version = "0.31", features = [
     "grpc-tonic",

@@ -10,6 +10,7 @@
 use std::{collections::HashSet, sync::Mutex};
 use std::{
     num::{NonZeroU32, NonZeroU64},
+    path::PathBuf,
     str::FromStr,
     sync::Arc,
 };
@@ -27,7 +28,7 @@ use solana_clock::Slot;
 use crate::{
     config::UseArchive,
     error::{SlotConversionError, SlotConversionResult},
-    metrics, of1_client, rpc_client, tables,
+    metrics, old_faithful, rpc_client, tables,
 };
 
 /// Marker string that appears in Solana transaction log message lists when logs
@@ -44,6 +45,7 @@ pub struct Client {
     network: NetworkId,
     provider_name: ProviderName,
     use_archive: UseArchive,
+    archive_dir: Option<PathBuf>,
     commitment: CommitmentConfig,
     /// Monitor which epochs are currently being streamed to prevent overlapping
     /// streams. This is only used in debug builds as an additional safety check
@@ -61,6 +63,7 @@ impl Client {
         network: NetworkId,
         provider_name: ProviderName,
         use_archive: UseArchive,
+        archive_dir: Option<PathBuf>,
         commitment: CommitmentConfig,
         meter: Option<&monitoring::telemetry::metrics::Meter>,
     ) -> Self {
@@ -94,6 +97,7 @@ impl Client {
             network,
             provider_name,
             use_archive,
+            archive_dir,
             commitment,
             #[cfg(debug_assertions)]
             epochs_in_progress: Arc::new(Mutex::new(HashSet::new())),
@@ -102,7 +106,7 @@ impl Client {
 
     /// Core implementation of the block streaming logic, parameterized over the historical block stream source.
     /// For production use-cases the historical block stream will come from the Old Faithful archive (using the
-    /// [`of1_client`] module) and for testing we can provide a custom stream of decoded slots directly.
+    /// [`old_faithful`] module) and for testing we can provide a custom stream of decoded slots directly.
     ///
     /// NOTE: The reason this is marked as `pub` is because it is used in integration tests
     /// in the `tests` crate.
@@ -116,7 +120,7 @@ impl Client {
         get_transaction_config: rpc_client::rpc_config::RpcTransactionConfig,
     ) -> impl Stream<Item = Result<Rows, BlockStreamError>>
     where
-        T: Stream<Item = Result<of1_client::DecodedSlot, BlockStreamError>>,
+        T: Stream<Item = Result<old_faithful::DecodedSlot, BlockStreamError>>,
     {
         async_stream::stream! {
             // Helper macro to simplify error handling and early returns in the stream.
@@ -286,16 +290,17 @@ impl BlockStreamer for Client {
             let metrics = self
                 .metrics
                 .clone()
-                .map(|registry| of1_client::MetricsContext {
+                .map(|registry| old_faithful::metrics::Context {
                     registry,
                     provider: self.provider_name.clone(),
                     network: self.network.clone(),
                 });
-            of1_client::stream(
+            old_faithful::stream(
                 start,
                 end,
                 self.reqwest.clone(),
                 self.main_rpc_client.clone(),
+                self.archive_dir.clone(),
                 get_block_config,
                 metrics,
                 #[cfg(debug_assertions)]
@@ -337,12 +342,12 @@ impl BlockStreamer for Client {
     }
 }
 
-/// Converts [of1_client::DecodedSlot] to [tables::NonEmptySlot]. This conversion can fail if any
+/// Converts [old_faithful::DecodedSlot] to [tables::NonEmptySlot]. This conversion can fail if any
 /// of the decoded fields do not match the expected format/values.
 pub fn non_empty_of1_slot(
-    slot: of1_client::DecodedSlot,
+    slot: old_faithful::DecodedSlot,
 ) -> SlotConversionResult<tables::NonEmptySlot> {
-    let of1_client::DecodedSlot {
+    let old_faithful::DecodedSlot {
         slot,
         parent_slot,
         blockhash,
@@ -625,7 +630,7 @@ mod tests {
     use url::Url;
 
     use super::Client;
-    use crate::{config::UseArchive, of1_client, rpc_client};
+    use crate::{config::UseArchive, old_faithful, rpc_client};
 
     #[tokio::test]
     async fn historical_blocks_only() {
@@ -647,6 +652,7 @@ mod tests {
             network,
             provider_name,
             UseArchive::Auto,
+            None, // Archive source
             CommitmentConfig::finalized(),
             None, // Meter
         );
@@ -657,7 +663,7 @@ mod tests {
         // Stream the entire range as historical blocks.
         let historical = async_stream::stream! {
             for slot in start..=end {
-                yield Ok(of1_client::DecodedSlot::dummy(slot));
+                yield Ok(old_faithful::DecodedSlot::dummy(slot));
             }
         };
 

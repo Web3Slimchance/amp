@@ -191,7 +191,7 @@ pub struct ProviderConfig {
 **Extractor-specific fields (examples):**
 
 - EVM-RPC: `concurrent_request_limit`, `rpc_batch_size`, `rate_limit_per_minute`, `fetch_receipts_per_tx`
-- Solana: `rpc_provider_url`, `of1_car_directory`, `keep_of1_car_files`, `use_archive`
+- Solana: `rpc_provider_info`, `use_archive`, `archive_dir`
 - Firehose: `token` (authentication)
 
 ## FACTORY FUNCTION PATTERN

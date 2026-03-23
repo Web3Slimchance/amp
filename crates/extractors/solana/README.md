@@ -60,7 +60,16 @@ This extractor treats Solana slots as block numbers for compatibility with the `
 ```toml
 kind = "solana"
 network = "mainnet"
-of1_car_directory = "path/to/local/car/files"
+
+# Archive mode: "always" (default), "auto", or "never"
+# - "always": Always use archive, even for recent data
+# - "auto": RPC for recent slots, archive for historical
+# - "never": Never use archive, RPC-only mode
+use_archive = "always"
+
+# Archive dir: Optional local directory for pre-downloaded
+# CAR files (if not using Old Faithful directly)
+# archive_dir = "path/to/pre-downloaded/car/files"
 
 [rpc_provider_info]
 url = "https://api.mainnet-beta.solana.com"
@@ -70,6 +79,8 @@ url = "https://api.mainnet-beta.solana.com"
 # [fallback_rpc_provider_info]   # Optional: used to fill truncated log messages
 # url = "https://another-rpc.example.com"
 # auth_token = "your-token"
+
+max_rpc_calls_per_second = 50
 ```
 
 **Configuration Options**:
@@ -81,10 +92,9 @@ url = "https://api.mainnet-beta.solana.com"
 | `rpc_provider_info.auth_header` | No       | Custom header name for auth (default: `Authorization: Bearer`)                                |
 | `rpc_provider_info.auth_token`  | No       | Authentication token for RPC requests                                                         |
 | `fallback_rpc_provider_info`    | No       | Fallback RPC endpoint for filling truncated log messages (same fields as `rpc_provider_info`) |
-| `of1_car_directory`             | Yes      | Local directory for caching Old Faithful CAR files                                            |
 | `max_rpc_calls_per_second`      | No       | Rate limit for RPC calls (applies to main RPC only)                                           |
-| `keep_of1_car_files`            | No       | Whether to retain downloaded CAR files after use (default: `false`)                           |
 | `use_archive`                   | No       | Archive usage mode: `always` (default), `never`, or `auto`                                    |
+| `archive_dir`                   | No       | Directory for pre-downloaded CAR files (if not using Old Faithful downloads)                  |
 | `start_block`                   | No       | Starting slot number for extraction (set in the manifest)                                     |
 | `finalized_blocks_only`         | No       | Whether to only extract finalized blocks (set in the manifest)                                |
 | `commitment`                    | No       | Commitment level for Solana RPC requests: `finalized` (default), `processed` or `confirmed`   |
@@ -97,17 +107,21 @@ The extractor downloads epoch-based CAR (Content Addressable aRchive) files from
 - **File Format**: `epoch-<epoch_number>.car`
 - **Epoch Size**: 432,000 slots per epoch (~2 days at 400ms slot time)
 
-CAR files are automatically downloaded on-demand and cached locally. Downloads support resumption on failure and exponential backoff retries. When `keep_of1_car_files` is `false`, files are deleted once no longer needed.
+CAR files are streamed from the archive and processed in memory. The extractor also supports using pre-downloaded CAR files from a local directory specified by `archive_dir`. This allows users to manage their own archive downloads and avoid redundant network usage.
 
 ### Warning
 
-Due to the large size of Solana CAR files, ensure sufficient disk space is available in the specified `of1_car_directory`.
+Due to the large size of Solana CAR files, ensure sufficient disk space is available in the specified `archive_dir`, if choosing pre-downloaded CAR files route.
 
 ## Utilities
 
 ### `solana-compare`
 
 A companion example (`examples/solana_compare.rs`) that compares block data from Old Faithful CAR files against the RPC endpoint for the same epoch. Useful for validating data consistency between the two sources.
+
+### solana-car-download
+
+A utility for downloading Solana epoch CAR files directly from Old Faithful, with support for resuming interrupted downloads and retrying on failures. This can be used to pre-populate the `archive_dir` with CAR files before running the extractor.
 
 ## JSON Schema Generation
 

@@ -19,7 +19,7 @@ use solana_clock::Slot;
 
 use crate::{
     error::{RowConversionError, RowConversionResult},
-    of1_client, rpc_client, tables,
+    old_faithful, rpc_client, tables,
 };
 
 pub const TABLE_NAME: &str = "transactions";
@@ -139,16 +139,16 @@ impl Transaction {
         tx_index: u32,
         tx_version: TransactionVersion,
         of1_tx_signatures: Vec<solana_sdk::signature::Signature>,
-        of1_tx_meta: Option<of1_client::DecodedTransactionStatusMeta>,
+        of1_tx_meta: Option<old_faithful::DecodedTransactionStatusMeta>,
     ) -> RowConversionResult<Self> {
         let signatures = of1_tx_signatures.iter().map(|s| s.to_string()).collect();
         let transaction_status_meta = of1_tx_meta
             .map(|meta| match meta {
-                of1_client::DecodedTransactionStatusMeta::Proto(proto_meta) => {
+                old_faithful::DecodedTransactionStatusMeta::Proto(proto_meta) => {
                     TransactionStatusMeta::from_proto_meta(slot, tx_index, proto_meta)
                 }
 
-                of1_client::DecodedTransactionStatusMeta::Bincode(stored_meta) => {
+                old_faithful::DecodedTransactionStatusMeta::Bincode(stored_meta) => {
                     TransactionStatusMeta::from_stored_meta(slot, tx_index, stored_meta.into())
                 }
             })

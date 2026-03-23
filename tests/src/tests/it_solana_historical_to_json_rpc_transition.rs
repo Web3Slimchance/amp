@@ -1,7 +1,7 @@
 use amp_providers_solana::{
     Client,
     config::UseArchive,
-    of1_client,
+    old_faithful,
     rpc_client::{self, rpc_config::CommitmentConfig},
 };
 use futures::TryStreamExt;
@@ -27,6 +27,7 @@ async fn historical_to_json_rpc_transition() {
         network,
         provider_name,
         UseArchive::Auto,
+        None, // Archive source
         CommitmentConfig::finalized(),
         None, // Metrics
     );
@@ -38,7 +39,7 @@ async fn historical_to_json_rpc_transition() {
     // Stream part of the range as historical blocks.
     let historical = async_stream::stream! {
         for slot in start..=historical_end {
-            yield Ok(of1_client::DecodedSlot::dummy(slot));
+            yield Ok(old_faithful::DecodedSlot::dummy(slot));
         }
     };
 

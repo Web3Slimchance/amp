@@ -4,6 +4,13 @@
   "description": "Solana provider configuration for parsing TOML config.\n\nThis structure defines the parameters required to connect to a Solana\nRPC endpoint for blockchain data extraction. The `kind` field validates\nthat the config belongs to a `solana` provider at deserialization time.",
   "type": "object",
   "properties": {
+    "archive_dir": {
+      "description": "Optional local path to the Old Faithful CAR archive directory for historical data.\n\nThe directory is expected to have pre-downloaded CAR files that follow the naming\npattern established in [crate::old_faithful::car_filename]. This will be ensured\nif the `solana-car-download` example is used to populate the directory.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "commitment": {
       "description": "Commitment level for RPC requests.",
       "$ref": "#/$defs/CommitmentLevel"
@@ -41,7 +48,7 @@
       "$ref": "#/$defs/RpcProviderConnectionConfig"
     },
     "use_archive": {
-      "description": "Controls when to use the Solana archive for historical data.",
+      "description": "Controls when to use the Old Faithful CAR archive for historical data.",
       "$ref": "#/$defs/UseArchive"
     }
   },

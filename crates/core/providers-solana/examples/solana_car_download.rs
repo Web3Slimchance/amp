@@ -11,6 +11,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use amp_providers_solana::old_faithful::{car_download_url, car_filename};
 use anyhow::Context;
 use backon::{ExponentialBuilder, Retryable};
 use clap::Parser;
@@ -89,7 +90,7 @@ async fn main() -> anyhow::Result<()> {
         .build()?;
 
     for epoch in cli.start_epoch..=end_epoch {
-        let dest = output_dir.join(format!("epoch-{epoch}.car"));
+        let dest = output_dir.join(car_filename(epoch));
         let result = (|| ensure_car_file_exists(epoch, &reqwest, &dest))
             .retry(ExponentialBuilder::new().without_max_times())
             .when(should_retry)
@@ -285,13 +286,6 @@ enum CarDownloadError {
     /// The server does not support partial downloads.
     #[error("partial downloads are not supported by the server")]
     PartialDownloadNotSupported,
-}
-
-/// Generates the Old Faithful CAR download URL for the given epoch.
-///
-/// Reference: <https://docs.old-faithful.net/references/of1-files>.
-fn car_download_url(epoch: solana_clock::Epoch) -> String {
-    format!("https://files.old-faithful.net/{epoch}/epoch-{epoch}.car")
 }
 
 fn log_download_progress(
