@@ -49,6 +49,13 @@
       "default": 0,
       "minimum": 0
     },
+    "metadata_fetch_concurrency": {
+      "description": "Maximum concurrent parquet metadata fetches during query planning (default: 32)",
+      "type": "integer",
+      "format": "uint",
+      "default": 32,
+      "minimum": 0
+    },
     "microbatch_max_interval": {
       "description": "Max interval for derived dataset dump microbatches in blocks (default: 100000)",
       "type": "integer",

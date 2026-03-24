@@ -27,6 +27,9 @@ pub struct Config {
     /// Directory paths for DataFusion query spilling
     pub spill_location: Vec<PathBuf>,
 
+    /// Maximum concurrent parquet metadata fetches during query planning
+    pub metadata_fetch_concurrency: usize,
+
     /// Parquet file configuration
     pub parquet: ParquetConfig,
 

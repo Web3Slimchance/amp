@@ -81,6 +81,9 @@ pub struct ExecEnv {
 
     /// The EthCall UDFs cache used for eth_call UDF creation.
     pub ethcall_udfs_cache: EthCallUdfsCache,
+
+    /// Maximum concurrent parquet metadata fetches during query planning.
+    pub metadata_fetch_concurrency: usize,
 }
 
 /// Creates a ExecEnv with specified memory and cache configuration
@@ -91,6 +94,7 @@ pub fn create(
     max_mem_mb: usize,
     query_max_mem_mb: usize,
     spill_location: &[PathBuf],
+    metadata_fetch_concurrency: usize,
     store: DataStore,
     datasets_cache: DatasetsCache,
     ethcall_udfs_cache: EthCallUdfsCache,
@@ -129,5 +133,6 @@ pub fn create(
         store,
         datasets_cache,
         ethcall_udfs_cache,
+        metadata_fetch_concurrency,
     })
 }

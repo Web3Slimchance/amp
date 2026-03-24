@@ -112,6 +112,7 @@ fn resolve_config(
         poll_interval: config_file.poll_interval_secs.into(),
         keep_alive_interval: config_file.keep_alive_interval,
         worker_events,
+        metadata_fetch_concurrency: config_file.metadata_fetch_concurrency,
     })
 }
 
@@ -230,6 +231,8 @@ pub struct Config {
     pub keep_alive_interval: u64,
     /// Worker event streaming configuration.
     pub worker_events: WorkerEventsConfig,
+    /// Maximum concurrent parquet metadata fetches during query planning.
+    pub metadata_fetch_concurrency: usize,
 }
 
 /// Configuration for worker event streaming.

@@ -240,6 +240,7 @@ pub async fn execute(
         ctx.config.max_mem_mb,
         ctx.config.query_max_mem_mb,
         &ctx.config.spill_location,
+        ctx.config.metadata_fetch_concurrency,
         ctx.data_store.clone(),
         ctx.datasets_cache.clone(),
         ctx.ethcall_udfs_cache.clone(),

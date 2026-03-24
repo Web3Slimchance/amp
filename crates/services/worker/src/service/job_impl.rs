@@ -123,6 +123,7 @@ pub(super) async fn new(
                     max_mem_mb: job_ctx.config.max_mem_mb,
                     query_max_mem_mb: job_ctx.config.query_max_mem_mb,
                     spill_location: job_ctx.config.spill_location.clone(),
+                    metadata_fetch_concurrency: job_ctx.config.metadata_fetch_concurrency,
                     progress_interval: job_ctx
                         .config
                         .events_config

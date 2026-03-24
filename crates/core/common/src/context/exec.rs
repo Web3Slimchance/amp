@@ -333,6 +333,7 @@ pub struct ExecContextBuilder {
     disk_manager: Arc<DiskManager>,
     cache_manager: Arc<CacheManager>,
     object_store_registry: Arc<dyn ObjectStoreRegistry>,
+    metadata_fetch_concurrency: usize,
     table_catalogs: BTreeMap<String, Arc<dyn TableAsyncCatalogProvider>>,
     func_catalogs: BTreeMap<String, Arc<dyn FuncAsyncCatalogProvider>>,
 }
@@ -353,6 +354,7 @@ impl ExecContextBuilder {
             isolate_pool: None,
             global_memory_pool: env.global_memory_pool,
             query_max_mem_mb: env.query_max_mem_mb,
+            metadata_fetch_concurrency: env.metadata_fetch_concurrency,
             disk_manager: env.disk_manager,
             cache_manager: env.cache_manager,
             object_store_registry: env.object_store_registry,
@@ -438,9 +440,14 @@ impl ExecContextBuilder {
         let query_snapshots = physical_table
             .table_snapshots()
             .map(|(s, sql_schema_name)| {
-                QueryableSnapshot::from_snapshot(s, self.store.clone(), sql_schema_name.to_string())
-                    .map(Arc::new)
-                    .map_err(CreateContextError::MultiNetworkSegments)
+                QueryableSnapshot::from_snapshot(
+                    s,
+                    self.store.clone(),
+                    sql_schema_name.to_string(),
+                    self.metadata_fetch_concurrency,
+                )
+                .map(Arc::new)
+                .map_err(CreateContextError::MultiNetworkSegments)
             })
             .collect::<Result<Vec<_>, _>>()?;
 
@@ -458,6 +465,7 @@ impl ExecContextBuilder {
             store: self.store,
             datasets_cache: self.datasets_cache,
             ethcall_udfs_cache: self.ethcall_udfs_cache,
+            metadata_fetch_concurrency: self.metadata_fetch_concurrency,
         };
 
         // Compose a SessionStateBuilder from the stored components (including

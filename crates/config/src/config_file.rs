@@ -168,6 +168,9 @@ pub struct ConfigFile {
     /// Paths for DataFusion temporary files for spill-to-disk (default: [])
     #[serde(default)]
     pub spill_location: Vec<PathBuf>,
+    /// Maximum concurrent parquet metadata fetches during query planning (default: 32)
+    #[serde(default = "default_metadata_fetch_concurrency")]
+    pub metadata_fetch_concurrency: usize,
 
     // Operational timing
     /// Polling interval for new blocks during dump in seconds (default: 1.0)
@@ -252,6 +255,11 @@ fn default_server_microbatch_max_interval() -> u64 {
 /// Serde default for [`ConfigFile::keep_alive_interval`]. Returns [`DEFAULT_KEEP_ALIVE_INTERVAL`].
 fn default_keep_alive_interval() -> u64 {
     DEFAULT_KEEP_ALIVE_INTERVAL
+}
+
+/// Default concurrent metadata fetches during query planning.
+fn default_metadata_fetch_concurrency() -> usize {
+    32
 }
 
 /// Error when loading configuration from a TOML file.

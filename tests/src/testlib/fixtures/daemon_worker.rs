@@ -159,6 +159,7 @@ fn worker_config_from_common(config: &amp_config::Config) -> Config {
         max_mem_mb: config.max_mem_mb,
         query_max_mem_mb: config.query_max_mem_mb,
         spill_location: config.spill_location.clone(),
+        metadata_fetch_concurrency: config.metadata_fetch_concurrency,
         parquet: config.parquet.clone(),
         events_config: config.worker_events.clone(),
     }

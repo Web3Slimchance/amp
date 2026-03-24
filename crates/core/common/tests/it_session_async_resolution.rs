@@ -407,6 +407,7 @@ async fn exec_statement_to_plan_with_qualified_function_uses_async_pre_resolutio
         store: data_store,
         datasets_cache,
         ethcall_udfs_cache,
+        metadata_fetch_concurrency: 32,
     };
 
     let (amp_table_catalog, amp_table_schema_requests, _amp_table_requests) =
@@ -508,6 +509,7 @@ async fn exec_statement_to_plan_with_overlapping_async_and_physical_tables_succe
         store: data_store.clone(),
         datasets_cache,
         ethcall_udfs_cache,
+        metadata_fetch_concurrency: 32,
     };
 
     // Create a physical table under "test_schema.blocks" — the same name

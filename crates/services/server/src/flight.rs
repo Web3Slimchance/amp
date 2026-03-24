@@ -106,6 +106,7 @@ impl Service {
             config.max_mem_mb,
             config.query_max_mem_mb,
             &config.spill_location,
+            config.metadata_fetch_concurrency,
             data_store,
             datasets_cache,
             ethcall_udfs_cache,

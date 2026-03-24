@@ -130,6 +130,8 @@ pub struct QueryableSnapshot {
     reader_factory: Arc<reader::AmpReaderFactory>,
     /// The dataset reference portion of SQL table references (e.g. `anvil_rpc`).
     sql_schema_name: String,
+    /// Maximum concurrent parquet metadata fetches during query planning.
+    metadata_fetch_concurrency: usize,
 }
 
 impl QueryableSnapshot {
@@ -143,6 +145,7 @@ impl QueryableSnapshot {
         snapshot: &PhyTableSnapshot,
         store: DataStore,
         sql_schema_name: String,
+        metadata_fetch_concurrency: usize,
     ) -> Result<Self, MultiNetworkSegmentsError> {
         let reader_factory = Arc::new(reader::AmpReaderFactory {
             location_id: snapshot.physical_table().location_id(),
@@ -155,6 +158,7 @@ impl QueryableSnapshot {
             synced_range: snapshot.synced_range()?,
             reader_factory,
             sql_schema_name,
+            metadata_fetch_concurrency,
         })
     }
 
@@ -243,6 +247,10 @@ impl QueryableSnapshot {
     }
 
     /// Resolves file metadata and computes statistics for the scan plan.
+    ///
+    /// Fetches parquet metadata concurrently for up to `metadata_fetch_concurrency()`
+    /// files at a time, using `.buffered()` to preserve ordering for deterministic
+    /// round-robin partition assignment.
     async fn resolve_file_groups(
         &self,
         segments: &[&Segment],
@@ -250,8 +258,11 @@ impl QueryableSnapshot {
         table_schema: SchemaRef,
     ) -> DataFusionResult<(Vec<FileGroup>, datafusion::common::Statistics)> {
         let file_count = segments.len();
-        let file_stream =
-            futures::stream::iter(segments.iter()).then(|s| self.to_partitioned_file(s));
+        let futs: Vec<_> = segments
+            .iter()
+            .map(|s| self.to_partitioned_file(s))
+            .collect();
+        let file_stream = futures::stream::iter(futs).buffered(self.metadata_fetch_concurrency);
         let partitioned = round_robin(file_stream, file_count, target_partitions)
             .await
             .map_err(|e| DataFusionError::External(e.into()))?;

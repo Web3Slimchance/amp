@@ -16,4 +16,6 @@ pub struct Config {
     pub query_max_mem_mb: usize,
     /// Paths for DataFusion temporary files for spill-to-disk
     pub spill_location: Vec<PathBuf>,
+    /// Maximum concurrent parquet metadata fetches during query planning
+    pub metadata_fetch_concurrency: usize,
 }

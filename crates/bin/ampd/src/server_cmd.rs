@@ -168,5 +168,6 @@ pub fn config_from_common(config: &CommonConfig) -> ServerConfig {
         max_mem_mb: config.max_mem_mb,
         query_max_mem_mb: config.query_max_mem_mb,
         spill_location: config.spill_location.clone(),
+        metadata_fetch_concurrency: config.metadata_fetch_concurrency,
     }
 }
