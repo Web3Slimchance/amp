@@ -235,15 +235,14 @@ impl Client {
                 let elapsed = last_progress_report.elapsed();
                 if elapsed >= Duration::from_secs(15) {
                     let blocks_streamed = block_num - start_block;
-                    let percentage_streamed = (blocks_streamed as f32 / total_blocks_to_stream as f32) * 100.0;
                     tracing::info!(
-                        current = %block_num,
-                        start = %start_block,
-                        end = %end_block,
-                        "Progress {}/{} ({:.2}%) blocks",
                         blocks_streamed,
                         total_blocks_to_stream,
-                        percentage_streamed
+                        progress_percentage = (blocks_streamed as f32 / total_blocks_to_stream as f32) * 100.0,
+                        current_block = block_num,
+                        start_block,
+                        end_block,
+                        "Block fetch progress"
                     );
                     last_progress_report = Instant::now();
                 }
@@ -427,21 +426,21 @@ impl Client {
                 }
                 let total_blocks_to_stream = end_block - start_block + 1;
                 tracing::info!(
-                    "Progress {}/{} ({}%) blocks (with {} txns) in {}ms",
                     blocks_completed,
                     total_blocks_to_stream,
-                    (blocks_completed as f32 / total_blocks_to_stream as f32) * 100.0,
+                    progress_percentage = (blocks_completed as f32 / total_blocks_to_stream as f32) * 100.0,
                     txns_completed,
-                    start.elapsed().as_millis()
+                    elapsed_ms = start.elapsed().as_millis() as u64,
+                    "Block fetch progress"
                 );
             }
             tracing::info!(
-                "Total time to fetch blocks {} to {}: {}ms, processed {} blocks with {} txns",
                 start_block,
                 end_block,
-                stream_start.elapsed().as_millis(),
+                elapsed_ms = stream_start.elapsed().as_millis() as u64,
                 blocks_completed,
-                txns_completed
+                txns_completed,
+                "Block fetch completed"
             );
         }
     }
