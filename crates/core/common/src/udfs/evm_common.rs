@@ -226,6 +226,25 @@ impl Event {
         Ok(Fields::from(fields))
     }
 
+    pub fn topic_types(&self) -> &[DynSolType] {
+        &self.topic_types
+    }
+
+    pub fn body_types(&self) -> &[DynSolType] {
+        match &self.body_tuple {
+            DynSolType::Tuple(types) => types,
+            _ => unreachable!("body_tuple is always a Tuple"),
+        }
+    }
+
+    pub fn body_tuple(&self) -> &DynSolType {
+        &self.body_tuple
+    }
+
+    pub fn event_name(&self) -> &str {
+        &self.name
+    }
+
     pub fn topic0(&self) -> Result<B256, DataFusionError> {
         match self.topic0 {
             Some(topic0) => Ok(topic0),
@@ -1089,7 +1108,7 @@ pub fn sol_to_arrow_type(ty: &DynSolType) -> Result<DataType, DataFusionError> {
 /// Reference types (string, bytes, arrays, tuples) are stored as their keccak256 hash
 /// (bytes32) in indexed event parameters, so we return FixedSizeBinary(32) for those.
 /// This matches the actual data being stored in topics.
-fn sol_to_arrow_type_for_indexed(ty: &DynSolType) -> Result<DataType, DataFusionError> {
+pub fn sol_to_arrow_type_for_indexed(ty: &DynSolType) -> Result<DataType, DataFusionError> {
     use DynSolType::*;
     match ty {
         // Value types can be stored directly in topics

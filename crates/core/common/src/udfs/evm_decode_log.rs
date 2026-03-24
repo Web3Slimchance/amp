@@ -11,13 +11,13 @@ use datafusion::{
     prelude::Expr,
     scalar::ScalarValue,
 };
-use itertools::izip;
 
 pub use super::evm_common::{DEC256_PREC, Event};
+use super::evm_decode_fast::decode_columnar;
 use crate::{
     BYTES32_TYPE, Bytes32ArrayType,
     arrow::{
-        array::{Array, BinaryArray, StructBuilder},
+        array::{Array, BinaryArray},
         datatypes::{DataType, Field},
     },
 };
@@ -203,17 +203,7 @@ fn decode(
         return Ok(Arc::new(builder.finish()));
     }
 
-    let mut builder = StructBuilder::from_fields(fields, topic1.len());
-    for (t1, t2, t3, d) in izip!(topic1, topic2, topic3, data) {
-        event.decode_topic(&mut builder, 1, t1)?;
-        event.decode_topic(&mut builder, 2, t2)?;
-        event.decode_topic(&mut builder, 3, t3)?;
-        event.decode_body(&mut builder, d)?;
-        builder.append(true);
-    }
-
-    let structs = builder.finish();
-    Ok(Arc::new(structs))
+    decode_columnar(&event, topic1, topic2, topic3, data)
 }
 
 #[cfg(test)]
