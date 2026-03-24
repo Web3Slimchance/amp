@@ -143,9 +143,13 @@ impl PhysicalTable {
         // The blocking computation is offloaded to a dedicated thread pool via `spawn_blocking`
         // to prevent blocking the async runtime. The `missing_ranges` function performs
         // CPU-intensive operations (sorting, chain building) that can take milliseconds.
-        let ranges = tokio::task::spawn_blocking(move || missing_ranges(segments, desired))
-            .await
-            .map_err(MissingRangesError::TaskPanicked)?;
+        let parent_span = tracing::Span::current();
+        let ranges = tokio::task::spawn_blocking(move || {
+            let _span = tracing::info_span!(parent: parent_span, "missing_ranges").entered();
+            missing_ranges(segments, desired)
+        })
+        .await
+        .map_err(MissingRangesError::TaskPanicked)?;
 
         Ok(ranges)
     }
@@ -160,9 +164,13 @@ impl PhysicalTable {
         // The blocking computation is offloaded to a dedicated thread pool via `spawn_blocking`
         // to prevent blocking the async runtime. The `canonical_chain` function performs
         // CPU-intensive operations (sorting, chain building) that can take milliseconds.
-        let canonical = tokio::task::spawn_blocking(move || canonical_chain(segments))
-            .await
-            .map_err(CanonicalChainError::TaskPanicked)?;
+        let parent_span = tracing::Span::current();
+        let canonical = tokio::task::spawn_blocking(move || {
+            let _span = tracing::info_span!(parent: parent_span, "canonical_chain").entered();
+            canonical_chain(segments)
+        })
+        .await
+        .map_err(CanonicalChainError::TaskPanicked)?;
 
         if let Some(start_block) = self.dataset_start_block
             && let Some(canonical) = &canonical
