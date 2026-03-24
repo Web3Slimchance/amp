@@ -133,6 +133,7 @@ fn show_dataset_descriptor(descriptor: &serde_json::Value) -> Option<String> {
             dataset_name = desc.dataset_name,
             hash = &desc.manifest_hash.as_str()[..7],
         )),
+        JobDescriptor::Gc(desc) => Some(format!("gc location:{}", desc.location_id)),
     }
 }
 

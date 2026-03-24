@@ -217,6 +217,13 @@ impl From<amp_worker_datasets_derived::job_descriptor::JobDescriptor> for JobDes
     }
 }
 
+impl From<amp_worker_gc::job_descriptor::JobDescriptor> for JobDescriptor {
+    fn from(desc: amp_worker_gc::job_descriptor::JobDescriptor) -> Self {
+        let raw: EventDetailOwned = desc.into();
+        Self(raw.into_inner())
+    }
+}
+
 /// Errors that can occur when scheduling a dataset dump job
 #[derive(Debug, thiserror::Error)]
 pub enum ScheduleJobError {

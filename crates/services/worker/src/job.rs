@@ -56,4 +56,5 @@ impl From<Job> for metadata_db::jobs::Job {
 pub enum JobDescriptor {
     MaterializeRaw(amp_worker_datasets_raw::job_descriptor::JobDescriptor),
     MaterializeDerived(amp_worker_datasets_derived::job_descriptor::JobDescriptor),
+    Gc(amp_worker_gc::job_descriptor::JobDescriptor),
 }
