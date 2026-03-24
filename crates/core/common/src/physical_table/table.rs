@@ -146,7 +146,7 @@ impl PhysicalTable {
         let parent_span = tracing::Span::current();
         let ranges = tokio::task::spawn_blocking(move || {
             let _span = tracing::info_span!(parent: parent_span, "missing_ranges").entered();
-            missing_ranges(segments, desired)
+            missing_ranges(&segments, desired)
         })
         .await
         .map_err(MissingRangesError::TaskPanicked)?;
@@ -167,7 +167,7 @@ impl PhysicalTable {
         let parent_span = tracing::Span::current();
         let canonical = tokio::task::spawn_blocking(move || {
             let _span = tracing::info_span!(parent: parent_span, "canonical_chain").entered();
-            canonical_chain(segments)
+            canonical_chain(&segments)
         })
         .await
         .map_err(CanonicalChainError::TaskPanicked)?;

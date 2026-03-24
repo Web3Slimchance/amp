@@ -3184,6 +3184,7 @@ dependencies = [
  "bigdecimal",
  "bytes",
  "chrono",
+ "criterion",
  "datafusion",
  "datafusion-datasource",
  "datafusion-tracing",

@@ -1,4 +1,4 @@
-use std::ops::RangeInclusive;
+use std::{collections::HashMap, ops::RangeInclusive};
 
 use datasets_common::{block_num::BlockNum, block_range::BlockRange};
 use metadata_db::files::FileId;
@@ -169,13 +169,76 @@ impl IntoIterator for Chain {
 /// Returns the canonical chain of segments.
 ///
 /// The canonical chain starts from the earliest available block and extends to the greatest block
-/// height reachable through contiguous segments. When multiple segments cover the same block range
-/// (indicating a reorg or compaction), the segment with the most recent `last_modified` timestamp
-/// is chosen.
-///
-/// The input order of `segments` does not affect the result.
-pub fn canonical_chain(segments: Vec<Segment>) -> Option<Chain> {
-    chains(segments).map(|Chains { canonical, .. }| canonical)
+/// height reachable through adjacent segments. Adjacency is determined by matching block hashes:
+/// a segment's `prev_hash` must equal its predecessor's `hash`. When multiple chains reach the
+/// same end block, the one with fewer segments (more compacted) is preferred.
+pub fn canonical_chain(segments: &[Segment]) -> Option<Chain> {
+    if segments.is_empty() {
+        return None;
+    }
+
+    // Index segments by their end hashes so we can find predecessors via prev_hash lookup in O(1).
+    let mut hash_index: HashMap<Vec<_>, Vec<usize>> = Default::default();
+    for (idx, seg) in segments.iter().enumerate() {
+        let hashes: Vec<_> = seg.ranges.iter().map(|r| r.hash).collect();
+        hash_index.entry(hashes).or_default().push(idx);
+    }
+
+    // For each segment, track the best chain ending there: (chain_length, predecessor).
+    // Processing in start-block order ensures predecessors are resolved before successors.
+    let mut dp: Vec<Option<(usize, Option<usize>)>> = vec![None; segments.len()];
+
+    let mut order: Vec<usize> = (0..segments.len()).collect();
+    order.sort_unstable_by(|&a, &b| segments[a].cmp_by_start(&segments[b]));
+
+    let earliest = &segments[order[0]];
+
+    for idx in order {
+        let seg = &segments[idx];
+        let prev_hashes: Vec<_> = seg.ranges.iter().map(|r| r.prev_hash).collect();
+
+        let best_pred = hash_index
+            .get(&prev_hashes)
+            .into_iter()
+            .flatten()
+            .filter(|&&pred_idx| dp[pred_idx].is_some() && segments[pred_idx].adjacent(seg))
+            .max_by(|&&a, &&b| {
+                let (count_a, _) = dp[a].unwrap();
+                let (count_b, _) = dp[b].unwrap();
+                // Reversed: prefer fewer segments (more compacted).
+                count_b.cmp(&count_a)
+            });
+
+        dp[idx] = match best_pred {
+            Some(&pred_idx) => {
+                let (count, _) = dp[pred_idx].unwrap();
+                Some((count + 1, Some(pred_idx)))
+            }
+            // Only segments at the earliest start position can be roots.
+            None if seg.cmp_by_start(earliest) == std::cmp::Ordering::Equal => Some((1, None)),
+            None => None,
+        };
+    }
+
+    // Select the chain that reaches the highest block, breaking ties by fewest segments.
+    let best_idx = (0..segments.len())
+        .filter(|&idx| dp[idx].is_some())
+        .max_by(|&a, &b| {
+            let (count_a, _) = dp[a].unwrap();
+            let (count_b, _) = dp[b].unwrap();
+            segments[a]
+                .cmp_by_end(&segments[b])
+                // Prefer fewer segments (more compacted).
+                .then(count_b.cmp(&count_a))
+        })?;
+
+    // Walk predecessor links from best endpoint back to the root.
+    let mut chain: Vec<Segment> = std::iter::successors(Some(best_idx), |&idx| dp[idx].unwrap().1)
+        .map(|i| segments[i].clone())
+        .collect();
+    chain.reverse();
+
+    Some(Chain(chain))
 }
 
 /// Return the block ranges missing from this table out of the given `desired` range. The
@@ -207,10 +270,10 @@ pub fn canonical_chain(segments: Vec<Segment>) -> Option<Chain> {
 /// ```
 ///
 /// - Ranges 00-02 and 18-20 are missing due to block range gap.
-/// - Range 06-08 is missing due to reorg. The canonical chan overlaps with the fork,
+/// - Range 06-08 is missing due to reorg. The canonical chain overlaps with the fork,
 ///   so we should re-extract the previous segment.
 pub fn missing_ranges(
-    segments: Vec<Segment>,
+    segments: &[Segment],
     desired: RangeInclusive<BlockNum>,
 ) -> Vec<RangeInclusive<BlockNum>> {
     // Invariant: this function only works for single-network segments (raw datasets)
@@ -221,7 +284,7 @@ pub fn missing_ranges(
     let mut missing = vec![desired.clone()];
 
     // remove overlapping ranges from each segment
-    for segment in &segments {
+    for segment in segments {
         assert_eq!(segment.ranges.len(), 1);
         let segment_range = segment.ranges[0].numbers.clone();
         let mut index = 0;
@@ -238,12 +301,12 @@ pub fn missing_ranges(
     }
 
     // add canonical range overlapping with reorg
-    if let Some(chains) = chains(segments)
-        && let Some(fork) = chains.fork
+    if let Some(canonical) = canonical_chain(segments)
+        && let Some(fork) = fork_chain(&canonical, segments)
     {
         let reorg_block = fork.first_ranges()[0].start().saturating_sub(1);
-        let canonical_segments = &chains.canonical.0;
-        let canonical_range = canonical_segments
+        let canonical_range = canonical
+            .0
             .iter()
             .map(|s| s.ranges[0].numbers.clone())
             .rfind(|r| r.contains(&reorg_block));
@@ -258,86 +321,38 @@ pub fn missing_ranges(
     merge_ranges(missing)
 }
 
-#[derive(Debug, PartialEq, Eq)]
-struct Chains {
-    /// See `canonical_segments`.
-    canonical: Chain,
-    /// The chain with the greatest block height past the canonical chain, where there is no gap
-    /// between the canonical chain and the fork.
-    ///
-    /// ```text
-    ///              ┌───────────────┐
-    ///   canonical: │ a │ b │ c │ d │
-    ///              └───────────────┘
-    ///                      ┌────────────┐
-    ///   fork:              │ c'│ d'│ e' │
-    ///                      └────────────┘
-    /// ```
-    fork: Option<Chain>,
-}
-
-/// Find the canonical and fork chain from a sequence of segments. The result is independent of the
-/// input order.
-#[inline]
-fn chains(mut segments: Vec<Segment>) -> Option<Chains> {
-    if segments.is_empty() {
-        return None;
-    }
-
-    // Sort by start block ascending, then by last_modified descending.
-    // - start ascending: enables forward single-pass chain construction
-    // - last_modified descending: when multiple segments could extend the chain, the first one
-    //   encountered (most recently modified) is preferred to favor compacted segments.
-    segments.sort_unstable_by(|a, b| {
-        use std::cmp::Ord;
-        a.cmp_by_start(b)
-            .then_with(|| Ord::cmp(&b.object.last_modified, &a.object.last_modified))
-    });
-
-    // Build canonical chain in a single forward pass. Because segments are sorted by start block,
-    // we simply check if each segment is adjacent to the current chain end. The first adjacent
-    // segment we find is optimal due to the secondary sort by last_modified.
-    let mut canonical: Vec<Segment> = Default::default();
-    let mut non_canonical: Vec<Segment> = Default::default();
-    for segment in segments {
-        if canonical.is_empty() {
-            canonical.push(segment);
-            continue;
-        }
-
-        if canonical.last().unwrap().adjacent(&segment) {
-            canonical.push(segment);
-        } else {
-            non_canonical.push(segment);
-        }
-    }
-
-    let canonical = Chain(canonical);
-
-    // Sort non-canonical segments by end block ascending, then last_modified ascending.
-    // - end ascending: allows pop() to yield highest-end segments first (fork candidates)
-    // - last_modified ascending: most recent segments are popped first, to favor compacted
-    //   segments.
-    non_canonical.sort_unstable_by(|a, b| {
-        use std::cmp::Ord;
-        a.cmp_by_end(b)
-            .then_with(|| Ord::cmp(&a.object.last_modified, &b.object.last_modified))
-    });
+/// Returns the fork chain: the chain with the greatest block height past the canonical chain,
+/// where there is no gap between the canonical chain and the fork.
+///
+/// ```text
+///              ┌───────────────┐
+///   canonical: │ a │ b │ c │ d │
+///              └───────────────┘
+///                      ┌────────────┐
+///   fork:              │ c'│ d'│ e' │
+///                      └────────────┘
+/// ```
+fn fork_chain(canonical: &Chain, segments: &[Segment]) -> Option<Chain> {
+    // Collect non-canonical segments, sorted by end block ascending so pop() yields the
+    // highest-end fork candidates first.
+    let mut non_canonical: Vec<&Segment> = segments
+        .iter()
+        .filter(|s| !canonical.0.contains(s))
+        .collect();
+    non_canonical.sort_unstable_by(|a, b| a.cmp_by_end(b));
 
     // Search for a valid fork chain. A fork must:
     // 1. Extend beyond the canonical chain's end block
     // 2. Connect back to at most canonical.last() + 1 (to form a valid divergence point)
-    let mut fork: Option<Chain> = None;
     while let Some(fork_end) = non_canonical.pop() {
         // Early exit: remaining segments all have end <= canonical.end() (sorted ascending),
         // so none can form a fork that extends beyond canonical.
-        // For multi-network, compare lexicographically.
         if fork_end.cmp_by_end(canonical.last_segment()) != std::cmp::Ordering::Greater {
             break;
         }
 
         // Build a candidate fork chain backwards from fork_end.
-        let mut fork_segments = vec![fork_end];
+        let mut fork_segments = vec![fork_end.clone()];
         for segment in non_canonical.iter().rev() {
             if segment.adjacent(fork_segments.first().unwrap()) {
                 // Stop if adding this segment would extend the fork past the divergence point.
@@ -355,27 +370,18 @@ fn chains(mut segments: Vec<Segment>) -> Option<Chains> {
                     break;
                 }
 
-                fork_segments.insert(0, segment.clone());
+                fork_segments.insert(0, (*segment).clone());
             }
         }
         // Check if this fork connects back to a valid divergence point.
         if std::iter::zip(&fork_segments[0].ranges, &canonical.last_segment().ranges)
             .all(|(fork_range, canonical_range)| fork_range.start() <= canonical_range.end() + 1)
         {
-            fork = Some(Chain(fork_segments));
-            break;
+            return Some(Chain(fork_segments));
         }
     }
 
-    #[cfg(test)]
-    {
-        canonical.check_invariants();
-        if let Some(fork) = &fork {
-            fork.check_invariants();
-        }
-    }
-
-    Some(Chains { canonical, fork })
+    None
 }
 
 fn missing_block_ranges(
@@ -437,30 +443,22 @@ mod test {
     use std::ops::RangeInclusive;
 
     use alloy::primitives::BlockHash;
-    use chrono::DateTime;
-    use datasets_common::block_num::BlockNum;
+    use datasets_common::{block_num::BlockNum, network_id::NetworkId};
     use metadata_db::files::FileId;
     use object_store::ObjectMeta;
-    use rand::{Rng as _, RngCore as _, SeedableRng as _, rngs::StdRng, seq::SliceRandom};
+    use rand::{
+        Rng as _, RngCore as _, SeedableRng as _,
+        rngs::StdRng,
+        seq::{IndexedRandom, SliceRandom},
+    };
 
-    use super::{BlockRange, Chain, Chains, Segment};
+    use super::{BlockRange, Chain, Segment, canonical_chain, fork_chain};
 
     fn test_hash(number: u8, fork: u8) -> BlockHash {
         let mut hash: BlockHash = Default::default();
         hash.0[0] = number;
         hash.0[31] = fork;
         hash
-    }
-
-    fn test_object(timestamp: i64) -> ObjectMeta {
-        ObjectMeta {
-            location: Default::default(),
-            last_modified: DateTime::from_timestamp_millis(timestamp)
-                .expect("test timestamp should be a valid millisecond timestamp"),
-            size: 0,
-            e_tag: None,
-            version: None,
-        }
     }
 
     fn test_range(network: &str, numbers: RangeInclusive<BlockNum>, fork: (u8, u8)) -> BlockRange {
@@ -477,11 +475,21 @@ mod test {
         }
     }
 
-    fn test_segment(numbers: RangeInclusive<BlockNum>, fork: (u8, u8), timestamp: i64) -> Segment {
+    fn test_object() -> ObjectMeta {
+        ObjectMeta {
+            location: Default::default(),
+            last_modified: Default::default(),
+            size: 0,
+            e_tag: None,
+            version: None,
+        }
+    }
+
+    fn test_segment(numbers: RangeInclusive<BlockNum>, fork: (u8, u8)) -> Segment {
         let range = test_range("test", numbers.clone(), fork);
         Segment::new(
             FileId::try_from(1i64).expect("FileId::MIN is 1"),
-            test_object(timestamp),
+            test_object(),
             vec![range],
             None,
         )
@@ -490,11 +498,10 @@ mod test {
     fn test_segment_multi(
         network_a: (RangeInclusive<BlockNum>, (u8, u8)),
         network_b: (RangeInclusive<BlockNum>, (u8, u8)),
-        timestamp: i64,
     ) -> Segment {
         Segment::new(
             FileId::try_from(1i64).expect("FileId::MIN is 1"),
-            test_object(timestamp),
+            test_object(),
             vec![
                 test_range("a", network_a.0, network_a.1),
                 test_range("b", network_b.0, network_b.1),
@@ -503,314 +510,248 @@ mod test {
         )
     }
 
-    /// Tests the `chains()` function across representative scenarios.
+    fn check(
+        segments: Vec<Segment>,
+        expected_canonical: Option<Chain>,
+        expected_fork: Option<Chain>,
+    ) {
+        let canonical = canonical_chain(&segments);
+        let fork = canonical.as_ref().and_then(|c| fork_chain(c, &segments));
+        if let Some(c) = &canonical {
+            c.check_invariants();
+        }
+        if let Some(f) = &fork {
+            f.check_invariants();
+        }
+        assert_eq!(canonical, expected_canonical);
+        assert_eq!(fork, expected_fork);
+    }
+
+    /// Tests `canonical_chain` and `fork_chain` across representative scenarios.
     ///
     /// Each block is an independent scenario: a comment names the case (acting as Given),
-    /// the `super::chains(...)` call is the When, and the `assert_eq!` is the Then.
+    /// the function calls are the When, and the `assert_eq!` is the Then.
     #[test]
     fn chains_computes_canonical_and_fork() {
         // empty input
-        assert_eq!(super::chains(vec![]), None);
+        check(vec![], None, None);
 
         // single segment
-        assert_eq!(
-            super::chains(vec![test_segment(0..=0, (0, 0), 0)]),
-            Some(Chains {
-                canonical: Chain(vec![test_segment(0..=0, (0, 0), 0)]),
-                fork: None,
-            })
+        check(
+            vec![test_segment(0..=0, (0, 0))],
+            Some(Chain(vec![test_segment(0..=0, (0, 0))])),
+            None,
         );
 
         // 2 adjacent segments forming a canonical chain
-        assert_eq!(
-            super::chains(vec![
-                test_segment(0..=2, (0, 0), 0),
-                test_segment(3..=5, (0, 0), 0),
-            ]),
-            Some(Chains {
-                canonical: Chain(vec![
-                    test_segment(0..=2, (0, 0), 0),
-                    test_segment(3..=5, (0, 0), 0),
-                ]),
-                fork: None,
-            })
+        check(
+            vec![test_segment(0..=2, (0, 0)), test_segment(3..=5, (0, 0))],
+            Some(Chain(vec![
+                test_segment(0..=2, (0, 0)),
+                test_segment(3..=5, (0, 0)),
+            ])),
+            None,
         );
 
         // 3 adjacent segments forming a canonical chain
-        assert_eq!(
-            super::chains(vec![
-                test_segment(0..=1, (0, 0), 0),
-                test_segment(2..=3, (0, 0), 0),
-                test_segment(4..=5, (0, 0), 0),
-            ]),
-            Some(Chains {
-                canonical: Chain(vec![
-                    test_segment(0..=1, (0, 0), 0),
-                    test_segment(2..=3, (0, 0), 0),
-                    test_segment(4..=5, (0, 0), 0),
-                ]),
-                fork: None,
-            })
+        check(
+            vec![
+                test_segment(0..=1, (0, 0)),
+                test_segment(2..=3, (0, 0)),
+                test_segment(4..=5, (0, 0)),
+            ],
+            Some(Chain(vec![
+                test_segment(0..=1, (0, 0)),
+                test_segment(2..=3, (0, 0)),
+                test_segment(4..=5, (0, 0)),
+            ])),
+            None,
         );
 
         // non-adjacent segments
-        assert_eq!(
-            super::chains(vec![
-                test_segment(0..=2, (0, 0), 0),
-                test_segment(5..=7, (0, 0), 0),
-            ]),
-            Some(Chains {
-                canonical: Chain(vec![test_segment(0..=2, (0, 0), 0)]),
-                fork: None,
-            })
+        check(
+            vec![test_segment(0..=2, (0, 0)), test_segment(5..=7, (0, 0))],
+            Some(Chain(vec![test_segment(0..=2, (0, 0))])),
+            None,
         );
 
         // multiple non-adjacent segments
-        assert_eq!(
-            super::chains(vec![
-                test_segment(5..=7, (0, 0), 0),
-                test_segment(0..=2, (0, 0), 0),
-                test_segment(10..=12, (0, 0), 0),
-            ]),
-            Some(Chains {
-                canonical: Chain(vec![test_segment(0..=2, (0, 0), 0)]),
-                fork: None,
-            })
+        check(
+            vec![
+                test_segment(5..=7, (0, 0)),
+                test_segment(0..=2, (0, 0)),
+                test_segment(10..=12, (0, 0)),
+            ],
+            Some(Chain(vec![test_segment(0..=2, (0, 0))])),
+            None,
         );
 
         // overlapping segments outside canonical
-        assert_eq!(
-            super::chains(vec![
-                test_segment(0..=2, (0, 0), 0),
-                test_segment(3..=5, (0, 0), 0),
-                test_segment(4..=5, (0, 0), 0),
-                test_segment(4..=6, (0, 0), 0),
-                test_segment(3..=6, (0, 0), 1),
-            ]),
-            Some(Chains {
-                canonical: Chain(vec![
-                    test_segment(0..=2, (0, 0), 0),
-                    test_segment(3..=6, (0, 0), 1),
-                ]),
-                fork: None,
-            })
+        check(
+            vec![
+                test_segment(0..=2, (0, 0)),
+                test_segment(3..=5, (0, 0)),
+                test_segment(4..=5, (0, 0)),
+                test_segment(4..=6, (0, 0)),
+                test_segment(3..=6, (0, 0)),
+            ],
+            Some(Chain(vec![
+                test_segment(0..=2, (0, 0)),
+                test_segment(3..=6, (0, 0)),
+            ])),
+            None,
         );
 
         // simple fork at start block
-        assert_eq!(
-            super::chains(vec![
-                test_segment(0..=2, (0, 0), 0),
-                test_segment(3..=5, (0, 0), 0),
-                test_segment(3..=6, (1, 0), 0),
-            ]),
-            Some(Chains {
-                canonical: Chain(vec![
-                    test_segment(0..=2, (0, 0), 0),
-                    test_segment(3..=5, (0, 0), 0),
-                ]),
-                fork: Some(Chain(vec![test_segment(3..=6, (1, 0), 0)])),
-            })
+        check(
+            vec![
+                test_segment(0..=2, (0, 0)),
+                test_segment(3..=5, (0, 0)),
+                test_segment(3..=6, (1, 0)),
+            ],
+            Some(Chain(vec![
+                test_segment(0..=2, (0, 0)),
+                test_segment(3..=5, (0, 0)),
+            ])),
+            Some(Chain(vec![test_segment(3..=6, (1, 0))])),
         );
 
         // reorg of multiple segments
-        assert_eq!(
-            super::chains(vec![
-                test_segment(0..=2, (0, 0), 0),
-                test_segment(3..=5, (0, 0), 0),
-                test_segment(3..=5, (1, 1), 0),
-                test_segment(6..=8, (1, 0), 0),
-                test_segment(6..=8, (0, 0), 0),
-            ]),
-            Some(Chains {
-                canonical: Chain(vec![
-                    test_segment(0..=2, (0, 0), 0),
-                    test_segment(3..=5, (0, 0), 0),
-                    test_segment(6..=8, (0, 0), 0),
-                ]),
-                fork: None,
-            })
+        check(
+            vec![
+                test_segment(0..=2, (0, 0)),
+                test_segment(3..=5, (0, 0)),
+                test_segment(3..=5, (1, 1)),
+                test_segment(6..=8, (1, 0)),
+                test_segment(6..=8, (0, 0)),
+            ],
+            Some(Chain(vec![
+                test_segment(0..=2, (0, 0)),
+                test_segment(3..=5, (0, 0)),
+                test_segment(6..=8, (0, 0)),
+            ])),
+            None,
         );
 
         // fork of multiple segments
-        assert_eq!(
-            super::chains(vec![
-                test_segment(0..=2, (0, 0), 0),
-                test_segment(3..=5, (0, 0), 0),
-                test_segment(3..=5, (1, 1), 0),
-                test_segment(6..=9, (1, 0), 0),
-                test_segment(6..=8, (0, 0), 0),
-            ]),
-            Some(Chains {
-                canonical: Chain(vec![
-                    test_segment(0..=2, (0, 0), 0),
-                    test_segment(3..=5, (0, 0), 0),
-                    test_segment(6..=8, (0, 0), 0),
-                ]),
-                fork: Some(Chain(vec![
-                    test_segment(3..=5, (1, 1), 0),
-                    test_segment(6..=9, (1, 0), 0),
-                ])),
-            })
-        );
-
-        // simple reorg at timestamp
-        assert_eq!(
-            super::chains(vec![
-                test_segment(0..=2, (0, 0), 0),
-                test_segment(3..=5, (0, 1), 1),
-                test_segment(3..=5, (0, 0), 0),
-            ]),
-            Some(Chains {
-                canonical: Chain(vec![
-                    test_segment(0..=2, (0, 0), 0),
-                    test_segment(3..=5, (0, 1), 1),
-                ]),
-                fork: None,
-            })
+        check(
+            vec![
+                test_segment(0..=2, (0, 0)),
+                test_segment(3..=5, (0, 0)),
+                test_segment(3..=5, (1, 1)),
+                test_segment(6..=9, (1, 0)),
+                test_segment(6..=8, (0, 0)),
+            ],
+            Some(Chain(vec![
+                test_segment(0..=2, (0, 0)),
+                test_segment(3..=5, (0, 0)),
+                test_segment(6..=8, (0, 0)),
+            ])),
+            Some(Chain(vec![
+                test_segment(3..=5, (1, 1)),
+                test_segment(6..=9, (1, 0)),
+            ])),
         );
 
         // multiple reorgs past canonical
-        assert_eq!(
-            super::chains(vec![
-                test_segment(0..=3, (0, 0), 0),
-                test_segment(4..=6, (1, 1), 1),
-                test_segment(4..=8, (0, 0), 2),
-                test_segment(7..=9, (1, 1), 3),
-                test_segment(4..=9, (2, 2), 4),
-            ]),
-            Some(Chains {
-                canonical: Chain(vec![
-                    test_segment(0..=3, (0, 0), 0),
-                    test_segment(4..=8, (0, 0), 2),
-                ]),
-                fork: Some(Chain(vec![test_segment(4..=9, (2, 2), 4)])),
-            })
+        check(
+            vec![
+                test_segment(0..=3, (0, 0)),
+                test_segment(4..=6, (1, 1)),
+                test_segment(4..=8, (0, 0)),
+                test_segment(7..=9, (1, 1)),
+                test_segment(4..=9, (2, 2)),
+            ],
+            Some(Chain(vec![
+                test_segment(0..=3, (0, 0)),
+                test_segment(4..=8, (0, 0)),
+            ])),
+            Some(Chain(vec![test_segment(4..=9, (2, 2))])),
         );
 
         // multi-segment fork extending past canonical
-        assert_eq!(
-            super::chains(vec![
-                test_segment(0..=3, (0, 0), 0),
-                test_segment(4..=5, (1, 1), 1),
-                test_segment(6..=7, (1, 1), 2),
-                test_segment(8..=9, (1, 1), 3),
-            ]),
-            Some(Chains {
-                canonical: Chain(vec![test_segment(0..=3, (0, 0), 0)]),
-                fork: Some(Chain(vec![
-                    test_segment(4..=5, (1, 1), 1),
-                    test_segment(6..=7, (1, 1), 2),
-                    test_segment(8..=9, (1, 1), 3),
-                ])),
-            })
+        check(
+            vec![
+                test_segment(0..=3, (0, 0)),
+                test_segment(4..=5, (1, 1)),
+                test_segment(6..=7, (1, 1)),
+                test_segment(8..=9, (1, 1)),
+            ],
+            Some(Chain(vec![test_segment(0..=3, (0, 0))])),
+            Some(Chain(vec![
+                test_segment(4..=5, (1, 1)),
+                test_segment(6..=7, (1, 1)),
+                test_segment(8..=9, (1, 1)),
+            ])),
         );
 
-        // Regression test: fork should not extend back past the actual divergence point.
-        // This avoids incidents where unrelated old segments happen to form a valid fork chain.
-        //
-        // Scenario:
-        // - Canonical: [0-5] → [6-10] (compacted with stale hash, newer timestamp wins)
-        // - Non-canonical: [3-5] → [6-10] → [11-15] (post-reorg chain extending past canonical)
-        // - The segment [3-5] chains backwards from [6-10] but duplicates canonical data
-        //   (ends at block 5 with the same hash as canonical's [0-5]), so it's excluded.
-        //
-        // The fix ensures fork building stops when a segment duplicates canonical data
-        // (same end block and hash), as it represents the same chain state, not a divergence.
-        assert_eq!(
-            super::chains(vec![
-                // Canonical chain segments
-                test_segment(0..=5, (0, 0), 0),
-                test_segment(6..=10, (0, 0), 2), // Compacted, newer timestamp, stale hash
-                // Non-canonical segments that form a chain
-                test_segment(3..=5, (0, 0), 0), // Duplicates canonical [0-5], excluded
-                test_segment(6..=10, (0, 1), 1), // Post-reorg segment (different hash)
-                test_segment(11..=15, (1, 1), 1), // Extends past canonical
-            ]),
-            Some(Chains {
-                canonical: Chain(vec![
-                    test_segment(0..=5, (0, 0), 0),
-                    test_segment(6..=10, (0, 0), 2),
-                ]),
-                // Fork correctly starts at block 6, not block 3.
-                fork: Some(Chain(vec![
-                    test_segment(6..=10, (0, 1), 1),
-                    test_segment(11..=15, (1, 1), 1),
-                ])),
-            })
+        // canonical_chain maximizes end block, so it picks the longer path through
+        // the post-reorg segments [6-10'] -> [11-15] over the shorter [6-10].
+        check(
+            vec![
+                test_segment(0..=5, (0, 0)),
+                test_segment(6..=10, (0, 0)),
+                test_segment(3..=5, (0, 0)),
+                test_segment(6..=10, (0, 1)),
+                test_segment(11..=15, (1, 1)),
+            ],
+            Some(Chain(vec![
+                test_segment(0..=5, (0, 0)),
+                test_segment(6..=10, (0, 1)),
+                test_segment(11..=15, (1, 1)),
+            ])),
+            None,
         );
     }
 
-    /// Tests `chains()` with multi-network segments.
-    ///
-    /// Same scenario/assertion layout as `chains_computes_canonical_and_fork`.
+    /// Tests `canonical_chain` and `fork_chain` with multi-network segments.
     #[test]
     fn chains_multi_network_computes_canonical_and_fork() {
         // Case 1: Canonical chain with 2 networks
-        // Both networks have adjacent ranges forming a canonical chain
-        assert_eq!(
-            super::chains(vec![
-                test_segment_multi((0..=2, (0, 0)), (0..=2, (0, 0)), 0),
-                test_segment_multi((3..=5, (0, 0)), (3..=5, (0, 0)), 0),
-            ]),
-            Some(Chains {
-                canonical: Chain(vec![
-                    test_segment_multi((0..=2, (0, 0)), (0..=2, (0, 0)), 0),
-                    test_segment_multi((3..=5, (0, 0)), (3..=5, (0, 0)), 0),
-                ]),
-                fork: None,
-            })
+        check(
+            vec![
+                test_segment_multi((0..=2, (0, 0)), (0..=2, (0, 0))),
+                test_segment_multi((3..=5, (0, 0)), (3..=5, (0, 0))),
+            ],
+            Some(Chain(vec![
+                test_segment_multi((0..=2, (0, 0)), (0..=2, (0, 0))),
+                test_segment_multi((3..=5, (0, 0)), (3..=5, (0, 0))),
+            ])),
+            None,
         );
 
         // Case 2: First network diverges to create a fork
-        // Canonical chain has both networks up to block 5
-        // Fork extends both networks to block 6 with different hashes
-        assert_eq!(
-            super::chains(vec![
-                test_segment_multi((0..=2, (0, 0)), (0..=2, (0, 0)), 0),
-                test_segment_multi((3..=5, (0, 0)), (3..=5, (0, 0)), 0),
-                test_segment_multi((3..=6, (0, 1)), (6..=7, (0, 0)), 0),
-            ]),
-            Some(Chains {
-                canonical: Chain(vec![
-                    test_segment_multi((0..=2, (0, 0)), (0..=2, (0, 0)), 0),
-                    test_segment_multi((3..=5, (0, 0)), (3..=5, (0, 0)), 0),
-                ]),
-                fork: Some(Chain(vec![test_segment_multi(
-                    (3..=6, (0, 1)),
-                    (6..=7, (0, 0)),
-                    0
-                )])),
-            })
+        check(
+            vec![
+                test_segment_multi((0..=2, (0, 0)), (0..=2, (0, 0))),
+                test_segment_multi((3..=5, (0, 0)), (3..=5, (0, 0))),
+                test_segment_multi((3..=6, (0, 1)), (6..=7, (0, 0))),
+            ],
+            Some(Chain(vec![
+                test_segment_multi((0..=2, (0, 0)), (0..=2, (0, 0))),
+                test_segment_multi((3..=5, (0, 0)), (3..=5, (0, 0))),
+            ])),
+            Some(Chain(vec![test_segment_multi(
+                (3..=6, (0, 1)),
+                (6..=7, (0, 0)),
+            )])),
         );
 
-        // Case 3: First network diverges by 1 segment, second network diverges by 2 segments.
-        // Canonical (2 segments):
-        //   Network a: [0..=2] -> [3..=5]
-        //   Network b: [0..=2] -> [3..=5]
-        // Fork (2 segments extending past canonical):
-        //   Segment 1: Network A [3..=6] (reorg at 3, extends to 6)
-        //              Network B [3..=7] (reorg at 3, extends to 7)
-        //   Segment 2: Network A [7..=8] (continues fork)
-        //              Network B [8..=9] (continues fork, diverges more)
-        // Fork ends at (8, 10) which is greater than canonical's (5, 5).
-        // Canonical has newer timestamp (3) so it's preferred over fork (timestamp 1, 2).
-        assert_eq!(
-            super::chains(vec![
-                test_segment_multi((0..=2, (0, 0)), (0..=2, (0, 0)), 0),
-                test_segment_multi((3..=6, (0, 1)), (3..=7, (0, 1)), 1),
-                test_segment_multi((7..=8, (1, 1)), (8..=9, (1, 1)), 2),
-                test_segment_multi((3..=5, (0, 0)), (3..=5, (0, 0)), 3),
-            ]),
-            Some(Chains {
-                canonical: Chain(vec![
-                    test_segment_multi((0..=2, (0, 0)), (0..=2, (0, 0)), 0),
-                    test_segment_multi((3..=5, (0, 0)), (3..=5, (0, 0)), 3),
-                ]),
-                fork: Some(Chain(vec![
-                    test_segment_multi((3..=6, (0, 1)), (3..=7, (0, 1)), 1),
-                    test_segment_multi((7..=8, (1, 1)), (8..=9, (1, 1)), 2),
-                ])),
-            })
+        // Case 3: canonical_chain maximizes end block, so it picks the longer path:
+        //   [0..=2] -> [3..=6, 3..=7] -> [7..=8, 8..=9]
+        check(
+            vec![
+                test_segment_multi((0..=2, (0, 0)), (0..=2, (0, 0))),
+                test_segment_multi((3..=6, (0, 1)), (3..=7, (0, 1))),
+                test_segment_multi((7..=8, (1, 1)), (8..=9, (1, 1))),
+                test_segment_multi((3..=5, (0, 0)), (3..=5, (0, 0))),
+            ],
+            Some(Chain(vec![
+                test_segment_multi((0..=2, (0, 0)), (0..=2, (0, 0))),
+                test_segment_multi((3..=6, (0, 1)), (3..=7, (0, 1))),
+                test_segment_multi((7..=8, (1, 1)), (8..=9, (1, 1))),
+            ])),
+            None,
         );
     }
 
@@ -829,9 +770,9 @@ mod test {
             let segments = ranges
                 .iter()
                 .enumerate()
-                .map(|(fork, range)| test_segment(range.clone(), (fork as u8, fork as u8), 0))
-                .collect();
-            super::missing_ranges(segments, desired)
+                .map(|(fork, range)| test_segment(range.clone(), (fork as u8, fork as u8)))
+                .collect::<Vec<_>>();
+            super::missing_ranges(&segments, desired)
         }
 
         assert_eq!(missing_ranges(&[], 0..=10), vec![0..=10]);
@@ -886,7 +827,7 @@ mod test {
                     .map(|s| s.ranges[0].end() + 1)
                     .unwrap_or(*numbers.start());
                 let end = rng.random_range(start..=*numbers.end());
-                segments.push(test_segment(start..=end, (fork, fork), 0));
+                segments.push(test_segment(start..=end, (fork, fork)));
                 if end == *numbers.end() {
                     break;
                 }
@@ -920,30 +861,21 @@ mod test {
             segments.shuffle(&mut rng);
 
             //* When
-            let chains = super::chains(segments)
-                .expect("chains should return Some for non-empty segment set");
+            let expected = canonical_chain(&segments)
+                .expect("canonical_chain should return Some for non-empty segment set");
+            let fork = fork_chain(&expected, &segments);
 
             //* Then
-            assert_eq!(chains.canonical, canonical, "seed: {seed}");
-            if let Some(fork) = chains.fork {
-                assert!(
-                    fork.last_ranges()[0].end() > canonical.last_ranges()[0].end(),
-                    "seed: {seed}: fork should extend past canonical end"
-                );
-                assert!(
-                    fork.first_ranges()[0].start() > canonical.first_ranges()[0].start(),
-                    "seed: {seed}: fork should start after canonical start"
-                );
-                assert!(
-                    fork.first_ranges()[0].start() <= canonical.last_ranges()[0].end() + 1,
-                    "seed: {seed}: fork should connect back to canonical"
-                );
+            assert_eq!(expected, canonical);
+            if let Some(fork) = fork {
+                assert!(fork.last_ranges()[0].end() > canonical.last_ranges()[0].end());
+                assert!(fork.first_ranges()[0].start() > canonical.first_ranges()[0].start());
+                assert!(fork.first_ranges()[0].start() <= canonical.last_ranges()[0].end() + 1);
             } else {
                 assert!(
                     other_chains
                         .iter()
-                        .all(|c| c.last_ranges()[0].end() <= canonical.last_ranges()[0].end()),
-                    "seed: {seed}: non-canonical chains should not extend past canonical"
+                        .all(|c| c.last_ranges()[0].end() <= canonical.last_ranges()[0].end())
                 );
             }
         }
@@ -1031,5 +963,99 @@ mod test {
             super::merge_ranges(vec![1..=5, 7..=10]),
             vec![1..=5, 7..=10]
         );
+    }
+
+    #[test]
+    fn prop_canonical_chain_monotonically_increases_with_compaction() {
+        fn hash(index: u8) -> BlockHash {
+            let mut hash = BlockHash::default();
+            hash[0] = index;
+            hash
+        }
+        fn segment(
+            numbers: RangeInclusive<BlockNum>,
+            prev_hash: BlockHash,
+            hash: BlockHash,
+            timestamp: u8,
+        ) -> Segment {
+            let network = NetworkId::new_unchecked("test".into());
+            let range = BlockRange {
+                numbers,
+                network,
+                hash,
+                prev_hash,
+                timestamp: Some(timestamp as u64),
+            };
+            Segment::new(
+                FileId::try_from(1_i64).unwrap(),
+                test_object(),
+                vec![range],
+                None,
+            )
+        }
+
+        let seed = rand::rng().next_u64();
+        println!("seed: {seed}");
+        let mut rng = StdRng::seed_from_u64(seed);
+
+        let mut index = 0;
+        let mut segments = vec![segment(0..=0, BlockHash::default(), hash(index), index)];
+
+        for _ in 0..100 {
+            index += 1;
+            let prev_canonical = canonical_chain(&segments).unwrap();
+            match rng.random_range(0..2) {
+                // add segment
+                0 => {
+                    let parent = segments.choose(&mut rng).unwrap();
+                    let parent_range = &parent.ranges[0];
+                    let number = parent_range.end() + 1;
+                    let segment = segment(number..=number, parent_range.hash, hash(index), index);
+                    segments.push(segment);
+                }
+                // compact
+                1 => {
+                    let chain = prev_canonical.clone();
+                    let start = rng.random_range(0..chain.0.len());
+                    let end = rng.random_range(start..chain.0.len());
+                    let compacted = segment(
+                        *chain.0[start].ranges[0].numbers.start()
+                            ..=*chain.0[end].ranges[0].numbers.end(),
+                        chain.0[start].ranges[0].prev_hash,
+                        chain.0[end].ranges[0].hash,
+                        index,
+                    );
+                    segments.retain(|s| !chain.0[start..=end].contains(s));
+                    segments.push(compacted);
+                }
+                _ => unreachable!(),
+            }
+            let canonical = canonical_chain(&segments).unwrap();
+
+            println!(" -- step {index} --");
+            for s in &segments {
+                let r = &s.ranges[0];
+                println!(
+                    "  t: {} n: [{}-{}] h: [{}-{}]",
+                    r.timestamp.unwrap(),
+                    r.numbers.start(),
+                    r.numbers.end(),
+                    r.prev_hash[0],
+                    r.hash[0],
+                );
+            }
+            println!(
+                "canonical: [{}-{}]",
+                canonical.first_segment().ranges[0].numbers.start(),
+                canonical.last_segment().ranges[0].numbers.end(),
+            );
+
+            let block_height = |c: &Chain| -> u64 {
+                let start = c.first_segment().ranges[0].numbers.start();
+                let end = c.last_segment().ranges[0].numbers.end();
+                end - start + 1
+            };
+            assert!(block_height(&prev_canonical) <= block_height(&canonical));
+        }
     }
 }

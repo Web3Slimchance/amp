@@ -195,7 +195,7 @@ pub async fn handler(
     let canonical_segments = tokio::task::spawn_blocking({
         let all_segments = all_segments.clone();
         move || {
-            canonical_chain(all_segments)
+            canonical_chain(&all_segments)
                 .map(|chain| chain.0)
                 .unwrap_or_default()
         }
