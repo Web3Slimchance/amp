@@ -100,6 +100,9 @@ jobs:
           SOLANA_MAINNET_RPC_URL: ${{ secrets.SOLANA_MAINNET_RPC_URL }}
           SOLANA_MAINNET_RPC_AUTH_HEADER: ${{ secrets.SOLANA_MAINNET_RPC_AUTH_HEADER }}
           SOLANA_MAINNET_RPC_AUTH_TOKEN: ${{ secrets.SOLANA_MAINNET_RPC_AUTH_TOKEN }}
+          TEMPO_RPC_URL: ${{ secrets.TEMPO_RPC_URL }}
+          TEMPO_RPC_AUTH_HEADER: ${{ secrets.TEMPO_RPC_AUTH_HEADER }}
+          TEMPO_RPC_AUTH_TOKEN: ${{ secrets.TEMPO_RPC_AUTH_TOKEN }}
         run: just test-integration --verbose
 
   test-e2e:
@@ -170,6 +173,9 @@ jobs:
           SOLANA_MAINNET_RPC_URL: ${{ secrets.SOLANA_MAINNET_RPC_URL }}
           SOLANA_MAINNET_RPC_AUTH_HEADER: ${{ secrets.SOLANA_MAINNET_RPC_AUTH_HEADER }}
           SOLANA_MAINNET_RPC_AUTH_TOKEN: ${{ secrets.SOLANA_MAINNET_RPC_AUTH_TOKEN }}
+          TEMPO_RPC_URL: ${{ secrets.TEMPO_RPC_URL }}
+          TEMPO_RPC_AUTH_HEADER: ${{ secrets.TEMPO_RPC_AUTH_HEADER }}
+          TEMPO_RPC_AUTH_TOKEN: ${{ secrets.TEMPO_RPC_AUTH_TOKEN }}
 
   rustfmt:
     name: Check rustfmt style

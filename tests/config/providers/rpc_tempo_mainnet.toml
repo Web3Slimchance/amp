@@ -1,0 +1,5 @@
+kind = "tempo"
+url = "${TEMPO_RPC_URL}"
+auth_header = "${TEMPO_RPC_AUTH_HEADER}"
+auth_token = "${TEMPO_RPC_AUTH_TOKEN}"
+network = "mainnet"

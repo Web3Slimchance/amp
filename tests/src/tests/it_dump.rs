@@ -224,6 +224,38 @@ async fn base_firehose_single_dump() {
     }
 }
 
+#[tokio::test]
+async fn tempo_single_dump() {
+    //* Given
+    let test = TestCtx::setup("tempo_single_dump", "_/tempo@0.0.0", "rpc_tempo_mainnet").await;
+
+    let block = test.get_dataset_start_block().await;
+    let tables = test.restore_reference_snapshot().await;
+    let reference_dataset = test.query_all_tables(&tables, "tempo").await;
+    test.deactivate_all_revisions(&tables).await;
+
+    //* When
+    test.dump_and_create_snapshot(block, false).await;
+
+    //* Then
+    // Validate table consistency
+    for table in &tables {
+        test_helpers::check_table_consistency(table, test.ctx.daemon_server().data_store())
+            .await
+            .expect("Table consistency check failed");
+    }
+    let dumped_dataset = test.query_all_tables(&tables, "tempo").await;
+    assert_eq!(
+        reference_dataset.len(),
+        dumped_dataset.len(),
+        "table count mismatch"
+    );
+    for (reference, dumped) in reference_dataset.iter().zip(dumped_dataset.iter()) {
+        assert_json_eq_ignoring_nulls(&reference.0, &dumped.0);
+        assert_eq!(reference.1, dumped.1);
+    }
+}
+
 /// Test context wrapper for dump-related tests.
 ///
 /// This provides convenience methods for testing dataset dump functionality

@@ -312,14 +312,14 @@ async fn gen_manifest_produces_expected_tempo_json() {
 
     //* Given
     let kind: DatasetKindStr = TempoDatasetKind.into();
-    let network = "testnet".to_string();
+    let network = "mainnet".to_string();
 
     //* When
     let mut out = Vec::new();
     let result = generate::generate_manifest(
         &kind,
         network.parse().unwrap(),
-        Some(9069931),
+        Some(10839888),
         false,
         &mut out,
     )
