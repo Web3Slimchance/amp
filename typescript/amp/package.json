@@ -25,15 +25,11 @@
     "dist/**/*.js",
     "dist/**/*.js.map",
     "dist/**/*.d.ts",
-    "dist/**/*.d.ts.map",
-    "dist/studio/dist/**/*"
+    "dist/**/*.d.ts.map"
   ],
   "scripts": {
     "build": "tsc -b --force tsconfig.build.json",
-    "build:studio": "cd ../studio && pnpm run build",
-    "copy-studio-dist": "tsx scripts/copy-studio-dist.ts",
-    "prepare-studio": "pnpm run build:studio && pnpm run copy-studio-dist",
-    "prepublish": "rm -rf dist && pnpm run build && pnpm run prepare-studio",
+    "prepublish": "rm -rf dist && pnpm run build",
     "amp": "amp"
   },
   "publishConfig": {
@@ -78,7 +74,6 @@
     "@types/node": "^24.10.1",
     "apache-arrow": "^21.1.0",
     "effect": "^3.19.5",
-    "tsx": "^4.20.6",
     "typescript": "^5.9.3",
     "vitest": "4.0.12"
   }

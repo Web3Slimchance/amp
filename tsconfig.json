@@ -3,7 +3,6 @@
   "extends": "./tsconfig.base.jsonc",
   "include": [],
   "references": [
-    { "path": "typescript/amp" },
-    { "path": "typescript/studio" },
+    { "path": "typescript/amp" }
   ]
 }

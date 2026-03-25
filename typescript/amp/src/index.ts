@@ -8,8 +8,6 @@ import * as ArrowFlight from "./api/ArrowFlight.ts"
 import * as Arrow from "./Arrow.ts"
 import type * as Model from "./Model.ts"
 
-export * as StudioModel from "./studio/Model.ts"
-
 /**
  * Admin client for managing service
  */
