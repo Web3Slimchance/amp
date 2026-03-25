@@ -5,7 +5,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "cargo:warning=Config 'gen_schema_tables' enabled: Running table schema markdown generation"
         );
         let rt = tokio::runtime::Runtime::new()?;
-        let network: datasets_common::network_id::NetworkId = "test_network".parse().unwrap();
+        let network: datasets_common::network_id::NetworkId = "test-network".parse().unwrap();
         let markdown = rt.block_on(async {
             datasets_raw::schema::to_markdown(firehose_datasets::tables::all(&network)).await
         });

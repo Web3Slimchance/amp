@@ -201,7 +201,7 @@ fn default_to_arrow() {
         builder
             .build(BlockRange {
                 numbers: log.block_num..=log.block_num,
-                network: "test_network".parse().expect("valid network id"),
+                network: "test-network".parse().expect("valid network id"),
                 hash: log.block_hash.into(),
                 prev_hash: Default::default(),
                 timestamp: None,

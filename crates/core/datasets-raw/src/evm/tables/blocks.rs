@@ -274,7 +274,7 @@ fn default_to_arrow() {
         builder
             .build(BlockRange {
                 numbers: block.block_num..=block.block_num,
-                network: "test_network".parse().expect("valid network id"),
+                network: "test-network".parse().expect("valid network id"),
                 hash: block.hash.into(),
                 prev_hash: block.parent_hash.into(),
                 timestamp: None,

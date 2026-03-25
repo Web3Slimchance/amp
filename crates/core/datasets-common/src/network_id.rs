@@ -165,10 +165,21 @@ impl<'de, C> bincode::BorrowDecode<'de, C> for NetworkId {
     }
 }
 
-/// Validates that a network identifier is not empty.
+/// Validates that a network identifier is non-empty and kebab-case.
+///
+/// A valid network identifier must:
+/// - Not be empty
+/// - Contain only lowercase alphanumeric characters and hyphens
 pub fn validate_network_id(network_id: &str) -> Result<(), InvalidNetworkIdError> {
     if network_id.is_empty() {
-        return Err(InvalidNetworkIdError);
+        return Err(InvalidNetworkIdError::Empty);
+    }
+
+    if !network_id
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    {
+        return Err(InvalidNetworkIdError::InvalidFormat(network_id.to_string()));
     }
 
     Ok(())
@@ -176,8 +187,14 @@ pub fn validate_network_id(network_id: &str) -> Result<(), InvalidNetworkIdError
 
 /// Error type for [`NetworkId`] parsing failures
 #[derive(Debug, thiserror::Error)]
-#[error("network id cannot be empty")]
-pub struct InvalidNetworkIdError;
+pub enum InvalidNetworkIdError {
+    /// Network identifier is empty.
+    #[error("network id cannot be empty")]
+    Empty,
+    /// Network identifier contains invalid characters (must be kebab-case).
+    #[error("network id must be kebab-case (lowercase alphanumeric and hyphens): '{0}'")]
+    InvalidFormat(String),
+}
 
 #[cfg(test)]
 mod tests {
@@ -246,5 +263,61 @@ mod tests {
 
         //* Then
         assert!(result.is_err(), "empty string should fail deserialization");
+    }
+
+    #[test]
+    fn from_str_with_kebab_case_succeeds() {
+        //* Given
+        let network_str = "base-sepolia";
+
+        //* When
+        let result = network_str.parse::<NetworkId>();
+
+        //* Then
+        let network_id = result.expect("kebab-case should parse successfully");
+        assert_eq!(network_id.as_str(), "base-sepolia");
+    }
+
+    #[test]
+    fn from_str_with_underscores_fails() {
+        //* Given
+        let network_str = "base_sepolia";
+
+        //* When
+        let result = network_str.parse::<NetworkId>();
+
+        //* Then
+        assert!(
+            result.is_err(),
+            "snake_case should fail — NetworkId requires kebab-case"
+        );
+    }
+
+    #[test]
+    fn from_str_with_uppercase_fails() {
+        //* Given
+        let network_str = "Mainnet";
+
+        //* When
+        let result = network_str.parse::<NetworkId>();
+
+        //* Then
+        assert!(
+            result.is_err(),
+            "uppercase should fail — NetworkId requires lowercase"
+        );
+    }
+
+    #[test]
+    fn from_str_with_digits_succeeds() {
+        //* Given
+        let network_str = "sepolia42";
+
+        //* When
+        let result = network_str.parse::<NetworkId>();
+
+        //* Then
+        let network_id = result.expect("alphanumeric should parse successfully");
+        assert_eq!(network_id.as_str(), "sepolia42");
     }
 }
