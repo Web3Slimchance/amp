@@ -29,14 +29,14 @@ The Providers Registry manages external data source provider configurations (RPC
 
 This document uses two key terms that describe different parts of the data pipeline:
 
-- **Provider**: An external service or endpoint that supplies blockchain data (e.g., a Firehose gRPC server, an EVM JSON-RPC node, a Solana RPC endpoint). The registry stores *configurations* for these external services.
+- **Provider**: An external service or endpoint that supplies blockchain data (e.g., a Firehose gRPC server, an EVM JSON-RPC node, a Solana RPC endpoint). The registry stores _configurations_ for these external services.
 
 - **Client**: Internal code that connects to a provider and consumes its data. Clients are created by the registry from provider configurations. Examples include `BlockStreamClient` (for extracting blocks) and underlying protocol-specific clients like `evm_rpc_datasets::Client` or `firehose_datasets::Client`.
 
 > [!NOTE]
 > **EVM RPC Provider naming**: The `EvmRpcProvider` type follows [Alloy's naming convention](https://docs.rs/alloy-provider/latest/alloy_provider/) where "provider" refers to the RPC interface abstraction. In this codebase, it functions as a client that consumes data from an external EVM RPC endpoint.
 
-**Relationship**: Provider configurations define *where* to connect; clients implement *how* to connect and extract data.
+**Relationship**: Provider configurations define _where_ to connect; clients implement _how_ to connect and extract data.
 
 ## Architecture
 
@@ -67,29 +67,30 @@ The registry creates clients that consume data from external provider endpoints.
 
 ### Configuration Cache Strategy
 
-Provider configurations are cached in memory using a lazy-loaded, write-through strategy. 
+Provider configurations are cached in memory using a lazy-loaded, write-through strategy.
 This avoids repeated object store reads for frequently accessed configurations, ensures writes remain consistent without complex invalidation logic, and provides robustness against object store connection issues once configurations are loaded.
 
 **Read Path (Lazy Loading)**
+
 1. On first read request, check if cache is empty
 2. If empty, enumerate all configuration files from object store
 3. Parse each file into provider configuration and populate cache atomically
 4. Return data from cache (subsequent reads skip object store)
 
 **Write Path (Write-Through)**
+
 1. Registration: Write TOML to object store first, then update cache
 2. Deletion: Remove from object store first (idempotent), then remove from cache
 
 ### Provider Selection Strategy
 
-When multiple providers exist for the same kind and network, the registry uses random selection to distribute load. 
-This prevents any single provider from becoming a bottleneck and provides natural load balancing without additional coordination infrastructure.
+When multiple providers exist for the same kind and network, `find_providers` returns them in deterministic order by name (lexicographic).
+Callers select from this list based on their own strategy (e.g., attempt-based rotation for block streaming jobs). Since provider names determine the ordering, operators can influence priority through naming (e.g., prefixing names with `01_`, `02_` to control the sequence).
 
 ### Environment Variable Substitution
 
-Provider configurations support `${VAR}` syntax for referencing environment variables. 
+Provider configurations support `${VAR}` syntax for referencing environment variables.
 Substitution occurs at load time before parsing, allowing secrets like API tokens to be injected from the environment rather than stored in configuration files.
-
 
 ## Implementation
 

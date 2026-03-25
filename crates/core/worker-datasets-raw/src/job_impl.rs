@@ -99,7 +99,7 @@ use common::{
 };
 use datasets_common::{
     block_num::BlockNum, dataset::Dataset as _, hash_reference::HashReference,
-    table_name::TableName,
+    network_id::NetworkId, table_name::TableName,
 };
 use datasets_raw::{
     client::{BlockStreamer as _, BlockStreamerExt as _, LatestBlockError},
@@ -243,16 +243,27 @@ pub async fn execute(
 
     let kind = dataset.kind();
     let network = dataset.network();
-    let mut client = ctx
-        .ethcall_udfs_cache
-        .providers_registry()
-        .create_block_stream_client(kind, network, metrics.as_ref().map(|m| m.meter()))
-        .await
-        .map_err(Error::CreateBlockStreamClient)?
-        .with_retry();
-
-    let provider_name = client.provider_name().to_string();
-    tracing::info!("connected to provider: {provider_name}");
+    let providers = ctx.providers_registry.find_providers(&kind, network).await;
+    if providers.is_empty() {
+        return Err(Error::ProviderNotFound {
+            kind: kind.to_string(),
+            network: network.clone(),
+        });
+    }
+    let (provider_name, config) =
+        select_provider_for_attempt(providers, ctx.job_id, &ctx.metadata_db).await;
+    tracing::info!(
+        provider = %provider_name,
+        "selected provider for block streaming"
+    );
+    let mut client = amp_providers_registry::create_block_stream_client(
+        provider_name,
+        config,
+        metrics.as_ref().map(|m| m.meter()),
+    )
+    .await
+    .map_err(Error::CreateBlockStreamClient)?
+    .with_retry();
 
     let start = dataset.start_block().unwrap_or(0);
     let resolved = resolve_end_block(&end, start, client.latest_block(finalized_blocks_only))
@@ -261,7 +272,10 @@ pub async fn execute(
 
     let end = match resolved {
         ResolvedEndBlock::NoDataAvailable => {
-            tracing::warn!("no blocks available from provider: {provider_name}");
+            tracing::warn!(
+                provider = %client.provider_name(),
+                "no blocks available from provider"
+            );
             return Ok(());
         }
         ResolvedEndBlock::Continuous => None,
@@ -425,6 +439,47 @@ pub async fn execute(
     Ok(())
 }
 
+/// Selects a provider from the list based on the current attempt count.
+///
+/// Uses attempt-based rotation: each retry picks the next provider in the sorted list,
+/// cycling back to the first after exhausting all options.
+/// Returns the first provider when no job ID is available.
+async fn select_provider_for_attempt(
+    mut providers: Vec<(
+        amp_providers_registry::ProviderName,
+        amp_providers_registry::ProviderResolvedConfigRaw,
+    )>,
+    job_id: Option<metadata_db::jobs::JobId>,
+    metadata_db: &metadata_db::MetadataDb,
+) -> (
+    amp_providers_registry::ProviderName,
+    amp_providers_registry::ProviderResolvedConfigRaw,
+) {
+    let attempt = match job_id {
+        Some(job_id) => {
+            match metadata_db::job_events::get_attempt_count(metadata_db, job_id).await {
+                Ok(count) => count as usize,
+                Err(err) => {
+                    tracing::error!(
+                        job_id = %job_id,
+                        error = %err,
+                        error_source = monitoring::logging::error_source(&err),
+                        "failed to get attempt count",
+                    );
+                    0
+                }
+            }
+        }
+        None => 0,
+    };
+    let num_providers = providers.len();
+    // attempt is 1-based (count of SCHEDULED events): first run = 1, first retry = 2, ...
+    // saturating_sub(1) converts to 0-based index so attempt 1 → index 0, attempt 2 → index 1, etc.
+    // When attempt is 0 (no job_id or DB error), saturating_sub yields 0 → always use first provider.
+    let provider_index = attempt.saturating_sub(1) % num_providers;
+    providers.swap_remove(provider_index)
+}
+
 /// Errors that occur during raw dataset materialize operations
 ///
 /// This error type is used by the `execute()` function to report issues encountered
@@ -477,13 +532,11 @@ pub enum Error {
         source: amp_worker_core::check::ConsistencyError,
     },
 
-    /// Failed to create block stream client for dataset
-    ///
-    /// This occurs when the materialize implementation cannot create a blockchain client
-    /// for the dataset's provider. Common causes:
-    /// - Provider configuration not found
-    /// - Invalid provider configuration
-    /// - Network connectivity issues to provider
+    /// No provider found matching the dataset's kind and network.
+    #[error("No provider found for kind '{kind}' and network '{network}'")]
+    ProviderNotFound { kind: String, network: NetworkId },
+
+    /// Failed to create block stream client for dataset.
     #[error("Failed to create block stream client for dataset")]
     CreateBlockStreamClient(#[source] amp_providers_registry::CreateClientError),
 
@@ -556,6 +609,9 @@ impl RetryableErrorExt for Error {
             // Data integrity violation — fatal
             Self::ConsistencyCheck { .. } => false,
 
+            // Configuration error — retryable (provider may be registered on next attempt)
+            Self::ProviderNotFound { .. } => true,
+
             // Delegate to inner error classification
             Self::CreateBlockStreamClient(err) => err.is_retryable(),
 
@@ -592,6 +648,7 @@ impl amp_worker_core::retryable::JobErrorExt for Error {
             Self::RegisterNewPhysicalTable(_) => "REGISTER_NEW_PHYSICAL_TABLE",
             Self::LockRevisionsForWriter(_) => "LOCK_REVISIONS_FOR_WRITER",
             Self::ConsistencyCheck { .. } => "CONSISTENCY_CHECK",
+            Self::ProviderNotFound { .. } => "PROVIDER_NOT_FOUND",
             Self::CreateBlockStreamClient(_) => "CREATE_BLOCK_STREAM_CLIENT",
             Self::ResolveEndBlock(_) => "RESOLVE_END_BLOCK",
             Self::LatestBlock(_) => "LATEST_BLOCK",

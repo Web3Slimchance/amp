@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use amp_providers_registry::ProvidersRegistry;
+use amp_providers_registry::{EvmRpcProviderKind, ProvidersRegistry};
 use datafusion::{
     common::HashMap,
     logical_expr::{ScalarUDF, async_udf::AsyncScalarUDF},
@@ -58,21 +58,27 @@ impl EthCallUdfsCache {
             return Ok(udf.clone());
         }
 
-        let provider = match self.registry.create_evm_rpc_client(network).await {
-            Ok(Some(provider)) => provider,
-            Ok(None) => {
-                tracing::warn!(
-                    provider_network = %network,
-                    "no EVM RPC provider found for network"
-                );
-                return Err(EthCallForNetworkError::ProviderNotFound {
-                    network: network.clone(),
-                });
-            }
-            Err(err) => {
-                return Err(EthCallForNetworkError::ProviderCreation(err));
-            }
+        // TODO: Always selects the first provider. Rotation across retries would
+        // require rethinking the cache key (currently NetworkId only) since the
+        // cached UDF holds a reference to a specific provider.
+        let Some((name, config)) = self
+            .registry
+            .find_providers(EvmRpcProviderKind, network)
+            .await
+            .into_iter()
+            .next()
+        else {
+            tracing::warn!(
+                provider_network = %network,
+                "no EVM RPC provider found for network"
+            );
+            return Err(EthCallForNetworkError::ProviderNotFound {
+                network: network.clone(),
+            });
         };
+        let provider = amp_providers_registry::create_evm_rpc_client(name.to_string(), config)
+            .await
+            .map_err(EthCallForNetworkError::ProviderCreation)?;
 
         let udf = AsyncScalarUDF::new(Arc::new(EthCall::new(udf_name.to_string(), provider)))
             .into_scalar_udf();

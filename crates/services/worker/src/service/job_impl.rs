@@ -79,6 +79,7 @@ pub(super) async fn new(
                 metadata_db: job_ctx.metadata_db.clone(),
                 datasets_cache: job_ctx.datasets_cache.clone(),
                 ethcall_udfs_cache: job_ctx.ethcall_udfs_cache.clone(),
+                providers_registry: job_ctx.ethcall_udfs_cache.providers_registry().clone(),
                 data_store: job_ctx.data_store.clone(),
                 notification_multiplexer: job_ctx.notification_multiplexer.clone(),
                 metrics,

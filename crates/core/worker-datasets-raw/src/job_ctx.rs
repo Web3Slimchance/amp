@@ -1,6 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use amp_data_store::DataStore;
+use amp_providers_registry::ProvidersRegistry;
 use amp_worker_core::{ParquetConfig, metrics::MetricsRegistry, progress::ProgressReporter};
 use common::{datasets_cache::DatasetsCache, udfs::eth_call::EthCallUdfsCache};
 use metadata_db::{MetadataDb, NotificationMultiplexerHandle, jobs::JobId};
@@ -23,6 +24,9 @@ pub struct Context {
     pub datasets_cache: DatasetsCache,
     /// Cache of compiled ethcall UDF definitions.
     pub ethcall_udfs_cache: EthCallUdfsCache,
+    /// Registry of external data provider configurations.
+    /// Duplicated from `ethcall_udfs_cache` for direct access during provider selection.
+    pub providers_registry: ProvidersRegistry,
     /// Object store abstraction for reading/writing Parquet files.
     pub data_store: DataStore,
     /// Shared notification multiplexer for streaming queries.

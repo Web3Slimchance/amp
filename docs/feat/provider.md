@@ -35,26 +35,26 @@ Dataset Manifest → Provider Resolution → Provider Config → Blockchain Conn
 
 ### Benefits
 
-| Benefit | Description |
-|---------|-------------|
-| **Reusability** | Multiple datasets share the same provider |
-| **Flexibility** | Switch endpoints without modifying datasets |
-| **Load Balancing** | Random selection among matching providers |
-| **Security** | Credentials isolated from dataset definitions |
+| Benefit            | Description                                       |
+| ------------------ | ------------------------------------------------- |
+| **Reusability**    | Multiple datasets share the same provider         |
+| **Flexibility**    | Switch endpoints without modifying datasets       |
+| **Prioritization** | Deterministic selection by provider name ordering |
+| **Security**       | Credentials isolated from dataset definitions     |
 
 ### Resolution Flow
 
 1. Dataset requests provider by `(kind, network)` tuple
 2. System finds all matching providers
-3. Providers are shuffled for load balancing
+3. Providers are returned in deterministic order by name
 4. Each is tried with environment variable substitution
-5. First successful connection is used
+5. Successfully resolved providers are returned; the caller selects one (e.g., by attempt index)
 
 ## Provider Types
 
-| Kind | Protocol | Use Case |
-|------|----------|----------|
-| `evm-rpc` | JSON-RPC | EVM-compatible chains via HTTP/WS/IPC |
-| `firehose` | gRPC | High-throughput streaming from StreamingFast |
-| `solana` | JSON-RPC + CAR | Solana blockchain with Old Faithful archive |
-| `static` | Object Store | Static CSV-backed datasets via amp-object-store |
+| Kind       | Protocol       | Use Case                                        |
+| ---------- | -------------- | ----------------------------------------------- |
+| `evm-rpc`  | JSON-RPC       | EVM-compatible chains via HTTP/WS/IPC           |
+| `firehose` | gRPC           | High-throughput streaming from StreamingFast    |
+| `solana`   | JSON-RPC + CAR | Solana blockchain with Old Faithful archive     |
+| `static`   | Object Store   | Static CSV-backed datasets via amp-object-store |

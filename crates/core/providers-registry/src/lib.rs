@@ -14,28 +14,28 @@
 //! Additional fields depend on the provider type.
 use std::{collections::BTreeMap, ops::Deref};
 
-use amp_providers_common::{
-    config::{
-        ConfigHeaderWithNetwork, ProviderConfigRaw, ProviderResolvedConfigRaw, TryIntoConfig,
-    },
-    provider_name::ProviderName,
-};
-use amp_providers_evm_rpc::{kind::EvmRpcProviderKind, provider as evm_rpc_provider};
+use amp_providers_common::config::{ConfigHeaderWithNetwork, ProviderConfigRaw, TryIntoConfig};
+pub use amp_providers_common::{config::ProviderResolvedConfigRaw, provider_name::ProviderName};
 use datasets_common::network_id::NetworkId;
-use monitoring::{logging, telemetry::metrics::Meter};
+use monitoring::logging;
 use object_store::ObjectStore;
-use rand::seq::SliceRandom as _;
 
 mod client;
 pub mod retryable;
 mod store;
 
-pub use amp_providers_evm_rpc::provider::{
-    CreateEvmRpcClientError, EvmRpcAlloyProvider as EvmRpcProvider,
+pub use amp_providers_evm_rpc::{
+    kind::EvmRpcProviderKind,
+    provider::{
+        CreateEvmRpcClientError, EvmRpcAlloyProvider as EvmRpcProvider,
+        create as create_evm_rpc_client,
+    },
 };
 
 pub use self::{
-    client::block_stream::{BlockStreamClient, CreateClientError},
+    client::block_stream::{
+        BlockStreamClient, CreateClientError, create as create_block_stream_client,
+    },
     store::{ConfigDeleteError, ConfigStoreError, ProviderConfigsStore},
 };
 
@@ -113,75 +113,57 @@ where
     pub async fn delete(&self, name: &str) -> Result<(), DeleteError> {
         self.store.delete(name).await.map_err(DeleteError)
     }
-}
 
-impl<S> ProvidersRegistry<S>
-where
-    S: ObjectStore + Clone,
-{
-    /// Find a provider and create a block stream client for the given kind and network.
+    /// Find all providers matching a kind and network, applying environment variable substitution.
     ///
-    /// This method combines provider lookup and client creation in one operation.
-    /// Providers are tried in random order to distribute load.
-    pub async fn create_block_stream_client(
+    /// Returns all matching providers in deterministic order by provider name (lexicographic).
+    /// This ordering is guaranteed by the underlying `BTreeMap` storage.
+    /// Providers whose environment variable substitution fails are skipped with a warning.
+    pub async fn find_providers(
         &self,
         kind: impl AsRef<str>,
         network: &NetworkId,
-        meter: Option<&Meter>,
-    ) -> Result<BlockStreamClient, CreateClientError> {
-        let kind_str = kind.as_ref();
-        let (name, config) = self.find_provider(&kind, network).await.ok_or_else(|| {
-            CreateClientError::ProviderNotFound {
-                kind: kind_str.to_string(),
-                network: network.clone(),
-            }
-        })?;
-        client::block_stream::create(name, config, meter).await
-    }
-
-    /// Find a provider by kind and network, applying environment variable substitution.
-    ///
-    /// Providers are tried in random order to distribute load.
-    /// Returns the provider name and resolved configuration.
-    pub async fn find_provider(
-        &self,
-        kind: impl AsRef<str>,
-        network: &NetworkId,
-    ) -> Option<(ProviderName, ProviderResolvedConfigRaw)> {
+    ) -> Vec<(ProviderName, ProviderResolvedConfigRaw)> {
         let kind = kind.as_ref();
 
-        // Collect matching providers with their names
-        let mut matching_providers = self
+        // Collect matching (name, config) pairs while holding the read lock,
+        // then drop the lock before performing env substitution.
+        let candidates: Vec<_> = self
             .get_all()
             .await
             .iter()
             .filter_map(|(name, config)| {
-                // Extract kind and network from config
-                let header = config.try_into_config::<ConfigHeaderWithNetwork>().ok()?;
+                let header = match config.try_into_config::<ConfigHeaderWithNetwork>() {
+                    Ok(h) => h,
+                    Err(err) => {
+                        tracing::warn!(
+                            provider_name = %name,
+                            error = %err,
+                            error_source = logging::error_source(&err),
+                            "failed to parse provider config header, skipping"
+                        );
+                        return None;
+                    }
+                };
                 if header.kind == kind && header.network == network {
                     Some((name.clone(), config.clone()))
                 } else {
                     None
                 }
             })
-            .collect::<Vec<_>>();
+            .collect();
 
-        if matching_providers.is_empty() {
-            return None;
-        }
-
-        matching_providers.shuffle(&mut rand::rng());
-
-        'try_find_provider: for (name, config) in matching_providers {
+        let mut providers = Vec::new();
+        for (name, config) in candidates {
             match config.with_env_substitution() {
                 Ok(resolved) => {
                     tracing::debug!(
                         provider_name = %name,
                         provider_kind = %kind,
                         provider_network = %network,
-                        "successfully selected provider with environment substitution"
+                        "resolved provider with environment substitution"
                     );
-                    return Some((name, resolved));
+                    providers.push((name, resolved));
                 }
                 Err(err) => {
                     tracing::warn!(
@@ -190,35 +172,13 @@ where
                         provider_network = %network,
                         error = %err,
                         error_source = logging::error_source(&err),
-                        "environment variable substitution failed for provider, trying next"
+                        "environment variable substitution failed for provider, skipping"
                     );
-                    continue 'try_find_provider;
                 }
             }
         }
 
-        None
-    }
-
-    /// Create an EVM RPC client for the given network.
-    ///
-    /// This method combines provider lookup, configuration parsing, and provider construction
-    /// into a single operation. It automatically detects whether to use IPC or HTTP/HTTPS
-    /// based on the URL scheme in the provider configuration.
-    ///
-    /// Returns `None` if no provider found for the network, or an error if a provider was
-    /// found but configuration parsing or provider construction failed.
-    pub async fn create_evm_rpc_client(
-        &self,
-        network: &NetworkId,
-    ) -> Result<Option<EvmRpcProvider>, CreateEvmRpcClientError> {
-        let Some((name, config)) = self.find_provider(EvmRpcProviderKind, network).await else {
-            return Ok(None);
-        };
-
-        evm_rpc_provider::create(name.to_string(), config)
-            .await
-            .map(Some)
+        providers
     }
 }
 
@@ -236,4 +196,5 @@ pub struct DeleteError(#[source] pub ConfigDeleteError);
 mod tests {
     mod cache;
     mod crud;
+    mod it_find_providers;
 }
