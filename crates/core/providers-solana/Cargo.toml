@@ -11,7 +11,6 @@ schemars = ["dep:schemars", "amp-providers-common/schemars"]
 [dependencies]
 amp-providers-common = { path = "../providers-common" }
 async-stream.workspace = true
-backon.workspace = true
 base64 = "0.22.1"
 # Not using the workspace version for compatibility with Solana crates
 # we depend on. They are all on 1.3.3 for legacy reasons.
@@ -50,6 +49,7 @@ zstd.workspace = true
 
 [dev-dependencies]
 anyhow.workspace = true
+backon.workspace = true
 clap.workspace = true
 pretty_assertions.workspace = true
 solana-transaction-context = "3.0.0"

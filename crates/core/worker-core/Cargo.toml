@@ -25,4 +25,3 @@ tracing.workspace = true
 url.workspace = true
 
 [dev-dependencies]
-opentelemetry.workspace = true
