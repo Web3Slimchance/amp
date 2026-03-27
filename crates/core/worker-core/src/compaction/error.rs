@@ -131,7 +131,7 @@ pub enum CompactorError {
     #[error("failed to update gc manifest for files {file_ids:?}: {err}")]
     ManifestUpdate {
         #[source]
-        err: metadata_db::Error,
+        err: amp_data_store::ScheduleFilesForGcError,
         file_ids: Arc<[FileId]>,
     },
 
@@ -198,7 +198,9 @@ impl CompactorError {
         Self::MetadataCommit(err)
     }
 
-    pub fn manifest_update_error(file_ids: &[FileId]) -> impl FnOnce(metadata_db::Error) -> Self {
+    pub fn manifest_update_error(
+        file_ids: &[FileId],
+    ) -> impl FnOnce(amp_data_store::ScheduleFilesForGcError) -> Self {
         move |err| Self::ManifestUpdate {
             err,
             file_ids: Arc::from(file_ids),
@@ -287,7 +289,7 @@ pub enum CollectorError {
     /// This prevents garbage collection from proceeding as the list of deletable
     /// files cannot be determined.
     #[error("failed to stream file metadata: {0}")]
-    FileStream(#[source] metadata_db::Error),
+    FileStream(#[source] amp_data_store::StreamExpiredGcFilesError),
 
     /// Task join error during garbage collection
     ///
@@ -428,7 +430,7 @@ impl RetryableErrorExt for CollectorError {
 }
 
 impl CollectorError {
-    pub fn file_stream_error(err: metadata_db::Error) -> Self {
+    pub fn file_stream_error(err: amp_data_store::StreamExpiredGcFilesError) -> Self {
         Self::FileStream(err)
     }
 

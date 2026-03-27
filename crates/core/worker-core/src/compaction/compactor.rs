@@ -277,6 +277,7 @@ impl CompactionGroup {
         let start = *self.range().start();
         let start_time = std::time::Instant::now();
         let metadata_db = self.metadata_db.clone();
+        let data_store = self.store.clone();
         let duration = self.props.collector.file_lock_duration;
 
         // Calculate input metrics before compaction
@@ -310,7 +311,7 @@ impl CompactionGroup {
             .await
             .map_err(CompactorError::metadata_commit_error)?;
 
-        upsert_gc_manifest(&output, &metadata_db, duration)
+        upsert_gc_manifest(&output, &data_store, duration)
             .await
             .map_err(CompactorError::manifest_update_error(&output.parent_ids))?;
 
@@ -375,14 +376,10 @@ async fn commit_compaction_metadata(
 /// Records the parent file IDs in the GC manifest so they can be collected after compaction.
 async fn upsert_gc_manifest(
     output: &ParquetFileWriterOutput,
-    metadata_db: &MetadataDb,
+    data_store: &DataStore,
     duration: Duration,
-) -> Result<(), metadata_db::Error> {
-    metadata_db::gc::upsert(
-        metadata_db,
-        output.location_id,
-        &output.parent_ids,
-        duration,
-    )
-    .await
+) -> Result<(), amp_data_store::ScheduleFilesForGcError> {
+    data_store
+        .schedule_files_for_gc(output.location_id, &output.parent_ids, duration)
+        .await
 }

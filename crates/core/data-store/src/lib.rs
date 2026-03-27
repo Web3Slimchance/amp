@@ -743,6 +743,17 @@ impl DataStore {
             .map_err(ScheduleFilesForGcError)
     }
 
+    /// Streams files from the GC manifest that have passed their expiration time
+    /// and are ready for deletion.
+    pub fn get_expired_gc_files(
+        &self,
+        location_id: LocationId,
+    ) -> BoxStream<'_, Result<metadata_db::gc::GcManifestRow, StreamExpiredGcFilesError>> {
+        metadata_db::gc::stream_expired(&self.metadata_db, location_id)
+            .map(|r| r.map_err(StreamExpiredGcFilesError))
+            .boxed()
+    }
+
     /// Deletes multiple files from object storage.
     ///
     /// Validates that the number of successfully deleted files matches the expected count.
@@ -1634,3 +1645,12 @@ pub enum GetCachedMetadataError {
 #[derive(Debug, thiserror::Error)]
 #[error("failed to schedule files for garbage collection")]
 pub struct ScheduleFilesForGcError(#[source] pub metadata_db::Error);
+
+/// Failed to stream expired GC manifest entries from the metadata database.
+///
+/// Common causes:
+/// - Database connection lost during streaming
+/// - Database server unreachable
+#[derive(Debug, thiserror::Error)]
+#[error("failed to stream expired GC files")]
+pub struct StreamExpiredGcFilesError(#[source] pub metadata_db::Error);

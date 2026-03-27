@@ -41,21 +41,22 @@ pub async fn execute(ctx: Context, desc: JobDescriptor) -> Result<(), Error> {
     let metrics = ctx.meter.as_ref().map(|m| GcMetrics::new(m, *location_id));
 
     // Step 1: Stream expired files from the GC manifest
-    let found_file_ids_to_paths: BTreeMap<FileId, Path> =
-        metadata_db::gc::stream_expired(&ctx.metadata_db, location_id)
-            .map_err(Error::FileStream)
-            .map(|manifest_row| {
-                let GcManifestRow {
-                    file_id,
-                    file_path: file_name,
-                    ..
-                } = manifest_row?;
+    let found_file_ids_to_paths: BTreeMap<FileId, Path> = ctx
+        .data_store
+        .get_expired_gc_files(location_id)
+        .map_err(Error::FileStream)
+        .map(|manifest_row| {
+            let GcManifestRow {
+                file_id,
+                file_path: file_name,
+                ..
+            } = manifest_row?;
 
-                let path = revision_path.child(file_name.as_str());
-                Ok::<_, Error>((file_id, path))
-            })
-            .try_collect()
-            .await?;
+            let path = revision_path.child(file_name.as_str());
+            Ok::<_, Error>((file_id, path))
+        })
+        .try_collect()
+        .await?;
 
     tracing::debug!(
         expired_files = found_file_ids_to_paths.len(),
@@ -155,7 +156,7 @@ pub enum Error {
     /// `gc_manifest` for files whose expiration has passed. Common causes include
     /// database connectivity issues or query timeouts.
     #[error("failed to stream expired files")]
-    FileStream(#[source] metadata_db::Error),
+    FileStream(#[source] amp_data_store::StreamExpiredGcFilesError),
 
     /// Failed to delete file metadata records from Postgres.
     ///
