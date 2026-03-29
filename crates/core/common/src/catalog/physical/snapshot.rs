@@ -217,19 +217,19 @@ impl QueryableSnapshot {
 
     /// Converts logical filter expressions into a single physical predicate.
     ///
-    /// Combines all filters via conjunction; defaults to `true` when no filters are provided.
+    /// Returns `None` when no filters are provided, so that `ParquetSource` is
+    /// created without a predicate and `FileScanConfig::statistics()` preserves
+    /// `Precision::Exact` values — enabling `AggregateStatistics` to resolve
+    /// `MIN`/`MAX` from metadata without scanning files.
     fn filters_to_predicate(
         &self,
         state: &dyn Session,
         filters: &[Expr],
-    ) -> DataFusionResult<Arc<dyn PhysicalExpr>> {
+    ) -> DataFusionResult<Option<Arc<dyn PhysicalExpr>>> {
         let df_schema = DFSchema::try_from(self.physical_table.schema())?;
-        let predicate = conjunction(filters.to_vec());
-        let predicate = predicate
+        conjunction(filters.to_vec())
             .map(|predicate| state.create_physical_expr(predicate, &df_schema))
-            .transpose()?
-            .unwrap_or_else(|| datafusion::physical_expr::expressions::lit(true));
-        Ok(predicate)
+            .transpose()
     }
 
     /// Converts a segment into a DataFusion `PartitionedFile` with cached metadata.
@@ -371,12 +371,15 @@ impl TableProvider for QueryableSnapshot {
 
         let parquet_file_reader_factory = Arc::clone(&self.reader_factory);
         let table_parquet_options = state.table_options().parquet.clone();
-        let file_source = Arc::new(
-            ParquetSource::new(table_schema)
-                .with_table_parquet_options(table_parquet_options)
-                .with_parquet_file_reader_factory(parquet_file_reader_factory)
-                .with_predicate(predicate),
-        );
+        let mut parquet_source = ParquetSource::new(table_schema)
+            .with_table_parquet_options(table_parquet_options)
+            .with_parquet_file_reader_factory(parquet_file_reader_factory);
+
+        if let Some(predicate) = predicate {
+            parquet_source = parquet_source.with_predicate(predicate);
+        }
+
+        let file_source = Arc::new(parquet_source);
 
         let data_source = Arc::new(
             FileScanConfigBuilder::new(object_store_url, file_source)
