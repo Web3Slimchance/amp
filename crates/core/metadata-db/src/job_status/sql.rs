@@ -154,7 +154,7 @@ where
     E: Executor<'c, Database = Postgres>,
 {
     let query = indoc::indoc! {r#"
-        SELECT
+        SELECT DISTINCT ON (je.job_id)
             je.job_id as id,
             js.node_id,
             js.status,
@@ -167,7 +167,7 @@ where
           AND je.detail->>'dataset_name' = $2
           AND je.detail->>'manifest_hash' = $3
           AND je.event_type = $4
-        ORDER BY je.id ASC
+        ORDER BY je.job_id, js.updated_at DESC
     "#};
     let res = sqlx::query_as(query)
         .bind(&dataset_namespace)

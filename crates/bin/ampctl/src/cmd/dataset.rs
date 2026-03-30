@@ -2,6 +2,7 @@
 
 pub mod deploy;
 pub mod inspect;
+pub mod jobs;
 pub mod list;
 pub mod manifest;
 pub mod register;
@@ -46,6 +47,11 @@ pub enum Commands {
     #[command(after_help = include_str!("dataset/manifest__after_help.md"))]
     Manifest(manifest::Args),
 
+    /// List jobs for a specific dataset revision
+    #[command(alias = "job")]
+    #[command(after_help = include_str!("dataset/jobs__after_help.md"))]
+    Jobs(jobs::Args),
+
     /// Restore dataset physical tables from object storage
     ///
     /// Re-indexes physical table metadata from object storage into the metadata
@@ -65,6 +71,7 @@ pub async fn run(command: Commands) -> anyhow::Result<()> {
         Commands::Inspect(args) => inspect::run(args).await?,
         Commands::Versions(args) => versions::run(args).await?,
         Commands::Manifest(args) => manifest::run(args).await?,
+        Commands::Jobs(args) => jobs::run(args).await?,
         Commands::Restore(args) => restore::run(args).await?,
     }
     Ok(())

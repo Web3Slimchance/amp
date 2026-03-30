@@ -1,6 +1,6 @@
 ---
 name: "app-ampctl-dataset"
-description: "Dataset lifecycle commands: register, deploy, list, inspect, versions, manifest, restore. Load when asking about managing datasets via ampctl CLI"
+description: "Dataset lifecycle commands: register, deploy, list, inspect, versions, manifest, restore, jobs. Load when asking about managing datasets via ampctl CLI"
 type: feature
 status: stable
 components: "app:ampctl,crate:admin-client"
@@ -107,6 +107,21 @@ View all available versions with their manifest hashes and timestamps.
 
 ```bash
 ampctl dataset versions my_namespace/my_dataset
+```
+
+**List jobs for a dataset revision:**
+
+View all jobs associated with a specific dataset version, including job status, assigned worker, and timestamps.
+
+```bash
+# List jobs for a specific version
+ampctl dataset jobs my_namespace/my_dataset@1.0.0
+
+# List jobs for the latest version
+ampctl dataset jobs my_namespace/my_dataset@latest
+
+# JSON output for scripting
+ampctl dataset jobs my_namespace/my_dataset@1.0.0 --json
 ```
 
 **View dataset manifest:**
