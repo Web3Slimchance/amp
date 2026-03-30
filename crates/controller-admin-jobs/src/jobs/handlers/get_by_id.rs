@@ -11,7 +11,7 @@ use monitoring::logging;
 use super::job_info::JobInfo;
 use crate::{
     ctx::Ctx,
-    handlers::error::{ErrorResponse, IntoErrorResponse},
+    error::{ErrorResponse, IntoErrorResponse},
     scheduler,
 };
 
@@ -46,9 +46,9 @@ use crate::{
         ),
         responses(
             (status = 200, description = "Successfully retrieved job information", body = JobInfo),
-            (status = 400, description = "Invalid job ID", body = crate::handlers::error::ErrorResponse),
-            (status = 404, description = "Job not found", body = crate::handlers::error::ErrorResponse),
-            (status = 500, description = "Internal server error", body = crate::handlers::error::ErrorResponse)
+            (status = 400, description = "Invalid job ID", body = ErrorResponse),
+            (status = 404, description = "Job not found", body = ErrorResponse),
+            (status = 500, description = "Internal server error", body = ErrorResponse)
         )
     )
 )]

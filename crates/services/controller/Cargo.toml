@@ -6,6 +6,7 @@ license-file.workspace = true
 
 [dependencies]
 admin-api = { path = "../admin-api" }
+amp-controller-admin-jobs = { path = "../../controller-admin-jobs" }
 amp-data-store = { path = "../../core/data-store" }
 amp-datasets-registry = { version = "0.1.0", path = "../../core/datasets-registry" }
 amp-providers-registry = { version = "0.1.0", path = "../../core/providers-registry" }

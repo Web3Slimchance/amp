@@ -1,0 +1,30 @@
+[package]
+name = "amp-controller-admin-jobs"
+edition.workspace = true
+version.workspace = true
+license-file.workspace = true
+
+[features]
+# OpenAPI schema generation via utoipa
+utoipa = ["dep:utoipa"]
+
+[dependencies]
+amp-data-store = { path = "../core/data-store" }
+amp-datasets-registry = { path = "../core/datasets-registry" }
+amp-worker-core = { path = "../core/worker-core" }
+amp-worker-datasets-derived = { path = "../core/worker-datasets-derived" }
+amp-worker-datasets-raw = { path = "../core/worker-datasets-raw" }
+amp-worker-gc = { path = "../core/worker-gc" }
+async-trait.workspace = true
+axum.workspace = true
+common = { path = "../core/common" }
+datasets-common = { path = "../core/datasets-common" }
+datasets-derived = { path = "../core/datasets-derived" }
+metadata-db = { path = "../core/metadata-db" }
+monitoring = { path = "../core/monitoring" }
+serde.workspace = true
+serde_json = { workspace = true, features = ["raw_value"] }
+thiserror.workspace = true
+tracing.workspace = true
+utoipa = { version = "5.4.0", features = ["axum_extras"], optional = true }
+worker = { path = "../services/worker" }

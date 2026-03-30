@@ -15,7 +15,7 @@ use monitoring::logging;
 
 use crate::{
     ctx::Ctx,
-    handlers::error::{ErrorResponse, IntoErrorResponse},
+    error::{ErrorResponse, IntoErrorResponse},
     scheduler,
 };
 
@@ -60,9 +60,9 @@ use crate::{
         ),
         responses(
             (status = 200, description = "Successfully retrieved job progress", body = JobProgressResponse),
-            (status = 400, description = "Invalid job ID", body = crate::handlers::error::ErrorResponse),
-            (status = 404, description = "Job not found", body = crate::handlers::error::ErrorResponse),
-            (status = 500, description = "Internal server error", body = crate::handlers::error::ErrorResponse)
+            (status = 400, description = "Invalid job ID", body = ErrorResponse),
+            (status = 404, description = "Job not found", body = ErrorResponse),
+            (status = 500, description = "Internal server error", body = ErrorResponse)
         )
     )
 )]

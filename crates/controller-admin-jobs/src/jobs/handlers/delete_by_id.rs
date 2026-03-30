@@ -9,7 +9,7 @@ use monitoring::logging;
 
 use crate::{
     ctx::Ctx,
-    handlers::error::{ErrorResponse, IntoErrorResponse},
+    error::{ErrorResponse, IntoErrorResponse},
     scheduler,
 };
 
@@ -69,9 +69,9 @@ use crate::{
         ),
         responses(
             (status = 204, description = "Job deleted successfully or does not exist (idempotent)"),
-            (status = 400, description = "Invalid job ID", body = crate::handlers::error::ErrorResponse),
-            (status = 409, description = "Job cannot be deleted (not in terminal state)", body = crate::handlers::error::ErrorResponse),
-            (status = 500, description = "Internal server error", body = crate::handlers::error::ErrorResponse)
+            (status = 400, description = "Invalid job ID", body = ErrorResponse),
+            (status = 409, description = "Job cannot be deleted (not in terminal state)", body = ErrorResponse),
+            (status = 500, description = "Internal server error", body = ErrorResponse)
         )
     )
 )]

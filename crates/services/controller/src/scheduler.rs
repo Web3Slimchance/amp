@@ -26,7 +26,7 @@
 
 use std::{collections::HashMap, time::Duration};
 
-use admin_api::scheduler::{
+use amp_controller_admin_jobs::scheduler::{
     DeleteJobError, DeleteJobsByStatusError, GetEventForJobError, GetEventsForJobError,
     GetJobDescriptorError, GetJobDetailError, GetJobError, GetWorkerError, JobDescriptor,
     ListJobDescriptorsError, ListJobsByDatasetError, ListJobsError, ListWorkersError, NodeSelector,

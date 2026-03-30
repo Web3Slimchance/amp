@@ -2,18 +2,13 @@
 
 use std::sync::Arc;
 
-use axum::{
-    Router,
-    routing::{get, post, put},
-};
+use axum::Router;
 
 pub mod build_info;
 pub mod ctx;
 pub mod handlers;
-pub mod scheduler;
 
 use ctx::Ctx;
-use handlers::{datasets, jobs};
 
 use crate::ctx::{RevisionGuardImpl, WorkerServiceImpl};
 
@@ -41,34 +36,16 @@ pub fn router(ctx: Ctx) -> Router<()> {
         ethcall_udfs_cache: ctx.ethcall_udfs_cache.clone(),
         data_store: ctx.data_store.clone(),
     };
+    let jobs_ctx = amp_controller_admin_jobs::ctx::Ctx {
+        scheduler: ctx.scheduler.clone(),
+        datasets_registry: ctx.datasets_registry.clone(),
+        data_store: ctx.data_store.clone(),
+        datasets_cache: ctx.datasets_cache.clone(),
+    };
 
     Router::new()
-        .route(
-            "/datasets/{namespace}/{name}/versions/{revision}/deploy",
-            post(datasets::deploy::handler),
-        )
-        .route(
-            "/datasets/{namespace}/{name}/versions/{revision}/jobs",
-            get(datasets::list_jobs::handler),
-        )
-        .route(
-            "/jobs",
-            get(jobs::get_all::handler)
-                .post(jobs::create::handler)
-                .delete(jobs::delete::handler),
-        )
-        .route(
-            "/jobs/{id}",
-            get(jobs::get_by_id::handler).delete(jobs::delete_by_id::handler),
-        )
-        .route("/jobs/{id}/stop", put(jobs::stop::handler))
-        .route("/jobs/{id}/progress", get(jobs::progress::handler))
-        .route("/jobs/{id}/events", get(jobs::events::handler))
-        .route(
-            "/jobs/{id}/events/{event_id}",
-            get(jobs::event_by_id::handler),
-        )
         .with_state(ctx)
+        .merge(amp_controller_admin_jobs::router().with_state(jobs_ctx))
         .merge(amp_controller_admin_datasets::router().with_state(datasets_ctx))
         .merge(amp_controller_admin_system::router().with_state(system_ctx))
         .merge(amp_controller_admin_providers::router().with_state(providers_ctx))
@@ -87,11 +64,11 @@ pub fn router(ctx: Ctx) -> Router<()> {
         // Dataset endpoints
         amp_controller_admin_datasets::datasets::handlers::list_all::handler,
         amp_controller_admin_datasets::datasets::handlers::list_versions::handler,
-        handlers::datasets::list_jobs::handler,
+        amp_controller_admin_jobs::datasets::handlers::list_jobs::handler,
         amp_controller_admin_datasets::datasets::handlers::get::handler,
         amp_controller_admin_datasets::datasets::handlers::get_manifest::handler,
         amp_controller_admin_datasets::datasets::handlers::register::handler,
-        handlers::datasets::deploy::handler,
+        amp_controller_admin_jobs::datasets::handlers::deploy::handler,
         amp_controller_admin_tables::datasets::handlers::restore::handler,
         amp_controller_admin_tables::datasets::handlers::restore_table::handler,
         amp_controller_admin_datasets::datasets::handlers::delete::handler,
@@ -104,14 +81,14 @@ pub fn router(ctx: Ctx) -> Router<()> {
         amp_controller_admin_datasets::manifests::handlers::list_datasets::handler,
         amp_controller_admin_datasets::manifests::handlers::prune::handler,
         // Job endpoints
-        handlers::jobs::get_all::handler,
-        handlers::jobs::get_by_id::handler,
-        handlers::jobs::stop::handler,
-        handlers::jobs::progress::handler,
-        handlers::jobs::events::handler,
-        handlers::jobs::event_by_id::handler,
-        handlers::jobs::delete::handler,
-        handlers::jobs::delete_by_id::handler,
+        amp_controller_admin_jobs::jobs::handlers::get_all::handler,
+        amp_controller_admin_jobs::jobs::handlers::get_by_id::handler,
+        amp_controller_admin_jobs::jobs::handlers::stop::handler,
+        amp_controller_admin_jobs::jobs::handlers::progress::handler,
+        amp_controller_admin_jobs::jobs::handlers::events::handler,
+        amp_controller_admin_jobs::jobs::handlers::event_by_id::handler,
+        amp_controller_admin_jobs::jobs::handlers::delete::handler,
+        amp_controller_admin_jobs::jobs::handlers::delete_by_id::handler,
         // Provider endpoints
         amp_controller_admin_providers::providers::handlers::get_all::handler,
         amp_controller_admin_providers::providers::handlers::get_by_id::handler,
@@ -153,20 +130,20 @@ pub fn router(ctx: Ctx) -> Router<()> {
         amp_controller_admin_datasets::datasets::handlers::list_versions::VersionInfo,
         amp_controller_admin_datasets::datasets::handlers::register::RegisterRequest,
         amp_controller_admin_datasets::datasets::handlers::register::RegisterResponse,
-        handlers::datasets::deploy::DeployRequest,
-        handlers::datasets::deploy::DeployResponse,
+        amp_controller_admin_jobs::datasets::handlers::deploy::DeployRequest,
+        amp_controller_admin_jobs::datasets::handlers::deploy::DeployResponse,
         amp_controller_admin_tables::datasets::handlers::restore::RestoreResponse,
         amp_controller_admin_tables::datasets::handlers::restore::RestoredTableInfo,
         amp_controller_admin_tables::datasets::handlers::restore_table::RestoreTablePayload,
         // Job schemas
-        handlers::jobs::progress::JobProgressResponse,
-        handlers::jobs::progress::TableProgress,
-        handlers::jobs::events::JobEventsResponse,
-        handlers::jobs::events::JobEventInfo,
-        handlers::jobs::event_by_id::JobEventDetailResponse,
-        handlers::jobs::job_info::JobInfo,
-        handlers::jobs::get_all::JobsResponse,
-        handlers::jobs::delete::JobStatusFilter,
+        amp_controller_admin_jobs::jobs::handlers::progress::JobProgressResponse,
+        amp_controller_admin_jobs::jobs::handlers::progress::TableProgress,
+        amp_controller_admin_jobs::jobs::handlers::events::JobEventsResponse,
+        amp_controller_admin_jobs::jobs::handlers::events::JobEventInfo,
+        amp_controller_admin_jobs::jobs::handlers::event_by_id::JobEventDetailResponse,
+        amp_controller_admin_jobs::jobs::handlers::job_info::JobInfo,
+        amp_controller_admin_jobs::jobs::handlers::get_all::JobsResponse,
+        amp_controller_admin_jobs::jobs::handlers::delete::JobStatusFilter,
         // Provider schemas
         amp_controller_admin_providers::providers::handlers::provider_info::ProviderInfo,
         amp_controller_admin_providers::providers::handlers::get_all::ProvidersResponse,

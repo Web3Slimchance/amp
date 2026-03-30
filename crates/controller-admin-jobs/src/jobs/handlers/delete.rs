@@ -8,7 +8,7 @@ use monitoring::logging;
 
 use crate::{
     ctx::Ctx,
-    handlers::error::{ErrorResponse, IntoErrorResponse},
+    error::{ErrorResponse, IntoErrorResponse},
     scheduler,
 };
 
@@ -77,8 +77,8 @@ pub struct QueryParams {
         ),
         responses(
             (status = 204, description = "Jobs deleted successfully"),
-            (status = 400, description = "Invalid query parameters", body = crate::handlers::error::ErrorResponse),
-            (status = 500, description = "Internal server error", body = crate::handlers::error::ErrorResponse)
+            (status = 400, description = "Invalid query parameters", body = ErrorResponse),
+            (status = 500, description = "Internal server error", body = ErrorResponse)
         )
     )
 )]

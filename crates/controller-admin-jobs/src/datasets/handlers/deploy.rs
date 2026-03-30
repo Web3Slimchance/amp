@@ -19,7 +19,7 @@ use monitoring::logging;
 
 use crate::{
     ctx::Ctx,
-    handlers::error::{ErrorResponse, IntoErrorResponse},
+    error::{ErrorResponse, IntoErrorResponse},
     scheduler::{JobDescriptor, NodeSelector, ScheduleJobError},
 };
 

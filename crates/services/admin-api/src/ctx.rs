@@ -1,6 +1,7 @@
 //! Service context
 use std::sync::Arc;
 
+use amp_controller_admin_jobs::scheduler::Scheduler;
 use amp_data_store::DataStore;
 use amp_datasets_registry::DatasetsRegistry;
 use amp_providers_registry::ProvidersRegistry;
@@ -8,7 +9,7 @@ use amp_worker_core::node_id::NodeId;
 use common::{datasets_cache::DatasetsCache, udfs::eth_call::EthCallUdfsCache};
 use metadata_db::MetadataDb;
 
-use crate::{build_info::BuildInfo, scheduler::Scheduler};
+use crate::build_info::BuildInfo;
 
 /// The Admin API context
 #[derive(Clone)]
@@ -66,7 +67,7 @@ impl amp_controller_admin_system::workers::worker_service::WorkerService for Wor
 /// trait expected by `amp-controller-admin-tables`.
 ///
 /// Converts `metadata_db::jobs::JobId` to the worker-core job ID, delegates to
-/// [`SchedulerJobs::get_job`](crate::scheduler::SchedulerJobs::get_job), and maps the
+/// [`SchedulerJobs::get_job`](amp_controller_admin_jobs::scheduler::SchedulerJobs::get_job), and maps the
 /// result to the bool contract: `true` = active writer (blocks the operation),
 /// `false` = terminal or not found (safe to proceed).
 pub(crate) struct RevisionGuardImpl(pub(crate) Arc<dyn Scheduler>);

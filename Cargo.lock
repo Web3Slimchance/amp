@@ -29,6 +29,7 @@ name = "admin-api"
 version = "0.1.0"
 dependencies = [
  "amp-controller-admin-datasets",
+ "amp-controller-admin-jobs",
  "amp-controller-admin-providers",
  "amp-controller-admin-system",
  "amp-controller-admin-tables",
@@ -36,22 +37,12 @@ dependencies = [
  "amp-datasets-registry",
  "amp-providers-registry",
  "amp-worker-core",
- "amp-worker-datasets-derived",
- "amp-worker-datasets-raw",
- "amp-worker-gc",
  "async-trait",
  "axum",
  "common",
- "datasets-common",
- "datasets-derived",
  "metadata-db",
- "monitoring",
  "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tracing",
  "utoipa",
- "worker",
 ]
 
 [[package]]
@@ -995,6 +986,31 @@ dependencies = [
  "thiserror 2.0.18",
  "tracing",
  "utoipa",
+]
+
+[[package]]
+name = "amp-controller-admin-jobs"
+version = "0.1.0"
+dependencies = [
+ "amp-data-store",
+ "amp-datasets-registry",
+ "amp-worker-core",
+ "amp-worker-datasets-derived",
+ "amp-worker-datasets-raw",
+ "amp-worker-gc",
+ "async-trait",
+ "axum",
+ "common",
+ "datasets-common",
+ "datasets-derived",
+ "metadata-db",
+ "monitoring",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+ "utoipa",
+ "worker",
 ]
 
 [[package]]
@@ -3460,6 +3476,7 @@ name = "controller"
 version = "0.1.0"
 dependencies = [
  "admin-api",
+ "amp-controller-admin-jobs",
  "amp-data-store",
  "amp-datasets-registry",
  "amp-providers-registry",

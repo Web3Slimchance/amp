@@ -52,6 +52,7 @@ members = [
     "crates/extractors/tempo",
     "crates/extractors/tempo/gen",
     "crates/controller-admin-datasets",
+    "crates/controller-admin-jobs",
     "crates/controller-admin-providers",
     "crates/controller-admin-system",
     "crates/controller-admin-tables",

@@ -12,10 +12,8 @@ use monitoring::logging;
 
 use crate::{
     ctx::Ctx,
-    handlers::{
-        error::{ErrorResponse, IntoErrorResponse},
-        jobs::job_info::JobInfo,
-    },
+    error::{ErrorResponse, IntoErrorResponse},
+    jobs::handlers::job_info::JobInfo,
     scheduler,
 };
 
@@ -61,9 +59,9 @@ use crate::{
         ),
         responses(
             (status = 200, description = "Successfully retrieved jobs", body = JobsResponse),
-            (status = 400, description = "Invalid path parameters", body = crate::handlers::error::ErrorResponse),
-            (status = 404, description = "Dataset or revision not found", body = crate::handlers::error::ErrorResponse),
-            (status = 500, description = "Internal server error", body = crate::handlers::error::ErrorResponse)
+            (status = 400, description = "Invalid path parameters", body = ErrorResponse),
+            (status = 404, description = "Dataset or revision not found", body = ErrorResponse),
+            (status = 500, description = "Internal server error", body = ErrorResponse)
         )
     )
 )]

@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use super::job_info::JobInfo;
 use crate::{
     ctx::Ctx,
-    handlers::error::{ErrorResponse, IntoErrorResponse},
+    error::{ErrorResponse, IntoErrorResponse},
     scheduler,
 };
 
@@ -72,8 +72,8 @@ pub struct QueryParams {
         ),
         responses(
             (status = 200, description = "Successfully retrieved jobs", body = JobsResponse),
-            (status = 400, description = "Invalid query parameters", body = crate::handlers::error::ErrorResponse),
-            (status = 500, description = "Internal server error", body = crate::handlers::error::ErrorResponse)
+            (status = 400, description = "Invalid query parameters", body = ErrorResponse),
+            (status = 500, description = "Internal server error", body = ErrorResponse)
         )
     )
 )]
