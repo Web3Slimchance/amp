@@ -5,7 +5,7 @@ use amp_parquet::reader;
 use datafusion::{
     arrow::datatypes::SchemaRef,
     catalog::{Session, memory::DataSourceExec},
-    common::{DFSchema, ScalarValue, project_schema, stats::Precision},
+    common::{DFSchema, project_schema, stats::Precision},
     datasource::{
         TableProvider, TableType, create_ordering,
         listing::{ListingTableUrl, PartitionedFile},
@@ -343,23 +343,9 @@ impl TableProvider for QueryableSnapshot {
 
         let target_partitions = state.config_options().execution.target_partitions;
         let table_schema = self.physical_table.schema();
-        let (file_groups, mut statistics) = self
+        let (file_groups, statistics) = self
             .resolve_file_groups(&segments, target_partitions, table_schema.clone())
             .await?;
-
-        // Override _block_num column statistics with exact min/max from synced_range.
-        // This enables the AggregateStatistics optimizer to resolve MIN/MAX(_block_num)
-        // as constants without scanning parquet files.
-        if let Some(range) = &self.synced_range
-            && let Ok(idx) =
-                table_schema.index_of(datasets_common::block_num::RESERVED_BLOCK_NUM_COLUMN_NAME)
-        {
-            statistics.column_statistics[idx].null_count = Precision::Exact(0);
-            statistics.column_statistics[idx].min_value =
-                Precision::Exact(ScalarValue::UInt64(Some(range.start())));
-            statistics.column_statistics[idx].max_value =
-                Precision::Exact(ScalarValue::UInt64(Some(range.end())));
-        }
 
         if statistics.num_rows == Precision::Absent {
             tracing::warn!("Table has no row count statistics. Queries may be inefficient.");
