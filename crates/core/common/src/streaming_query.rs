@@ -866,7 +866,7 @@ impl StreamingQuery {
             .unwrap_or_default();
         let (blocks_physical_table, blocks_sql_schema_name) = &self.blocks_table;
         let sql = format!(
-            "SELECT hash, parent_hash, timestamp FROM {} WHERE block_num = {} {} LIMIT 1",
+            "SELECT hash, parent_hash, timestamp FROM {} WHERE _block_num = {} {} LIMIT 1",
             TableReference::Partial {
                 schema: Arc::new(blocks_sql_schema_name.to_string()),
                 table: Arc::new(blocks_physical_table.table_name().clone()),
