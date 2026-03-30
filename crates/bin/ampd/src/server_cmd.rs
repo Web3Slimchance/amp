@@ -163,7 +163,7 @@ pub enum Error {
 /// Convert common config to server-specific config
 pub fn config_from_common(config: &CommonConfig) -> ServerConfig {
     ServerConfig {
-        server_microbatch_max_interval: config.server_microbatch_max_interval,
+        microbatch_max_interval: config.microbatch_max_interval,
         keep_alive_interval: config.keep_alive_interval,
         max_mem_mb: config.max_mem_mb,
         query_max_mem_mb: config.query_max_mem_mb,

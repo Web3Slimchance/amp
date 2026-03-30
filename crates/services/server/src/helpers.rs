@@ -6,6 +6,9 @@ use datafusion::{
 /// `SETTINGS` key that enables streaming mode.
 const STREAM_SETTING: &str = "stream";
 
+/// `SETTINGS` key that overrides the microbatch max interval.
+const MICROBATCH_MAX_INTERVAL_SETTING: &str = "microbatch_max_interval";
+
 /// Check whether a parsed statement contains `SETTINGS stream = true`.
 ///
 /// ```sql
@@ -35,6 +38,33 @@ pub fn is_streaming(stmt: &sql::parser::Statement) -> bool {
     };
 
     is_streaming
+}
+
+/// Extract `microbatch_max_interval` from `SETTINGS microbatch_max_interval = <u64>`.
+///
+/// ```sql
+/// SELECT * FROM eth.logs SETTINGS stream = true, microbatch_max_interval = 5000
+/// ```
+pub fn microbatch_max_interval(stmt: &sql::parser::Statement) -> Option<u64> {
+    let sql::parser::Statement::Statement(box_stmt) = stmt else {
+        return None;
+    };
+    let ast::Statement::Query(query) = box_stmt.as_ref() else {
+        return None;
+    };
+    let settings = query.settings.as_ref()?;
+    let setting = settings.iter().find(|s| {
+        s.key
+            .value
+            .eq_ignore_ascii_case(MICROBATCH_MAX_INTERVAL_SETTING)
+    })?;
+    let Expr::Value(v) = &setting.value else {
+        return None;
+    };
+    match &v.value {
+        ast::Value::Number(n, _) => n.parse::<u64>().ok(),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -110,6 +140,84 @@ mod tests {
 
         //* Then
         assert!(!result, "query without SETTINGS should not be streaming");
+    }
+
+    #[test]
+    fn microbatch_max_interval_with_valid_value_returns_some() {
+        //* Given
+        let stmt =
+            parse_stmt("SELECT * FROM test SETTINGS stream = true, microbatch_max_interval = 5000");
+
+        //* When
+        let result = microbatch_max_interval(&stmt);
+
+        //* Then
+        assert_eq!(
+            result,
+            Some(5000),
+            "should extract microbatch_max_interval from SETTINGS"
+        );
+    }
+
+    #[test]
+    fn microbatch_max_interval_with_uppercase_key_returns_value() {
+        //* Given
+        let stmt = parse_stmt("SELECT * FROM test SETTINGS MICROBATCH_MAX_INTERVAL = 200");
+
+        //* When
+        let result = microbatch_max_interval(&stmt);
+
+        //* Then
+        assert_eq!(
+            result,
+            Some(200),
+            "case-insensitive key should be recognized"
+        );
+    }
+
+    #[test]
+    fn microbatch_max_interval_without_setting_returns_none() {
+        //* Given
+        let stmt = parse_stmt("SELECT * FROM test SETTINGS stream = true");
+
+        //* When
+        let result = microbatch_max_interval(&stmt);
+
+        //* Then
+        assert_eq!(
+            result, None,
+            "missing microbatch_max_interval setting should return None"
+        );
+    }
+
+    #[test]
+    fn microbatch_max_interval_without_settings_clause_returns_none() {
+        //* Given
+        let stmt = parse_stmt("SELECT * FROM test");
+
+        //* When
+        let result = microbatch_max_interval(&stmt);
+
+        //* Then
+        assert_eq!(
+            result, None,
+            "query without SETTINGS clause should return None"
+        );
+    }
+
+    #[test]
+    fn microbatch_max_interval_with_boolean_value_returns_none() {
+        //* Given
+        let stmt = parse_stmt("SELECT * FROM test SETTINGS microbatch_max_interval = true");
+
+        //* When
+        let result = microbatch_max_interval(&stmt);
+
+        //* Then
+        assert_eq!(
+            result, None,
+            "boolean value should not be parsed as microbatch_max_interval"
+        );
     }
 
     fn parse_stmt(sql: &str) -> sql::parser::Statement {

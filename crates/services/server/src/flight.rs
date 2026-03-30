@@ -156,8 +156,11 @@ impl Service {
             .map_err(Error::PlanSql)?;
 
         let is_streaming = is_streaming.unwrap_or_else(|| crate::helpers::is_streaming(&query));
+        let microbatch_max_interval = crate::helpers::microbatch_max_interval(&query);
         let dataset_labels = catalog_dataset_labels(&catalog);
-        let result = self.execute_plan(catalog, plan, is_streaming, cursor).await;
+        let result = self
+            .execute_plan(catalog, plan, is_streaming, cursor, microbatch_max_interval)
+            .await;
 
         // Record execution error, once per dataset
         if result.is_err()
@@ -183,6 +186,7 @@ impl Service {
         plan: DetachedLogicalPlan,
         is_streaming: bool,
         cursor: Option<Cursor>,
+        microbatch_max_interval: Option<u64>,
     ) -> Result<QueryResultStream, Error> {
         let query_start_time = std::time::Instant::now();
         let dataset_labels = catalog_dataset_labels(&catalog);
@@ -308,7 +312,9 @@ impl Service {
                 cursor,
                 &self.notification_multiplexer,
                 None,
-                self.config.server_microbatch_max_interval,
+                microbatch_max_interval
+                    .unwrap_or(self.config.microbatch_max_interval)
+                    .max(1),
                 self.config.keep_alive_interval,
                 None, // no job_id for query path
             )

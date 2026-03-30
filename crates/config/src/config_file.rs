@@ -49,9 +49,6 @@ pub const DEFAULT_MANIFESTS_DIRNAME: &str = "manifests";
 /// Default maximum interval for derived dataset dump microbatches (in blocks)
 pub const DEFAULT_MICROBATCH_MAX_INTERVAL: u64 = 100_000;
 
-/// Default maximum interval for streaming server microbatches (in blocks)
-pub const DEFAULT_SERVER_MICROBATCH_MAX_INTERVAL: u64 = 1_000;
-
 /// Default keep-alive interval for streaming server (in seconds)
 pub const DEFAULT_KEEP_ALIVE_INTERVAL: u64 = 30;
 
@@ -176,12 +173,11 @@ pub struct ConfigFile {
     /// Polling interval for new blocks during dump in seconds (default: 1.0)
     #[serde(default)]
     pub poll_interval_secs: ConfigDuration<1>,
-    /// Max interval for derived dataset dump microbatches in blocks (default: 100000)
+    /// Max interval for microbatches in blocks (default: 100000).
+    /// Used for derived dataset dumps and as the default for streaming server queries
+    /// when the client does not override via the SQL `SETTINGS` clause.
     #[serde(default = "default_microbatch_max_interval")]
     pub microbatch_max_interval: u64,
-    /// Max interval for streaming server microbatches in blocks (default: 1000)
-    #[serde(default = "default_server_microbatch_max_interval")]
-    pub server_microbatch_max_interval: u64,
     /// Keep-alive interval for streaming server in seconds (default: 30; min: 30)
     #[serde(default = "default_keep_alive_interval")]
     pub keep_alive_interval: u64,
@@ -245,11 +241,6 @@ fn default_manifests_dir() -> String {
 /// Serde default for [`ConfigFile::microbatch_max_interval`]. Returns [`DEFAULT_MICROBATCH_MAX_INTERVAL`].
 fn default_microbatch_max_interval() -> u64 {
     DEFAULT_MICROBATCH_MAX_INTERVAL
-}
-
-/// Serde default for [`ConfigFile::server_microbatch_max_interval`]. Returns [`DEFAULT_SERVER_MICROBATCH_MAX_INTERVAL`].
-fn default_server_microbatch_max_interval() -> u64 {
-    DEFAULT_SERVER_MICROBATCH_MAX_INTERVAL
 }
 
 /// Serde default for [`ConfigFile::keep_alive_interval`]. Returns [`DEFAULT_KEEP_ALIVE_INTERVAL`].

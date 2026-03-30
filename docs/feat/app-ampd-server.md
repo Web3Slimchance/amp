@@ -59,8 +59,9 @@ ampd server
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `server_microbatch_max_interval` | - | Maximum blocks per streaming microbatch |
 | `keep_alive_interval` | - | Seconds between keep-alive messages (min 30s) |
+
+Clients can override `microbatch_max_interval` per query via the SQL `SETTINGS` clause (see [Streaming Queries](query-sql-streaming.md)). When not set, the server uses the configured `microbatch_max_interval` value.
 
 ### Config File
 
@@ -68,7 +69,6 @@ ampd server
 # .amp/config.toml
 flight_addr = "0.0.0.0:1602"
 jsonl_addr = "0.0.0.0:1603"
-server_microbatch_max_interval = 100
 keep_alive_interval = 60
 ```
 

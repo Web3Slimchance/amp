@@ -91,10 +91,19 @@ Clients receiving `is_reorg: true` should invalidate cached data from affected b
 
 ## Configuration
 
-| Setting                          | Default | Description                                       |
-| -------------------------------- | ------- | ------------------------------------------------- |
-| `server_microbatch_max_interval` | -       | Maximum blocks per microbatch                     |
-| `keep_alive_interval`            | -       | Seconds between keep-alive messages (minimum 30s) |
+| Setting              | Default | Description                                       |
+| -------------------- | ------- | ------------------------------------------------- |
+| `keep_alive_interval`| -       | Seconds between keep-alive messages (minimum 30s) |
+
+### Per-Query Settings
+
+The `microbatch_max_interval` can be set per query via the SQL `SETTINGS` clause:
+
+```sql
+SELECT * FROM eth.logs SETTINGS stream = true, microbatch_max_interval = 5000
+```
+
+When not specified, the server falls back to the configured `microbatch_max_interval` value.
 
 ### Keep-Alive
 

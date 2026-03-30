@@ -57,7 +57,7 @@
       "minimum": 0
     },
     "microbatch_max_interval": {
-      "description": "Max interval for derived dataset dump microbatches in blocks (default: 100000)",
+      "description": "Max interval for microbatches in blocks (default: 100000).\nUsed for derived dataset dumps and as the default for streaming server queries\nwhen the client does not override via the SQL `SETTINGS` clause.",
       "type": "integer",
       "format": "uint64",
       "default": 100000,
@@ -87,13 +87,6 @@
       "type": "integer",
       "format": "uint",
       "default": 0,
-      "minimum": 0
-    },
-    "server_microbatch_max_interval": {
-      "description": "Max interval for streaming server microbatches in blocks (default: 1000)",
-      "type": "integer",
-      "format": "uint64",
-      "default": 1000,
       "minimum": 0
     },
     "spill_location": {

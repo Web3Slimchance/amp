@@ -156,7 +156,7 @@ impl Drop for DaemonServer {
 /// Convert config::Config to server::config::Config
 fn server_config_from_common(config: &amp_config::Config) -> Config {
     Config {
-        server_microbatch_max_interval: config.server_microbatch_max_interval,
+        microbatch_max_interval: config.microbatch_max_interval,
         keep_alive_interval: config.keep_alive_interval,
         max_mem_mb: config.max_mem_mb,
         query_max_mem_mb: config.query_max_mem_mb,

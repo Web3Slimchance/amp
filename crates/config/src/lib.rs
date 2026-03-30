@@ -18,7 +18,7 @@ pub use self::{
     config_file::{
         ConfigDefaultsOverride, ConfigFile, DEFAULT_DATA_DIRNAME, DEFAULT_KEEP_ALIVE_INTERVAL,
         DEFAULT_MANIFESTS_DIRNAME, DEFAULT_MICROBATCH_MAX_INTERVAL, DEFAULT_PROVIDERS_DIRNAME,
-        DEFAULT_SERVER_MICROBATCH_MAX_INTERVAL, no_defaults_override,
+        no_defaults_override,
     },
     metadb::{DEFAULT_METADB_CONN_POOL_SIZE, DEFAULT_METADB_DIRNAME, MetadataDbConfig},
     redacted::Redacted,
@@ -103,7 +103,6 @@ fn resolve_config(
         query_max_mem_mb: config_file.query_max_mem_mb,
         spill_location: config_file.spill_location,
         microbatch_max_interval: config_file.microbatch_max_interval,
-        server_microbatch_max_interval: config_file.server_microbatch_max_interval,
         parquet: config_file.writer,
         opentelemetry: config_file.opentelemetry,
         server_addrs,
@@ -213,8 +212,6 @@ pub struct Config {
     pub spill_location: Vec<PathBuf>,
     /// Maximum interval for derived dataset dump microbatches (in blocks).
     pub microbatch_max_interval: u64,
-    /// Maximum interval for streaming server microbatches (in blocks).
-    pub server_microbatch_max_interval: u64,
     /// OpenTelemetry observability configuration.
     pub opentelemetry: Option<OpenTelemetryConfig>,
     /// Network addresses for query server endpoints.
