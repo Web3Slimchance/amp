@@ -9,9 +9,9 @@
 
 use std::sync::Arc;
 
+use amp_providers_common::network_id::NetworkId;
 use async_trait::async_trait;
 use datafusion::error::DataFusionError;
-use datasets_common::network_id::NetworkId;
 use datasets_derived::func_name::ETH_CALL_FUNCTION_NAME;
 
 use crate::{

@@ -14,9 +14,11 @@
 //! Additional fields depend on the provider type.
 use std::{collections::BTreeMap, ops::Deref};
 
-use amp_providers_common::config::{ConfigHeaderWithNetwork, ProviderConfigRaw, TryIntoConfig};
 pub use amp_providers_common::{config::ProviderResolvedConfigRaw, provider_name::ProviderName};
-use datasets_common::network_id::NetworkId;
+use amp_providers_common::{
+    config::{ConfigHeaderWithNetwork, ProviderConfigRaw, TryIntoConfig},
+    network_id::NetworkId,
+};
 use monitoring::logging;
 use object_store::ObjectStore;
 

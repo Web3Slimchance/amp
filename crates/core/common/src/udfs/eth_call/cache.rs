@@ -5,12 +5,12 @@
 
 use std::sync::Arc;
 
+use amp_providers_common::network_id::NetworkId;
 use amp_providers_registry::{EvmRpcProviderKind, ProvidersRegistry};
 use datafusion::{
     common::HashMap,
     logical_expr::{ScalarUDF, async_udf::AsyncScalarUDF},
 };
-use datasets_common::network_id::NetworkId;
 use monitoring::telemetry::metrics::Meter;
 use parking_lot::RwLock;
 

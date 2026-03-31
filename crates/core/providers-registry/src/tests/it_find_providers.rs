@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use amp_providers_common::{config::ProviderConfigRaw, provider_name::ProviderName};
+use amp_providers_common::{
+    config::ProviderConfigRaw, network_id::NetworkId, provider_name::ProviderName,
+};
 use object_store::{ObjectStore, memory::InMemory};
 
 use crate::{ProvidersRegistry, store::ProviderConfigsStore};
@@ -43,9 +45,8 @@ async fn find_providers_with_multiple_providers_returns_in_lexicographic_order()
             .expect("should register provider");
     }
 
-    let network = "mainnet".parse().expect("should parse valid network id");
-
     //* When
+    let network: NetworkId = "mainnet".parse().unwrap();
     let providers = registry.find_providers("evm-rpc", &network).await;
 
     //* Then

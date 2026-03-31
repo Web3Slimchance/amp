@@ -9,7 +9,7 @@ use alloy::{
     rpc::{json_rpc::ErrorPayload, types::TransactionInput},
     transports::{RpcError, TransportErrorKind},
 };
-use amp_providers_common::provider_name::ProviderName;
+use amp_providers_common::{network_id::NetworkId, provider_name::ProviderName};
 use async_trait::async_trait;
 use datafusion::{
     arrow::{
@@ -26,7 +26,6 @@ use datafusion::{
         async_udf::AsyncScalarUDFImpl,
     },
 };
-use datasets_common::network_id::NetworkId;
 use itertools::izip;
 
 use super::metrics::EthCallMetrics;

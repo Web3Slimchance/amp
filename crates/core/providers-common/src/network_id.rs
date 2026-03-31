@@ -22,6 +22,15 @@
 pub struct NetworkId(#[cfg_attr(feature = "schemars", schemars(length(min = 1)))] String);
 
 impl NetworkId {
+    /// Creates a NetworkId without validation.
+    ///
+    /// # Invariants
+    ///
+    /// The caller must ensure the value is a valid, non-empty network identifier.
+    pub fn new_unchecked(value: String) -> Self {
+        Self(value)
+    }
+
     /// Returns a reference to the inner string value
     pub fn as_str(&self) -> &str {
         &self.0
@@ -115,6 +124,14 @@ impl<'de> serde::Deserialize<'de> for NetworkId {
     {
         let value = String::deserialize(deserializer)?;
         value.try_into().map_err(serde::de::Error::custom)
+    }
+}
+
+impl From<&datasets_common::network_id::NetworkId> for NetworkId {
+    fn from(value: &datasets_common::network_id::NetworkId) -> Self {
+        // SAFETY: The source NetworkId has already been validated.
+        // So the value is guaranteed to be a valid, non-empty network identifier.
+        NetworkId::new_unchecked(value.to_string())
     }
 }
 

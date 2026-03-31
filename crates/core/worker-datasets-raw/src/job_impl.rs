@@ -99,7 +99,7 @@ use common::{
 };
 use datasets_common::{
     block_num::BlockNum, dataset::Dataset as _, hash_reference::HashReference,
-    network_id::NetworkId, table_name::TableName,
+    table_name::TableName,
 };
 use datasets_raw::{
     client::{BlockStreamer as _, BlockStreamerExt as _, LatestBlockError},
@@ -243,11 +243,14 @@ pub async fn execute(
 
     let kind = dataset.kind();
     let network = dataset.network();
-    let providers = ctx.providers_registry.find_providers(&kind, network).await;
+    let providers = ctx
+        .providers_registry
+        .find_providers(&kind, &network.into())
+        .await;
     if providers.is_empty() {
         return Err(Error::ProviderNotFound {
             kind: kind.to_string(),
-            network: network.clone(),
+            network: network.to_string(),
         });
     }
     let (provider_name, config) =
@@ -534,7 +537,7 @@ pub enum Error {
 
     /// No provider found matching the dataset's kind and network.
     #[error("No provider found for kind '{kind}' and network '{network}'")]
-    ProviderNotFound { kind: String, network: NetworkId },
+    ProviderNotFound { kind: String, network: String },
 
     /// Failed to create block stream client for dataset.
     #[error("Failed to create block stream client for dataset")]
