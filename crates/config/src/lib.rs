@@ -292,6 +292,13 @@ pub struct KafkaEventsConfig {
     /// When enabled, connections to Kafka brokers use TLS.
     #[serde(default)]
     pub tls_enabled: bool,
+
+    /// Path to a PEM-encoded CA certificate file for TLS verification (optional)
+    ///
+    /// When set, the Kafka client will trust this CA certificate for verifying
+    /// broker TLS connections, instead of using system root certificates.
+    /// Required when connecting to brokers using self-signed or internal CA certificates.
+    pub tls_ca_cert_path: Option<PathBuf>,
 }
 
 /// Ensures the `.amp/` base directory structure exists (for solo mode).

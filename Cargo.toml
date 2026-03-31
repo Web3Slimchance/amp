@@ -144,6 +144,7 @@ reqwest = { version = "0.13", default-features = false, features = [
 ] }
 rstest = "0.26.1"
 rustls = { version = "0.23", features = ["ring"] }
+rustls-pemfile = "2"
 schemars = "1.0.4"
 semver = { version = "1.0.18", features = ["serde"] }
 sha2 = "0.10"

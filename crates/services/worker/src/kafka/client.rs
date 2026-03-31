@@ -1,6 +1,6 @@
 //! Kafka producer for worker events.
 
-use std::{sync::Arc, time::Duration};
+use std::{path::Path, sync::Arc, time::Duration};
 
 use amp_config::KafkaEventsConfig;
 use backon::{BackoffBuilder, Retryable};
@@ -41,7 +41,7 @@ impl KafkaProducer {
 
         // Configure TLS if enabled
         if config.tls_enabled {
-            let tls_config = Self::build_tls_config();
+            let tls_config = Self::build_tls_config(config.tls_ca_cert_path.as_deref())?;
             builder = builder.tls_config(tls_config);
         }
 
@@ -77,17 +77,37 @@ impl KafkaProducer {
         })
     }
 
-    /// Builds TLS configuration with system root certificates.
-    fn build_tls_config() -> Arc<ClientConfig> {
-        let root_store = rustls::RootCertStore {
-            roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
+    /// Builds TLS configuration.
+    ///
+    /// If a custom CA certificate path is provided, the client will trust that CA
+    /// for verifying broker connections. Otherwise, system root certificates are used.
+    fn build_tls_config(ca_cert_path: Option<&Path>) -> Result<Arc<ClientConfig>, Error> {
+        let root_store = match ca_cert_path {
+            Some(path) => {
+                let ca_pem = fs_err::read(path).map_err(|e| Error::TlsCaCert { source: e })?;
+                let mut reader = std::io::BufReader::new(&ca_pem[..]);
+                let certs: Vec<_> = rustls_pemfile::certs(&mut reader)
+                    .collect::<Result<_, _>>()
+                    .map_err(|e| Error::TlsCaCert { source: e })?;
+
+                let mut store = rustls::RootCertStore::empty();
+                for cert in certs {
+                    store.add(cert).map_err(|e| Error::TlsCaCert {
+                        source: std::io::Error::new(std::io::ErrorKind::InvalidData, e),
+                    })?;
+                }
+                store
+            }
+            None => rustls::RootCertStore {
+                roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
+            },
         };
 
         let tls_config = ClientConfig::builder()
             .with_root_certificates(root_store)
             .with_no_client_auth();
 
-        Arc::new(tls_config)
+        Ok(Arc::new(tls_config))
     }
 
     /// Sends an event to Kafka with retry logic.
@@ -185,6 +205,13 @@ pub enum Error {
     /// Missing SASL password
     #[error("sasl_password is required when sasl_mechanism is set")]
     MissingSaslPassword,
+
+    /// Failed to load TLS CA certificate
+    #[error("failed to load TLS CA certificate")]
+    TlsCaCert {
+        #[source]
+        source: std::io::Error,
+    },
 }
 
 impl Error {
@@ -409,6 +436,7 @@ mod tests {
             sasl_username: sasl_user.map(Into::into),
             sasl_password: sasl_pass.map(Into::into),
             tls_enabled: false,
+            tls_ca_cert_path: None,
         }
     }
 }

@@ -119,3 +119,4 @@ url = "postgres://<pg_url>"
 # sasl_username = "your-username"
 # sasl_password = "your-password"
 # tls_enabled = true              # Enable TLS encryption (default: false)
+# tls_ca_cert_path = "/path/to/ca.crt"  # Custom CA cert for self-signed/internal TLS (optional)

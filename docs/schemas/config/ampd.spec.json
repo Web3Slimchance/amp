@@ -241,6 +241,13 @@
             "null"
           ]
         },
+        "tls_ca_cert_path": {
+          "description": "Path to a PEM-encoded CA certificate file for TLS verification (optional)\n\nWhen set, the Kafka client will trust this CA certificate for verifying\nbroker TLS connections, instead of using system root certificates.\nRequired when connecting to brokers using self-signed or internal CA certificates.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "tls_enabled": {
           "description": "Enable TLS encryption (default: false)\n\nWhen enabled, connections to Kafka brokers use TLS.",
           "type": "boolean",
