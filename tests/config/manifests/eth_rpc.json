@@ -436,40 +436,40 @@
               "type": {
                 "List": {
                   "name": "item",
-                  "nullable": false,
                   "data_type": {
                     "Struct": [
                       {
                         "name": "address",
-                        "nullable": false,
                         "data_type": {
                           "FixedSizeBinary": 20
                         },
+                        "nullable": false,
                         "dict_id": 0,
                         "dict_is_ordered": false,
                         "metadata": {}
                       },
                       {
                         "name": "storage_keys",
-                        "nullable": false,
                         "data_type": {
                           "List": {
                             "name": "item",
-                            "nullable": false,
                             "data_type": {
                               "FixedSizeBinary": 32
                             },
+                            "nullable": false,
                             "dict_id": 0,
                             "dict_is_ordered": false,
                             "metadata": {}
                           }
                         },
+                        "nullable": false,
                         "dict_id": 0,
                         "dict_is_ordered": false,
                         "metadata": {}
                       }
                     ]
                   },
+                  "nullable": false,
                   "dict_id": 0,
                   "dict_is_ordered": false,
                   "metadata": {}
@@ -482,10 +482,10 @@
               "type": {
                 "List": {
                   "name": "item",
-                  "nullable": false,
                   "data_type": {
                     "FixedSizeBinary": 32
                   },
+                  "nullable": false,
                   "dict_id": 0,
                   "dict_is_ordered": false,
                   "metadata": {}
@@ -498,65 +498,65 @@
               "type": {
                 "List": {
                   "name": "item",
-                  "nullable": false,
                   "data_type": {
                     "Struct": [
                       {
                         "name": "chain_id",
-                        "nullable": false,
                         "data_type": "UInt64",
+                        "nullable": false,
                         "dict_id": 0,
                         "dict_is_ordered": false,
                         "metadata": {}
                       },
                       {
                         "name": "address",
-                        "nullable": false,
                         "data_type": {
                           "FixedSizeBinary": 20
                         },
+                        "nullable": false,
                         "dict_id": 0,
                         "dict_is_ordered": false,
                         "metadata": {}
                       },
                       {
                         "name": "nonce",
-                        "nullable": false,
                         "data_type": "UInt64",
+                        "nullable": false,
                         "dict_id": 0,
                         "dict_is_ordered": false,
                         "metadata": {}
                       },
                       {
                         "name": "y_parity",
-                        "nullable": false,
                         "data_type": "Boolean",
+                        "nullable": false,
                         "dict_id": 0,
                         "dict_is_ordered": false,
                         "metadata": {}
                       },
                       {
                         "name": "r",
-                        "nullable": false,
                         "data_type": {
                           "FixedSizeBinary": 32
                         },
+                        "nullable": false,
                         "dict_id": 0,
                         "dict_is_ordered": false,
                         "metadata": {}
                       },
                       {
                         "name": "s",
-                        "nullable": false,
                         "data_type": {
                           "FixedSizeBinary": 32
                         },
+                        "nullable": false,
                         "dict_id": 0,
                         "dict_is_ordered": false,
                         "metadata": {}
                       }
                     ]
                   },
+                  "nullable": false,
                   "dict_id": 0,
                   "dict_is_ordered": false,
                   "metadata": {}

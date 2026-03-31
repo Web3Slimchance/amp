@@ -2,7 +2,7 @@
 
 use arrow::{
     array::{ArrayRef, AsArray as _, RecordBatch},
-    datatypes::UInt64Type,
+    datatypes::{Schema, UInt64Type},
 };
 use datasets_common::{
     block_num::{BlockNum, RESERVED_BLOCK_NUM_COLUMN_NAME},
@@ -69,6 +69,61 @@ impl TableRows {
 
     pub fn block_num(&self) -> BlockNum {
         self.range.start()
+    }
+
+    /// Projects the record batch to the provided schema when it is a superset.
+    pub fn project(&mut self, schema: &Schema) -> Result<(), TableRowError> {
+        let rows_schema = self.rows.schema();
+
+        let schemas_match = rows_schema.fields().len() == schema.fields().len()
+            && rows_schema
+                .fields()
+                .iter()
+                .zip(schema.fields())
+                .all(|(left, right)| {
+                    left.name() == right.name() && left.data_type() == right.data_type()
+                });
+
+        if schemas_match {
+            return Ok(());
+        }
+
+        let mut projection = Vec::with_capacity(schema.fields().len());
+
+        for target_field in schema.fields() {
+            let Some(index) = rows_schema
+                .fields()
+                .iter()
+                .position(|f| f.name() == target_field.name())
+            else {
+                return Err(TableRowError::SchemaProjection {
+                    expected: schema.fields().iter().map(|f| f.name().clone()).collect(),
+                    actual: rows_schema
+                        .fields()
+                        .iter()
+                        .map(|f| f.name().clone())
+                        .collect(),
+                });
+            };
+
+            let candidate = rows_schema.field(index);
+            if candidate.data_type() != target_field.data_type() {
+                return Err(TableRowError::SchemaProjection {
+                    expected: schema.fields().iter().map(|f| f.name().clone()).collect(),
+                    actual: rows_schema
+                        .fields()
+                        .iter()
+                        .map(|f| f.name().clone())
+                        .collect(),
+                });
+            }
+
+            projection.push(index);
+        }
+
+        self.rows = self.rows.project(&projection)?;
+
+        Ok(())
     }
 
     fn check_invariants(
@@ -167,6 +222,15 @@ pub enum TableRowError {
     /// - Invalid array data or corrupted memory buffers
     #[error(transparent)]
     Arrow(#[from] arrow::error::ArrowError),
+
+    /// Record batch schema cannot be projected onto target schema
+    #[error(
+        "cannot project table rows onto target schema; expected fields {expected:?}, actual {actual:?}"
+    )]
+    SchemaProjection {
+        expected: Vec<String>,
+        actual: Vec<String>,
+    },
 
     /// Table rows violate structural invariants
     ///

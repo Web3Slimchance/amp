@@ -9,6 +9,11 @@
         "arrow": {
           "fields": [
             {
+              "name": "_block_num",
+              "type": "UInt64",
+              "nullable": false
+            },
+            {
               "name": "block_num",
               "type": "UInt64",
               "nullable": false
@@ -88,6 +93,16 @@
               "nullable": false
             },
             {
+              "name": "total_difficulty",
+              "type": {
+                "Decimal128": [
+                  38,
+                  0
+                ]
+              },
+              "nullable": true
+            },
+            {
               "name": "gas_limit",
               "type": "UInt64",
               "nullable": false
@@ -147,6 +162,13 @@
                 "FixedSizeBinary": 32
               },
               "nullable": true
+            },
+            {
+              "name": "requests_hash",
+              "type": {
+                "FixedSizeBinary": 32
+              },
+              "nullable": true
             }
           ]
         }
@@ -157,6 +179,11 @@
       "schema": {
         "arrow": {
           "fields": [
+            {
+              "name": "_block_num",
+              "type": "UInt64",
+              "nullable": false
+            },
             {
               "name": "block_hash",
               "type": {
@@ -285,6 +312,11 @@
         "arrow": {
           "fields": [
             {
+              "name": "_block_num",
+              "type": "UInt64",
+              "nullable": false
+            },
+            {
               "name": "block_hash",
               "type": {
                 "FixedSizeBinary": 32
@@ -373,6 +405,11 @@
         "arrow": {
           "fields": [
             {
+              "name": "_block_num",
+              "type": "UInt64",
+              "nullable": false
+            },
+            {
               "name": "block_hash",
               "type": {
                 "FixedSizeBinary": 32
@@ -435,12 +472,7 @@
             },
             {
               "name": "value",
-              "type": {
-                "Decimal128": [
-                  38,
-                  0
-                ]
-              },
+              "type": "Utf8",
               "nullable": true
             },
             {

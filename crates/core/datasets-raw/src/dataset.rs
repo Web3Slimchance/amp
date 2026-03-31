@@ -1,6 +1,9 @@
 //! Concrete raw dataset and table types.
 
-use std::{collections::BTreeSet, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 use arrow::datatypes::SchemaRef;
 use datasets_common::{
@@ -135,6 +138,27 @@ impl Table {
     pub fn network_ref(&self) -> &NetworkId {
         &self.network
     }
+}
+
+/// Constructs dataset tables from manifest table definitions.
+///
+/// `sorted_by` specifies column names by which all tables are naturally sorted.
+///
+/// # Errors
+///
+/// Returns an error if any table name in the manifest is not a valid [`TableName`].
+pub fn tables_from_manifest(
+    manifest_tables: BTreeMap<String, crate::manifest::Table>,
+    sorted_by: Vec<String>,
+) -> Result<Vec<Table>, datasets_common::table_name::TableNameError> {
+    manifest_tables
+        .into_iter()
+        .map(|(name, table)| {
+            let name: TableName = name.parse()?;
+            let schema = table.schema.arrow.into_schema_ref();
+            Ok(Table::new(name, schema, table.network, sorted_by.clone()))
+        })
+        .collect()
 }
 
 impl TableTrait for Table {

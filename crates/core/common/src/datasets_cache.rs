@@ -183,6 +183,14 @@ pub enum GetDatasetError {
         source: ManifestParseError,
     },
 
+    /// Manifest contains an invalid table name
+    #[error("Invalid table name in manifest for dataset '{reference}'")]
+    InvalidTableName {
+        reference: HashReference,
+        #[source]
+        source: datasets_common::table_name::TableNameError,
+    },
+
     /// Failed to create derived dataset instance
     #[error("Failed to create derived dataset for '{reference}'")]
     CreateDerivedDataset {
@@ -201,6 +209,7 @@ impl crate::retryable::RetryableErrorExt for GetDatasetError {
             Self::ParseManifestForKind { .. } => false,
             Self::UnsupportedKind { .. } => false,
             Self::ParseManifest { .. } => false,
+            Self::InvalidTableName { .. } => false,
             Self::CreateDerivedDataset { .. } => false,
         }
     }
@@ -339,7 +348,14 @@ fn create_dataset_from_manifest(
                     kind: EvmRpcDatasetKind.into(),
                     source,
                 })?;
-            Arc::new(evm_rpc_datasets::dataset(reference.clone(), manifest))
+            Arc::new(
+                evm_rpc_datasets::dataset(reference.clone(), manifest).map_err(|source| {
+                    GetDatasetError::InvalidTableName {
+                        reference: reference.clone(),
+                        source,
+                    }
+                })?,
+            )
         }
         s if s == SolanaDatasetKind => {
             let manifest = manifest_content
@@ -349,7 +365,14 @@ fn create_dataset_from_manifest(
                     kind: SolanaDatasetKind.into(),
                     source,
                 })?;
-            Arc::new(solana_datasets::dataset(reference.clone(), manifest))
+            Arc::new(
+                solana_datasets::dataset(reference.clone(), manifest).map_err(|source| {
+                    GetDatasetError::InvalidTableName {
+                        reference: reference.clone(),
+                        source,
+                    }
+                })?,
+            )
         }
         s if s == FirehoseDatasetKind => {
             let manifest = manifest_content
@@ -359,7 +382,14 @@ fn create_dataset_from_manifest(
                     kind: FirehoseDatasetKind.into(),
                     source,
                 })?;
-            Arc::new(firehose_datasets::dataset(reference.clone(), manifest))
+            Arc::new(
+                firehose_datasets::dataset(reference.clone(), manifest).map_err(|source| {
+                    GetDatasetError::InvalidTableName {
+                        reference: reference.clone(),
+                        source,
+                    }
+                })?,
+            )
         }
         s if s == TempoDatasetKind => {
             let manifest = manifest_content
@@ -369,7 +399,14 @@ fn create_dataset_from_manifest(
                     kind: TempoDatasetKind.into(),
                     source,
                 })?;
-            Arc::new(tempo_datasets::dataset(reference.clone(), manifest))
+            Arc::new(
+                tempo_datasets::dataset(reference.clone(), manifest).map_err(|source| {
+                    GetDatasetError::InvalidTableName {
+                        reference: reference.clone(),
+                        source,
+                    }
+                })?,
+            )
         }
         s if s == DerivedDatasetKind => {
             let manifest = manifest_content

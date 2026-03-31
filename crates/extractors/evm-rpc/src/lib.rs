@@ -1,5 +1,5 @@
-use datasets_common::hash_reference::HashReference;
-use datasets_raw::dataset::Dataset as RawDataset;
+use datasets_common::{hash_reference::HashReference, table_name::TableNameError};
+use datasets_raw::dataset::{Dataset as RawDataset, tables_from_manifest};
 
 pub mod tables;
 
@@ -14,14 +14,16 @@ pub use datasets_raw::{
 ///
 /// Dataset identity (namespace, name, version, hash reference) must be provided externally as they
 /// are not part of the manifest.
-pub fn dataset(reference: HashReference, manifest: Manifest) -> RawDataset {
+pub fn dataset(reference: HashReference, manifest: Manifest) -> Result<RawDataset, TableNameError> {
     let network = manifest.network;
-    RawDataset::new(
+    let sorted_by = vec!["block_num".to_string(), "timestamp".to_string()];
+    let tables = tables_from_manifest(manifest.tables, sorted_by)?;
+    Ok(RawDataset::new(
         reference,
         manifest.kind.into(),
         network.clone(),
-        tables::all(&network),
+        tables,
         Some(manifest.start_block),
         manifest.finalized_blocks_only,
-    )
+    ))
 }

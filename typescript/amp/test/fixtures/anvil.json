@@ -1,5 +1,4 @@
 {
-  "$comment": "Generated with: cargo run --release -p ampctl -- manifest generate --kind evm-rpc --network anvil --start-block 0",
   "kind": "evm-rpc",
   "network": "anvil",
   "start_block": 0,
@@ -10,6 +9,11 @@
         "arrow": {
           "fields": [
             {
+              "name": "_block_num",
+              "type": "UInt64",
+              "nullable": false
+            },
+            {
               "name": "block_num",
               "type": "UInt64",
               "nullable": false
@@ -17,7 +21,10 @@
             {
               "name": "timestamp",
               "type": {
-                "Timestamp": ["Nanosecond", "+00:00"]
+                "Timestamp": [
+                  "Nanosecond",
+                  "+00:00"
+                ]
               },
               "nullable": false
             },
@@ -78,9 +85,22 @@
             {
               "name": "difficulty",
               "type": {
-                "Decimal128": [38, 0]
+                "Decimal128": [
+                  38,
+                  0
+                ]
               },
               "nullable": false
+            },
+            {
+              "name": "total_difficulty",
+              "type": {
+                "Decimal128": [
+                  38,
+                  0
+                ]
+              },
+              "nullable": true
             },
             {
               "name": "gas_limit",
@@ -112,7 +132,10 @@
             {
               "name": "base_fee_per_gas",
               "type": {
-                "Decimal128": [38, 0]
+                "Decimal128": [
+                  38,
+                  0
+                ]
               },
               "nullable": true
             },
@@ -139,6 +162,13 @@
                 "FixedSizeBinary": 32
               },
               "nullable": true
+            },
+            {
+              "name": "requests_hash",
+              "type": {
+                "FixedSizeBinary": 32
+              },
+              "nullable": true
             }
           ]
         }
@@ -149,6 +179,11 @@
       "schema": {
         "arrow": {
           "fields": [
+            {
+              "name": "_block_num",
+              "type": "UInt64",
+              "nullable": false
+            },
             {
               "name": "block_hash",
               "type": {
@@ -164,7 +199,10 @@
             {
               "name": "timestamp",
               "type": {
-                "Timestamp": ["Nanosecond", "+00:00"]
+                "Timestamp": [
+                  "Nanosecond",
+                  "+00:00"
+                ]
               },
               "nullable": false
             },
@@ -235,6 +273,11 @@
         "arrow": {
           "fields": [
             {
+              "name": "_block_num",
+              "type": "UInt64",
+              "nullable": false
+            },
+            {
               "name": "block_hash",
               "type": {
                 "FixedSizeBinary": 32
@@ -249,7 +292,10 @@
             {
               "name": "timestamp",
               "type": {
-                "Timestamp": ["Nanosecond", "+00:00"]
+                "Timestamp": [
+                  "Nanosecond",
+                  "+00:00"
+                ]
               },
               "nullable": false
             },
@@ -280,7 +326,10 @@
             {
               "name": "gas_price",
               "type": {
-                "Decimal128": [38, 0]
+                "Decimal128": [
+                  38,
+                  0
+                ]
               },
               "nullable": true
             },
@@ -291,9 +340,7 @@
             },
             {
               "name": "value",
-              "type": {
-                "Decimal128": [38, 0]
-              },
+              "type": "Utf8",
               "nullable": false
             },
             {
@@ -302,19 +349,28 @@
               "nullable": false
             },
             {
-              "name": "v",
-              "type": "Binary",
-              "nullable": false
-            },
-            {
               "name": "r",
-              "type": "Binary",
+              "type": {
+                "FixedSizeBinary": 32
+              },
               "nullable": false
             },
             {
               "name": "s",
-              "type": "Binary",
+              "type": {
+                "FixedSizeBinary": 32
+              },
               "nullable": false
+            },
+            {
+              "name": "v_parity",
+              "type": "Boolean",
+              "nullable": false
+            },
+            {
+              "name": "chain_id",
+              "type": "UInt64",
+              "nullable": true
             },
             {
               "name": "gas_used",
@@ -329,21 +385,30 @@
             {
               "name": "max_fee_per_gas",
               "type": {
-                "Decimal128": [38, 0]
+                "Decimal128": [
+                  38,
+                  0
+                ]
               },
               "nullable": true
             },
             {
               "name": "max_priority_fee_per_gas",
               "type": {
-                "Decimal128": [38, 0]
+                "Decimal128": [
+                  38,
+                  0
+                ]
               },
               "nullable": true
             },
             {
               "name": "max_fee_per_blob_gas",
               "type": {
-                "Decimal128": [38, 0]
+                "Decimal128": [
+                  38,
+                  0
+                ]
               },
               "nullable": true
             },
@@ -358,6 +423,146 @@
               "name": "status",
               "type": "Boolean",
               "nullable": false
+            },
+            {
+              "name": "state_root",
+              "type": {
+                "FixedSizeBinary": 32
+              },
+              "nullable": true
+            },
+            {
+              "name": "access_list",
+              "type": {
+                "List": {
+                  "name": "item",
+                  "data_type": {
+                    "Struct": [
+                      {
+                        "name": "address",
+                        "data_type": {
+                          "FixedSizeBinary": 20
+                        },
+                        "nullable": false,
+                        "dict_id": 0,
+                        "dict_is_ordered": false,
+                        "metadata": {}
+                      },
+                      {
+                        "name": "storage_keys",
+                        "data_type": {
+                          "List": {
+                            "name": "item",
+                            "data_type": {
+                              "FixedSizeBinary": 32
+                            },
+                            "nullable": false,
+                            "dict_id": 0,
+                            "dict_is_ordered": false,
+                            "metadata": {}
+                          }
+                        },
+                        "nullable": false,
+                        "dict_id": 0,
+                        "dict_is_ordered": false,
+                        "metadata": {}
+                      }
+                    ]
+                  },
+                  "nullable": false,
+                  "dict_id": 0,
+                  "dict_is_ordered": false,
+                  "metadata": {}
+                }
+              },
+              "nullable": true
+            },
+            {
+              "name": "blob_versioned_hashes",
+              "type": {
+                "List": {
+                  "name": "item",
+                  "data_type": {
+                    "FixedSizeBinary": 32
+                  },
+                  "nullable": false,
+                  "dict_id": 0,
+                  "dict_is_ordered": false,
+                  "metadata": {}
+                }
+              },
+              "nullable": true
+            },
+            {
+              "name": "authorization_list",
+              "type": {
+                "List": {
+                  "name": "item",
+                  "data_type": {
+                    "Struct": [
+                      {
+                        "name": "chain_id",
+                        "data_type": "UInt64",
+                        "nullable": false,
+                        "dict_id": 0,
+                        "dict_is_ordered": false,
+                        "metadata": {}
+                      },
+                      {
+                        "name": "address",
+                        "data_type": {
+                          "FixedSizeBinary": 20
+                        },
+                        "nullable": false,
+                        "dict_id": 0,
+                        "dict_is_ordered": false,
+                        "metadata": {}
+                      },
+                      {
+                        "name": "nonce",
+                        "data_type": "UInt64",
+                        "nullable": false,
+                        "dict_id": 0,
+                        "dict_is_ordered": false,
+                        "metadata": {}
+                      },
+                      {
+                        "name": "y_parity",
+                        "data_type": "Boolean",
+                        "nullable": false,
+                        "dict_id": 0,
+                        "dict_is_ordered": false,
+                        "metadata": {}
+                      },
+                      {
+                        "name": "r",
+                        "data_type": {
+                          "FixedSizeBinary": 32
+                        },
+                        "nullable": false,
+                        "dict_id": 0,
+                        "dict_is_ordered": false,
+                        "metadata": {}
+                      },
+                      {
+                        "name": "s",
+                        "data_type": {
+                          "FixedSizeBinary": 32
+                        },
+                        "nullable": false,
+                        "dict_id": 0,
+                        "dict_is_ordered": false,
+                        "metadata": {}
+                      }
+                    ]
+                  },
+                  "nullable": false,
+                  "dict_id": 0,
+                  "dict_is_ordered": false,
+                  "metadata": {}
+                }
+              },
+              "nullable": true
             }
           ]
         }

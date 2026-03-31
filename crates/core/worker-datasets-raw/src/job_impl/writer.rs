@@ -264,9 +264,19 @@ impl RawTableWriter {
 
     pub async fn write(
         &mut self,
-        table_rows: TableRows,
+        mut table_rows: TableRows,
     ) -> Result<Option<ParquetFileWriterOutput>, RawTableWriterError> {
-        assert_eq!(table_rows.table.name(), self.table.table_name());
+        if table_rows.table.name() != self.table.table_name() {
+            return Err(RawTableWriterError::TableMismatch {
+                expected: self.table.table_name().clone(),
+                actual: table_rows.table.name().clone(),
+            });
+        }
+
+        // Validate that the incoming rows have a compatible schema, projecting if necessary.
+        table_rows
+            .project(&self.table.schema())
+            .map_err(RawTableWriterError::SchemaProjection)?;
 
         let mut parquet_meta = None;
         let block_num = table_rows.block_num();
@@ -480,6 +490,23 @@ pub enum RawTableWriterError {
     /// - Parquet encoding failure
     #[error("Failed to write to file")]
     Write(#[source] ParquetError),
+
+    /// Failed to project record batch onto the target schema
+    ///
+    /// This occurs when the incoming rows have a schema that cannot be projected
+    /// onto the writer's table schema (e.g., missing or mistyped fields).
+    #[error("Schema projection failed")]
+    SchemaProjection(#[source] datasets_raw::rows::TableRowError),
+
+    /// Received rows for a table different than the writer target
+    ///
+    /// This occurs when the caller passes `TableRows` whose table name does not
+    /// match the table this writer was constructed for.
+    #[error("Table mismatch: expected {expected}, got {actual}")]
+    TableMismatch {
+        expected: TableName,
+        actual: TableName,
+    },
 }
 
 impl RetryableErrorExt for RawTableWriterError {
@@ -488,6 +515,8 @@ impl RetryableErrorExt for RawTableWriterError {
             Self::CloseCurrentFile(err) => err.is_retryable(),
             Self::CreateNewFile(_) => true,
             Self::Write(_) => true,
+            Self::SchemaProjection(_) => false,
+            Self::TableMismatch { .. } => false,
         }
     }
 }
