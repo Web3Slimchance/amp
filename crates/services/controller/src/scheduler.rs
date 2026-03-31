@@ -32,10 +32,8 @@ use amp_controller_admin_jobs::scheduler::{
     ListJobDescriptorsError, ListJobsByDatasetError, ListJobsError, ListWorkersError, NodeSelector,
     ScheduleJobError, SchedulerJobs, SchedulerWorkers, StopJobError,
 };
-use amp_worker_core::{
-    jobs::{job_id::JobId, status::JobStatus},
-    node_id::NodeId,
-};
+use amp_job_core::{job_id::JobId, status::JobStatus};
+use amp_worker_core::node_id::NodeId;
 use async_trait::async_trait;
 use datasets_common::{hash::Hash, name::Name, namespace::Namespace};
 use metadata_db::{

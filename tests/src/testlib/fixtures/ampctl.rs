@@ -5,7 +5,7 @@
 //! the ampctl admin API client for direct programmatic access.
 
 use amp_client_admin::{Client, datasets::NodeSelector, end_block::EndBlock};
-use amp_worker_core::jobs::job_id::JobId;
+use amp_job_core::job_id::JobId;
 use anyhow::{Result, anyhow};
 use datasets_common::{hash::Hash, reference::Reference};
 use serde_json::value::RawValue;

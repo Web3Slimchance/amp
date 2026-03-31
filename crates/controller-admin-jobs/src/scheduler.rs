@@ -23,10 +23,8 @@
 //! - Worker information queries
 //! - Worker status retrieval
 
-use amp_worker_core::{
-    jobs::{job_id::JobId, status::JobStatus},
-    node_id::{InvalidIdError, NodeId, validate_node_id},
-};
+use amp_job_core::{job_id::JobId, status::JobStatus};
+use amp_worker_core::node_id::{InvalidIdError, NodeId, validate_node_id};
 use async_trait::async_trait;
 use datasets_common::{hash::Hash, name::Name, namespace::Namespace};
 use metadata_db::{

@@ -1,9 +1,10 @@
-use amp_worker_core::{jobs::job_id::JobId, node_id::NodeId};
+use amp_job_core::job_id::JobId;
+use amp_worker_core::node_id::NodeId;
 use chrono::{DateTime, Utc};
 
 mod notif;
 
-use amp_worker_core::jobs::status::JobStatus;
+use amp_job_core::status::JobStatus;
 
 pub use self::notif::{Action as JobAction, Notification as JobNotification};
 

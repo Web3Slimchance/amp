@@ -6,9 +6,8 @@
 
 use std::sync::Arc;
 
-use amp_worker_core::{
-    ProgressUpdate, SyncCompletedInfo, SyncFailedInfo, SyncStartedInfo, jobs::job_id::JobId,
-};
+use amp_job_core::job_id::JobId;
+use amp_worker_core::{ProgressUpdate, SyncCompletedInfo, SyncFailedInfo, SyncStartedInfo};
 
 use super::EventEmitter;
 use crate::kafka::proto;

@@ -6,6 +6,7 @@ license-file.workspace = true
 
 [dependencies]
 amp-data-store = { path = "../data-store" }
+amp-job-core = { path = "../job-core" }
 amp-parquet = { path = "../parquet" }
 amp-providers-registry = { path = "../providers-registry" }
 amp-worker-core = { path = "../worker-core" }

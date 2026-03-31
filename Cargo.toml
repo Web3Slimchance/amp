@@ -21,6 +21,7 @@ members = [
     "crates/core/datasets-raw/gen",
     "crates/core/datasets-static",
     "crates/core/datasets-static/gen",
+    "crates/core/job-core",
     "crates/core/js-runtime",
     "crates/core/metadata-db",
     "crates/core/monitoring",

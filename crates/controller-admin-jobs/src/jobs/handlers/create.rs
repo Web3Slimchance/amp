@@ -1,6 +1,6 @@
 //! Job creation handler
 
-use amp_worker_core::jobs::job_id::JobId;
+use amp_job_core::job_id::JobId;
 use axum::{Json, extract::State, http::StatusCode};
 use metadata_db::physical_table_revision::LocationId;
 use monitoring::logging;

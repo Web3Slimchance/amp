@@ -28,6 +28,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 name = "admin-client"
 version = "0.1.0"
 dependencies = [
+ "amp-job-core",
  "amp-worker-core",
  "datasets-common",
  "monitoring",
@@ -973,6 +974,7 @@ version = "0.1.0"
 dependencies = [
  "amp-data-store",
  "amp-datasets-registry",
+ "amp-job-core",
  "amp-worker-core",
  "amp-worker-datasets-derived",
  "amp-worker-datasets-raw",
@@ -1110,6 +1112,17 @@ dependencies = [
  "amp-datasets-static",
  "schemars 1.2.1",
  "serde_json",
+]
+
+[[package]]
+name = "amp-job-core"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "metadata-db",
+ "serde",
+ "sha2",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -1369,14 +1382,12 @@ dependencies = [
  "datafusion",
  "datasets-common",
  "futures",
- "hex",
  "metadata-db",
  "monitoring",
  "object_store",
  "parking_lot",
  "serde",
  "serde_json",
- "sha2",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -1388,6 +1399,7 @@ name = "amp-worker-datasets-derived"
 version = "0.1.0"
 dependencies = [
  "amp-data-store",
+ "amp-job-core",
  "amp-parquet",
  "amp-worker-core",
  "common",
@@ -1408,6 +1420,7 @@ name = "amp-worker-datasets-raw"
 version = "0.1.0"
 dependencies = [
  "amp-data-store",
+ "amp-job-core",
  "amp-parquet",
  "amp-providers-registry",
  "amp-worker-core",
@@ -1433,6 +1446,7 @@ name = "amp-worker-gc"
 version = "0.1.0"
 dependencies = [
  "amp-data-store",
+ "amp-job-core",
  "amp-worker-core",
  "futures",
  "metadata-db",
@@ -1450,6 +1464,7 @@ version = "0.1.0"
 dependencies = [
  "admin-client",
  "alloy",
+ "amp-job-core",
  "amp-worker-core",
  "anyhow",
  "arboard",
@@ -1480,6 +1495,7 @@ name = "ampctl"
 version = "0.1.0"
 dependencies = [
  "admin-client",
+ "amp-job-core",
  "amp-object-store",
  "amp-worker-core",
  "anyhow",
@@ -3463,6 +3479,7 @@ dependencies = [
  "amp-controller-admin-tables",
  "amp-data-store",
  "amp-datasets-registry",
+ "amp-job-core",
  "amp-providers-registry",
  "amp-worker-core",
  "async-trait",
@@ -13114,6 +13131,7 @@ dependencies = [
  "amp-config",
  "amp-data-store",
  "amp-datasets-registry",
+ "amp-job-core",
  "amp-object-store",
  "amp-parquet",
  "amp-providers-registry",
@@ -15018,6 +15036,7 @@ version = "0.1.0"
 dependencies = [
  "amp-config",
  "amp-data-store",
+ "amp-job-core",
  "amp-worker-core",
  "amp-worker-datasets-derived",
  "amp-worker-datasets-raw",

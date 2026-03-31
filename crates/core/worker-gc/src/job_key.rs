@@ -4,7 +4,7 @@
 //! with a location ID, producing a deterministic hash that prevents duplicate
 //! job scheduling for the same physical table revision.
 
-use amp_worker_core::jobs::job_key::{self, JobKey};
+use amp_job_core::job_key::{self, JobKey};
 use metadata_db::physical_table_revision::LocationId;
 
 use crate::job_kind::JOB_KIND;

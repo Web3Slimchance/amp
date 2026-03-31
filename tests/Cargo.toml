@@ -21,6 +21,7 @@ amp-object-store = { path = "../crates/core/object-store" }
 amp-parquet = { path = "../crates/core/parquet" }
 amp-providers-registry = { path = "../crates/core/providers-registry" }
 amp-providers-solana = { path = "../crates/core/providers-solana" }
+amp-job-core = { path = "../crates/core/job-core" }
 amp-worker-core = { path = "../crates/core/worker-core" }
 amp-worker-gc = { path = "../crates/core/worker-gc" }
 amp-client-admin = { package = "admin-client", path = "../crates/clients/admin" }

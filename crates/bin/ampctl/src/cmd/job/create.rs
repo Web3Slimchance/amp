@@ -75,7 +75,7 @@ pub struct GcArgs {
 /// Result of a job creation operation.
 #[derive(serde::Serialize)]
 struct CreateResult {
-    job_id: amp_worker_core::jobs::job_id::JobId,
+    job_id: amp_job_core::job_id::JobId,
     #[serde(flatten)]
     request: CreateJobRequest,
 }

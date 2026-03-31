@@ -2,10 +2,8 @@
 //!
 //! Provides methods for interacting with the `/datasets` endpoints of the admin API.
 
-use amp_worker_core::{
-    jobs::job_id::JobId,
-    node_id::{InvalidIdError, NodeId, validate_node_id},
-};
+use amp_job_core::job_id::JobId;
+use amp_worker_core::node_id::{InvalidIdError, NodeId, validate_node_id};
 use datasets_common::{
     dataset_kind_str::DatasetKindStr, fqn::FullyQualifiedName, hash::Hash, name::Name,
     namespace::Namespace, reference::Reference, revision::Revision, table_name::TableName,

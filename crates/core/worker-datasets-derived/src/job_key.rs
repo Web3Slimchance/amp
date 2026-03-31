@@ -4,7 +4,7 @@
 //! with a dataset reference, producing a deterministic hash that prevents duplicate
 //! job scheduling for the same dataset version.
 
-use amp_worker_core::jobs::job_key::{self, JobKey};
+use amp_job_core::job_key::{self, JobKey};
 use datasets_common::hash_reference::HashReference;
 
 use crate::job_kind::JOB_KIND;

@@ -1,6 +1,6 @@
 //! Job events handler
 
-use amp_worker_core::jobs::job_id::JobId;
+use amp_job_core::job_id::JobId;
 use axum::{
     Json,
     extract::{Path, State, rejection::PathRejection},

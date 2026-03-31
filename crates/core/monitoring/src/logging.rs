@@ -74,6 +74,7 @@ const AMP_CRATES: &[&str] = &[
     "amp_data_store",
     "amp_datasets_registry",
     "amp_datasets_static",
+    "amp_job_core",
     "amp_object_store",
     "amp_parquet",
     "amp_providers_common",

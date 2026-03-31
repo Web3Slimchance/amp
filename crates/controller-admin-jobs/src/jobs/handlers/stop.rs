@@ -1,6 +1,6 @@
 //! Jobs stop handler
 
-use amp_worker_core::jobs::job_id::JobId;
+use amp_job_core::job_id::JobId;
 use axum::{
     extract::{Path, State, rejection::PathRejection},
     http::StatusCode,

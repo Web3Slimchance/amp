@@ -10,7 +10,8 @@ pub mod git;
 use std::{sync::Arc, time::Duration};
 
 use amp_data_store::DataStore;
-use amp_worker_core::{consistency_check, jobs::job_id::JobId};
+use amp_job_core::job_id::JobId;
+use amp_worker_core::consistency_check;
 use anyhow::{Result, anyhow};
 use common::{
     BlockRange,

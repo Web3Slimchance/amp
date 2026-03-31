@@ -8,7 +8,6 @@ pub mod block_ranges;
 pub mod check;
 pub mod compaction;
 pub mod error_detail;
-pub mod jobs;
 pub mod metrics;
 pub mod node_id;
 pub mod progress;

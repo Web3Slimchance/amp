@@ -28,8 +28,9 @@ mod ui;
 mod util;
 
 use action::Action;
+use amp_job_core::job_id::JobId;
 use amp_registry::AmpRegistryClient;
-use amp_worker_core::{jobs::job_id::JobId, node_id::NodeId};
+use amp_worker_core::node_id::NodeId;
 use app::{ActivePane, App, ContentView, DataSource, DeviceFlowStatus, InputMode};
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 

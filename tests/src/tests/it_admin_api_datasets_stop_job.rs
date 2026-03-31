@@ -11,7 +11,7 @@ use amp_client_admin::{
     end_block::EndBlock,
     jobs::{JobInfo, StopError},
 };
-use amp_worker_core::jobs::job_id::JobId;
+use amp_job_core::job_id::JobId;
 use datasets_common::{
     fqn::FullyQualifiedName, name::Name, namespace::Namespace, reference::Reference,
     revision::Revision, version::Version,

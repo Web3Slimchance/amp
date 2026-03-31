@@ -5,7 +5,7 @@
 //! end_block while the job is still active does not create a new job.
 
 use amp_client_admin::{self as client, end_block::EndBlock};
-use amp_worker_core::jobs::job_id::JobId;
+use amp_job_core::job_id::JobId;
 use datasets_common::reference::Reference;
 
 use crate::testlib::ctx::TestCtxBuilder;

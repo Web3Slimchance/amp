@@ -21,6 +21,7 @@ ratatui = "0.30"
 sha2 = "0.10.9"
 tokio.workspace = true
 admin-client = { path = "../../clients/admin" }
+amp-job-core = { path = "../../core/job-core" }
 amp-worker-core = { path = "../../core/worker-core" }
 schemars.workspace = true
 serde.workspace = true

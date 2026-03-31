@@ -79,7 +79,7 @@ impl amp_controller_admin_tables::revisions::revision_guard::RevisionGuard for R
         job_id: metadata_db::jobs::JobId,
     ) -> Result<bool, amp_controller_admin_tables::revisions::revision_guard::RevisionGuardError>
     {
-        let worker_job_id: amp_worker_core::jobs::job_id::JobId = job_id.into();
+        let worker_job_id: amp_job_core::job_id::JobId = job_id.into();
         let job = self.0.get_job(worker_job_id).await.map_err(|err| {
             amp_controller_admin_tables::revisions::revision_guard::RevisionGuardError(err.0)
         })?;

@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use amp_worker_core::jobs::{job_id::JobId, status::JobStatus};
+use amp_job_core::{job_id::JobId, status::JobStatus};
 use axum::{
     Json,
     extract::{Path, State, rejection::PathRejection},

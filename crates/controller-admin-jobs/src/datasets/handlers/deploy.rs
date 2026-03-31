@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use amp_datasets_registry::error::{ListVersionTagsError, ResolveRevisionError};
-use amp_worker_core::jobs::job_id::JobId;
+use amp_job_core::job_id::JobId;
 use amp_worker_datasets_derived::job_descriptor::JobDescriptor as MaterializeDerivedDatasetJobDescriptor;
 use amp_worker_datasets_raw::job_descriptor::JobDescriptor as MaterializeRawDatasetJobDescriptor;
 use axum::{

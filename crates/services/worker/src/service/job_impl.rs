@@ -2,10 +2,10 @@
 
 use std::sync::Arc;
 
+use amp_job_core::job_id::JobId;
 use amp_worker_core::{
     ProgressReporter,
     error_detail::ErrorDetailsProvider,
-    jobs::job_id::JobId,
     metrics::MetricsRegistry,
     retryable::{JobErrorExt, RetryableErrorExt},
 };

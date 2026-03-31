@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use amp_worker_core::jobs::job_id::JobId;
+use amp_job_core::job_id::JobId;
 use metadata_db::job_events::EventDetailOwned;
 use worker::job::Job;
 

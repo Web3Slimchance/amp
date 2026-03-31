@@ -6,6 +6,7 @@ license-file.workspace = true
 
 [dependencies]
 amp-data-store = { path = "../data-store" }
+amp-job-core = { path = "../job-core" }
 amp-parquet = { path = "../parquet" }
 common = { path = "../common" }
 datafusion.workspace = true

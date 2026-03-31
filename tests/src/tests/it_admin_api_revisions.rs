@@ -3,7 +3,7 @@ use amp_client_admin::revisions::{
     PruneResponse, RegisterError, RegisterResponse, RestoreError, RestoreResponse, RevisionInfo,
     TruncateError, TruncateResponse,
 };
-use amp_worker_core::jobs::job_id::JobId;
+use amp_job_core::job_id::JobId;
 use datasets_common::reference::Reference;
 use monitoring::logging;
 

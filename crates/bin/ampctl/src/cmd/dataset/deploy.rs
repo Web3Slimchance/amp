@@ -16,7 +16,7 @@
 //! - Logging: `AMP_LOG` env var (`error`, `warn`, `info`, `debug`, `trace`)
 
 use amp_client_admin::{datasets::NodeSelector, end_block::EndBlock};
-use amp_worker_core::jobs::job_id::JobId;
+use amp_job_core::job_id::JobId;
 use datasets_common::reference::Reference;
 
 use crate::args::GlobalArgs;

@@ -20,9 +20,9 @@ mod job_impl;
 mod job_queue;
 mod job_set;
 
+use amp_job_core::{job_id::JobId, status::JobStatus};
 use amp_worker_core::{
     error_detail::{ErrorContext, ErrorDetailPayload, collect_error_details},
-    jobs::{job_id::JobId, status::JobStatus},
     node_id::NodeId,
     retryable::JobErrorExt as _,
 };
@@ -470,7 +470,7 @@ async fn build_error_detail(
     stack_trace: Vec<String>,
     error_details: serde_json::Map<String, serde_json::Value>,
     queue: &job_queue::JobQueue,
-    job_id: amp_worker_core::jobs::job_id::JobId,
+    job_id: amp_job_core::job_id::JobId,
 ) -> metadata_db::job_events::EventDetail<'static> {
     let (attempt_result, job_desc_result) = tokio::join!(
         queue.get_attempt_count(job_id),
