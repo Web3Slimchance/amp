@@ -7,8 +7,8 @@ use std::sync::Arc;
 use amp_object_store::{ObjectStoreCreationError, url::ObjectStoreUrl};
 use bytes::Bytes;
 use datafusion::{
-    arrow::datatypes::SchemaRef,
-    common::Statistics,
+    arrow::datatypes::{DataType, SchemaRef},
+    common::{Statistics, stats::Precision},
     datasource::physical_plan::parquet::metadata::DFParquetMetadata,
     error::DataFusionError,
     parquet::{
@@ -16,6 +16,7 @@ use datafusion::{
         errors::ParquetError,
         file::metadata::{PageIndexPolicy, ParquetMetaData, ParquetMetaDataReader},
     },
+    scalar::ScalarValue,
 };
 use datasets_common::{hash_reference::HashReference, table_name::TableName};
 // Re-export foyer::Cache for use by downstream crates
@@ -874,10 +875,10 @@ impl DataStore {
                         .map_err(GetCachedMetadataError::ParseMetadata)?,
                 );
 
-                let statistics = Arc::new(
+                let statistics =
                     DFParquetMetadata::statistics_from_parquet_metadata(&metadata, &schema)
-                        .map_err(GetCachedMetadataError::ComputeStatistics)?,
-                );
+                        .map_err(GetCachedMetadataError::ComputeStatistics)?;
+                let statistics = Arc::new(normalize_statistics(statistics, &schema));
 
                 Ok::<CachedParquetData, GetCachedMetadataError>(CachedParquetData {
                     metadata,
@@ -973,6 +974,55 @@ pub struct PhyTableRevisionFileMetadata {
     pub object_meta: ObjectMeta,
     /// Parquet metadata including block ranges and other Amp-specific information.
     pub parquet_meta_json: serde_json::Value,
+}
+
+/// Ensures per-file statistics use types from the table schema.
+///
+/// `statistics_from_parquet_metadata` derives min/max `ScalarValue` types from the Parquet
+/// file's physical schema, which may differ across files (e.g. List inner field named
+/// `"item"` in files written with `coerce_types=false` vs `"element"` in files written with
+/// `coerce_types=true`). When these statistics are later merged across files, mismatched
+/// types cause `Interval::try_new` to fail.
+///
+/// This function replaces any null min/max value whose type doesn't match the table schema
+/// with a null `ScalarValue` of the correct type, preserving exactness.
+///
+/// # Panics
+///
+/// Panics if a non-null statistic has a mismatched type, since this is not expected to occur.
+fn normalize_statistics(mut statistics: Statistics, schema: &SchemaRef) -> Statistics {
+    for (col_stats, field) in statistics.column_statistics.iter_mut().zip(schema.fields()) {
+        let expected = field.data_type();
+        normalize_precision(&mut col_stats.min_value, field.name(), expected);
+        normalize_precision(&mut col_stats.max_value, field.name(), expected);
+    }
+    statistics
+}
+
+fn normalize_precision(value: &mut Precision<ScalarValue>, col_name: &str, expected: &DataType) {
+    let sv = match value {
+        Precision::Exact(sv) | Precision::Inexact(sv) => sv,
+        Precision::Absent => return,
+    };
+    if sv.data_type() == *expected {
+        return;
+    }
+    // Type mismatches only arise for complex types (List, Struct, Map) whose Parquet
+    // encoding differs in field naming across writer configurations. Parquet does not
+    // store min/max statistics for these types, so the values are always null.
+    // Primitive columns that do carry real statistics have stable types that match
+    // the table schema.
+    assert!(
+        sv.is_null(),
+        "non-null statistic for column {col_name} has type {} but table schema expects {expected}",
+        sv.data_type(),
+    );
+    // Replace null with the correct type, preserving the exactness level.
+    if let Ok(replacement) = ScalarValue::try_from(expected) {
+        *sv = replacement;
+    } else {
+        *value = Precision::Absent;
+    }
 }
 
 /// Construct opaque revision metadata from dataset context.
@@ -1654,3 +1704,171 @@ pub struct ScheduleFilesForGcError(#[source] pub metadata_db::Error);
 #[derive(Debug, thiserror::Error)]
 #[error("failed to stream expired GC files")]
 pub struct StreamExpiredGcFilesError(#[source] pub metadata_db::Error);
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use datafusion::{
+        arrow::datatypes::{DataType, Field, Fields, Schema},
+        common::{
+            Statistics,
+            stats::{ColumnStatistics, Precision},
+        },
+        physical_expr::ExprBoundaries,
+        scalar::ScalarValue,
+    };
+
+    use super::normalize_statistics;
+
+    /// Build a List<Struct<address: FixedSizeBinary(20), storage_keys: List<FixedSizeBinary(32)>>>
+    /// field with the given inner field name for the List elements.
+    fn access_list_field(list_element_name: &str) -> Field {
+        Field::new(
+            "access_list",
+            DataType::List(Arc::new(Field::new(
+                list_element_name,
+                DataType::Struct(Fields::from(vec![
+                    Field::new("address", DataType::FixedSizeBinary(20), false),
+                    Field::new(
+                        "storage_keys",
+                        DataType::List(Arc::new(Field::new(
+                            list_element_name,
+                            DataType::FixedSizeBinary(32),
+                            false,
+                        ))),
+                        false,
+                    ),
+                ])),
+                false,
+            ))),
+            true,
+        )
+    }
+
+    /// Reproduces the production error: merging statistics from files with different
+    /// List inner field names ("item" vs "element") causes `ExprBoundaries::try_from_column`
+    /// to fail because `Interval::try_new` requires both endpoints to have the same type.
+    #[test]
+    fn merged_statistics_with_mismatched_list_names_fail_without_normalization() {
+        let schema = Schema::new(vec![access_list_field("item")]);
+
+        // Simulate merged statistics where min came from an "item" file and max from
+        // an "element" file (what Precision::min/max produce for null ScalarValues).
+        let item_null = ScalarValue::try_from(access_list_field("item").data_type()).unwrap();
+        let element_null = ScalarValue::try_from(access_list_field("element").data_type()).unwrap();
+
+        let merged_stats = Statistics {
+            num_rows: Precision::Exact(100),
+            total_byte_size: Precision::Absent,
+            column_statistics: vec![ColumnStatistics {
+                null_count: Precision::Exact(0),
+                min_value: Precision::Exact(item_null),
+                max_value: Precision::Exact(element_null),
+                sum_value: Precision::Absent,
+                distinct_count: Precision::Absent,
+                byte_size: Precision::Absent,
+            }],
+        };
+
+        // Without normalization this fails with "Endpoints of an Interval should have
+        // the same type".
+        let result =
+            ExprBoundaries::try_from_column(&schema, &merged_stats.column_statistics[0], 0);
+        assert!(result.is_err(), "should fail without normalization");
+    }
+
+    /// After normalization, the same merged statistics succeed because both endpoints
+    /// are coerced to the table schema's type.
+    #[test]
+    fn normalize_fixes_mismatched_list_names() {
+        let schema = Arc::new(Schema::new(vec![access_list_field("item")]));
+
+        let item_null = ScalarValue::try_from(access_list_field("item").data_type()).unwrap();
+        let element_null = ScalarValue::try_from(access_list_field("element").data_type()).unwrap();
+
+        let merged_stats = Statistics {
+            num_rows: Precision::Exact(100),
+            total_byte_size: Precision::Absent,
+            column_statistics: vec![ColumnStatistics {
+                null_count: Precision::Exact(0),
+                min_value: Precision::Exact(item_null),
+                max_value: Precision::Exact(element_null),
+                sum_value: Precision::Absent,
+                distinct_count: Precision::Absent,
+                byte_size: Precision::Absent,
+            }],
+        };
+
+        let normalized = normalize_statistics(merged_stats, &schema);
+
+        // Both endpoints now have the table schema's type.
+        let col = &normalized.column_statistics[0];
+        let expected_type = access_list_field("item").data_type().clone();
+        assert_eq!(
+            col.min_value.get_value().unwrap().data_type(),
+            expected_type
+        );
+        assert_eq!(
+            col.max_value.get_value().unwrap().data_type(),
+            expected_type
+        );
+
+        // ExprBoundaries succeeds.
+        ExprBoundaries::try_from_column(&schema, col, 0)
+            .expect("should succeed after normalization");
+    }
+
+    /// Non-null values with mismatched types panic.
+    #[test]
+    #[should_panic(expected = "non-null statistic for column x")]
+    fn normalize_panics_on_non_null_mismatched_value() {
+        let schema = Arc::new(Schema::new(vec![Field::new("x", DataType::Int64, false)]));
+
+        let wrong_type_value = ScalarValue::Int32(Some(42));
+        let stats = Statistics {
+            num_rows: Precision::Exact(1),
+            total_byte_size: Precision::Absent,
+            column_statistics: vec![ColumnStatistics {
+                null_count: Precision::Exact(0),
+                min_value: Precision::Exact(wrong_type_value.clone()),
+                max_value: Precision::Exact(wrong_type_value),
+                sum_value: Precision::Absent,
+                distinct_count: Precision::Absent,
+                byte_size: Precision::Absent,
+            }],
+        };
+
+        normalize_statistics(stats, &schema);
+    }
+
+    /// Values that already match the schema pass through unchanged.
+    #[test]
+    fn normalize_preserves_matching_statistics() {
+        let schema = Arc::new(Schema::new(vec![Field::new("x", DataType::Int64, false)]));
+
+        let stats = Statistics {
+            num_rows: Precision::Exact(10),
+            total_byte_size: Precision::Absent,
+            column_statistics: vec![ColumnStatistics {
+                null_count: Precision::Exact(0),
+                min_value: Precision::Exact(ScalarValue::Int64(Some(1))),
+                max_value: Precision::Exact(ScalarValue::Int64(Some(100))),
+                sum_value: Precision::Absent,
+                distinct_count: Precision::Absent,
+                byte_size: Precision::Absent,
+            }],
+        };
+
+        let normalized = normalize_statistics(stats, &schema);
+        let col = &normalized.column_statistics[0];
+        assert_eq!(
+            *col.min_value.get_value().unwrap(),
+            ScalarValue::Int64(Some(1))
+        );
+        assert_eq!(
+            *col.max_value.get_value().unwrap(),
+            ScalarValue::Int64(Some(100))
+        );
+    }
+}
