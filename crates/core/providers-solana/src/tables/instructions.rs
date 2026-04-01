@@ -31,12 +31,12 @@ fn schema() -> Schema {
         Field::new("program_id_index", DataType::UInt8, false),
         Field::new(
             "accounts",
-            DataType::List(Arc::new(Field::new("item", DataType::UInt8, true))),
+            DataType::List(Arc::new(Field::new("element", DataType::UInt8, true))),
             false,
         ),
         Field::new(
             "data",
-            DataType::List(Arc::new(Field::new("item", DataType::UInt8, true))),
+            DataType::List(Arc::new(Field::new("element", DataType::UInt8, true))),
             false,
         ),
         // Inner instruction fields. Present only if this is an inner instruction.
@@ -85,8 +85,13 @@ impl InstructionRowsBuilder {
             slot: UInt64Builder::with_capacity(capacity),
             tx_index: UInt32Builder::with_capacity(capacity),
             program_id_index: UInt8Builder::with_capacity(capacity),
-            accounts: ListBuilder::with_capacity(UInt8Builder::new(), capacity),
-            data: ListBuilder::with_capacity(UInt8Builder::new(), capacity),
+            accounts: ListBuilder::with_capacity(UInt8Builder::new(), capacity)
+                .with_field(Field::new("element", DataType::UInt8, true)),
+            data: ListBuilder::with_capacity(UInt8Builder::new(), capacity).with_field(Field::new(
+                "element",
+                DataType::UInt8,
+                true,
+            )),
             inner_index: UInt32Builder::with_capacity(capacity),
             inner_stack_height: UInt32Builder::with_capacity(capacity),
         }

@@ -2511,7 +2511,7 @@ mod tests {
             Field::new(
                 "storage_keys",
                 DataType::List(Arc::new(Field::new(
-                    "item",
+                    "element",
                     DataType::FixedSizeBinary(32),
                     false,
                 ))),
@@ -2520,7 +2520,7 @@ mod tests {
         ]));
         let field = Arc::new(Field::new(
             "access_list",
-            DataType::List(Arc::new(Field::new("item", item_type, true))),
+            DataType::List(Arc::new(Field::new("element", item_type, true))),
             true,
         ));
 

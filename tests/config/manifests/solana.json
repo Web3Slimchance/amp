@@ -120,7 +120,7 @@
               "name": "accounts",
               "type": {
                 "List": {
-                  "name": "item",
+                  "name": "element",
                   "data_type": "UInt8",
                   "nullable": true,
                   "dict_id": 0,
@@ -134,7 +134,7 @@
               "name": "data",
               "type": {
                 "List": {
-                  "name": "item",
+                  "name": "element",
                   "data_type": "UInt8",
                   "nullable": true,
                   "dict_id": 0,
@@ -214,7 +214,7 @@
               "name": "address_table_lookups",
               "type": {
                 "List": {
-                  "name": "item",
+                  "name": "element",
                   "data_type": {
                     "Struct": [
                       {
@@ -229,7 +229,7 @@
                         "name": "writable_indexes",
                         "data_type": {
                           "List": {
-                            "name": "item",
+                            "name": "element",
                             "data_type": "UInt8",
                             "nullable": true,
                             "dict_id": 0,
@@ -246,7 +246,7 @@
                         "name": "readonly_indexes",
                         "data_type": {
                           "List": {
-                            "name": "item",
+                            "name": "element",
                             "data_type": "UInt8",
                             "nullable": true,
                             "dict_id": 0,
@@ -273,7 +273,7 @@
               "name": "account_keys",
               "type": {
                 "List": {
-                  "name": "item",
+                  "name": "element",
                   "data_type": "Utf8",
                   "nullable": true,
                   "dict_id": 0,
@@ -321,7 +321,7 @@
               "name": "signatures",
               "type": {
                 "List": {
-                  "name": "item",
+                  "name": "element",
                   "data_type": "Utf8",
                   "nullable": true,
                   "dict_id": 0,
@@ -345,7 +345,7 @@
               "name": "pre_balances",
               "type": {
                 "List": {
-                  "name": "item",
+                  "name": "element",
                   "data_type": "UInt64",
                   "nullable": true,
                   "dict_id": 0,
@@ -359,7 +359,7 @@
               "name": "post_balances",
               "type": {
                 "List": {
-                  "name": "item",
+                  "name": "element",
                   "data_type": "UInt64",
                   "nullable": true,
                   "dict_id": 0,
@@ -373,7 +373,7 @@
               "name": "log_messages",
               "type": {
                 "List": {
-                  "name": "item",
+                  "name": "element",
                   "data_type": "Utf8",
                   "nullable": true,
                   "dict_id": 0,
@@ -387,7 +387,7 @@
               "name": "pre_token_balances",
               "type": {
                 "List": {
-                  "name": "item",
+                  "name": "element",
                   "data_type": {
                     "Struct": [
                       {
@@ -471,7 +471,7 @@
               "name": "post_token_balances",
               "type": {
                 "List": {
-                  "name": "item",
+                  "name": "element",
                   "data_type": {
                     "Struct": [
                       {
@@ -555,7 +555,7 @@
               "name": "rewards",
               "type": {
                 "List": {
-                  "name": "item",
+                  "name": "element",
                   "data_type": {
                     "Struct": [
                       {
@@ -612,7 +612,7 @@
               "name": "loaded_addresses_writable",
               "type": {
                 "List": {
-                  "name": "item",
+                  "name": "element",
                   "data_type": "Utf8",
                   "nullable": true,
                   "dict_id": 0,
@@ -626,7 +626,7 @@
               "name": "loaded_addresses_readonly",
               "type": {
                 "List": {
-                  "name": "item",
+                  "name": "element",
                   "data_type": "Utf8",
                   "nullable": true,
                   "dict_id": 0,
@@ -645,7 +645,7 @@
               "name": "return_data_data",
               "type": {
                 "List": {
-                  "name": "item",
+                  "name": "element",
                   "data_type": "UInt8",
                   "nullable": true,
                   "dict_id": 0,

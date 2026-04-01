@@ -66,12 +66,12 @@ fn schema() -> Schema {
     let access_list = Field::new(
         "access_list",
         DataType::List(Arc::new(Field::new(
-            "item",
+            "element",
             DataType::Struct(Fields::from(vec![
                 Field::new("address", ADDRESS_TYPE, false),
                 Field::new(
                     "storage_keys",
-                    DataType::List(Arc::new(Field::new("item", BYTES32_TYPE, false))),
+                    DataType::List(Arc::new(Field::new("element", BYTES32_TYPE, false))),
                     false,
                 ),
             ])),
@@ -81,13 +81,13 @@ fn schema() -> Schema {
     );
     let blob_versioned_hashes = Field::new(
         "blob_versioned_hashes",
-        DataType::List(Arc::new(Field::new("item", BYTES32_TYPE, false))),
+        DataType::List(Arc::new(Field::new("element", BYTES32_TYPE, false))),
         true, // nullable - only EIP-4844 transactions have blob versioned hashes
     );
     let authorization_list = Field::new(
         "authorization_list",
         DataType::List(Arc::new(Field::new(
-            "item",
+            "element",
             DataType::Struct(Fields::from(vec![
                 Field::new("chain_id", DataType::UInt64, false),
                 Field::new("address", ADDRESS_TYPE, false),
@@ -223,7 +223,7 @@ impl TransactionRowsBuilder {
             Field::new("address", ADDRESS_TYPE, false),
             Field::new(
                 "storage_keys",
-                DataType::List(Arc::new(Field::new("item", BYTES32_TYPE, false))),
+                DataType::List(Arc::new(Field::new("element", BYTES32_TYPE, false))),
                 false,
             ),
         ]);
@@ -269,20 +269,20 @@ impl TransactionRowsBuilder {
                             Box::new(FixedSizeBinaryBuilder::with_capacity(0, 20)),
                             Box::new(
                                 ListBuilder::new(FixedSizeBinaryBuilder::with_capacity(0, 32))
-                                    .with_field(Field::new("item", BYTES32_TYPE, false)),
+                                    .with_field(Field::new("element", BYTES32_TYPE, false)),
                             ),
                         ],
                     ),
                     count,
                 )
                 .with_field(Field::new(
-                    "item",
+                    "element",
                     DataType::Struct(access_list_fields),
                     false,
                 ))
             },
             blob_versioned_hashes: ListBuilder::new(FixedSizeBinaryBuilder::with_capacity(0, 32))
-                .with_field(Field::new("item", BYTES32_TYPE, false)),
+                .with_field(Field::new("element", BYTES32_TYPE, false)),
             authorization_list: ListBuilder::with_capacity(
                 StructBuilder::new(
                     authorization_list_fields.clone(),
@@ -298,7 +298,7 @@ impl TransactionRowsBuilder {
                 count,
             )
             .with_field(Field::new(
-                "item",
+                "element",
                 DataType::Struct(authorization_list_fields),
                 false,
             )),

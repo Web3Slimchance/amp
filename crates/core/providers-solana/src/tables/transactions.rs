@@ -40,7 +40,7 @@ fn schema() -> Schema {
         Field::new("tx_version", DataType::Utf8, false),
         Field::new(
             "signatures",
-            DataType::List(Arc::new(Field::new("item", DataType::Utf8, true))),
+            DataType::List(Arc::new(Field::new("element", DataType::Utf8, true))),
             false,
         ),
         // Transaction status meta fields.
@@ -48,40 +48,40 @@ fn schema() -> Schema {
         Field::new("fee", DataType::UInt64, true),
         Field::new(
             "pre_balances",
-            DataType::List(Arc::new(Field::new("item", DataType::UInt64, true))),
+            DataType::List(Arc::new(Field::new("element", DataType::UInt64, true))),
             true,
         ),
         Field::new(
             "post_balances",
-            DataType::List(Arc::new(Field::new("item", DataType::UInt64, true))),
+            DataType::List(Arc::new(Field::new("element", DataType::UInt64, true))),
             true,
         ),
         Field::new(
             "log_messages",
-            DataType::List(Arc::new(Field::new("item", DataType::Utf8, true))),
+            DataType::List(Arc::new(Field::new("element", DataType::Utf8, true))),
             true,
         ),
         Field::new("pre_token_balances", token_balances_dtype(), true),
         Field::new("post_token_balances", token_balances_dtype(), true),
         Field::new(
             "rewards",
-            DataType::List(Arc::new(Field::new("item", reward_dtype(), true))),
+            DataType::List(Arc::new(Field::new("element", reward_dtype(), true))),
             true,
         ),
         Field::new(
             "loaded_addresses_writable",
-            DataType::List(Arc::new(Field::new("item", DataType::Utf8, true))),
+            DataType::List(Arc::new(Field::new("element", DataType::Utf8, true))),
             true,
         ),
         Field::new(
             "loaded_addresses_readonly",
-            DataType::List(Arc::new(Field::new("item", DataType::Utf8, true))),
+            DataType::List(Arc::new(Field::new("element", DataType::Utf8, true))),
             true,
         ),
         Field::new("return_data_program_id", DataType::Utf8, true),
         Field::new(
             "return_data_data",
-            DataType::List(Arc::new(Field::new("item", DataType::UInt8, true))),
+            DataType::List(Arc::new(Field::new("element", DataType::UInt8, true))),
             true,
         ),
         Field::new("compute_units_consumed", DataType::UInt64, true),
@@ -93,7 +93,7 @@ fn schema() -> Schema {
 
 fn token_balances_dtype() -> DataType {
     DataType::List(Arc::new(Field::new(
-        "item",
+        "element",
         DataType::Struct(Fields::from(vec![
             Field::new("account_index", DataType::UInt8, false),
             Field::new("mint", DataType::Utf8, false),
@@ -716,19 +716,42 @@ impl TransactionRowsBuilder {
             slot: UInt64Builder::with_capacity(count),
             tx_index: UInt32Builder::with_capacity(count),
             tx_version: StringBuilder::with_capacity(count, 0),
-            tx_signatures: ListBuilder::with_capacity(StringBuilder::new(), count),
+            tx_signatures: ListBuilder::with_capacity(StringBuilder::new(), count)
+                .with_field(Field::new("element", DataType::Utf8, true)),
             err: StringBuilder::with_capacity(count, 0),
             fee: UInt64Builder::with_capacity(count),
-            pre_balances: ListBuilder::with_capacity(UInt64Builder::new(), count),
-            post_balances: ListBuilder::with_capacity(UInt64Builder::new(), count),
-            log_messages: ListBuilder::with_capacity(StringBuilder::new(), count),
-            pre_token_balances: ListBuilder::with_capacity(token_balances_builder(), count),
-            post_token_balances: ListBuilder::with_capacity(token_balances_builder(), count),
-            rewards: ListBuilder::with_capacity(reward_builder(), count),
-            loaded_addresses_writable: ListBuilder::with_capacity(StringBuilder::new(), count),
-            loaded_addresses_readonly: ListBuilder::with_capacity(StringBuilder::new(), count),
+            pre_balances: ListBuilder::with_capacity(UInt64Builder::new(), count)
+                .with_field(Field::new("element", DataType::UInt64, true)),
+            post_balances: ListBuilder::with_capacity(UInt64Builder::new(), count)
+                .with_field(Field::new("element", DataType::UInt64, true)),
+            log_messages: ListBuilder::with_capacity(StringBuilder::new(), count)
+                .with_field(Field::new("element", DataType::Utf8, true)),
+            pre_token_balances: {
+                let DataType::List(element_field) = token_balances_dtype() else {
+                    unreachable!()
+                };
+                ListBuilder::with_capacity(token_balances_builder(), count)
+                    .with_field(element_field)
+            },
+            post_token_balances: {
+                let DataType::List(element_field) = token_balances_dtype() else {
+                    unreachable!()
+                };
+                ListBuilder::with_capacity(token_balances_builder(), count)
+                    .with_field(element_field)
+            },
+            rewards: ListBuilder::with_capacity(reward_builder(), count).with_field(Field::new(
+                "element",
+                reward_dtype(),
+                true,
+            )),
+            loaded_addresses_writable: ListBuilder::with_capacity(StringBuilder::new(), count)
+                .with_field(Field::new("element", DataType::Utf8, true)),
+            loaded_addresses_readonly: ListBuilder::with_capacity(StringBuilder::new(), count)
+                .with_field(Field::new("element", DataType::Utf8, true)),
             return_data_program_id: StringBuilder::with_capacity(count, 0),
-            return_data_data: ListBuilder::with_capacity(UInt8Builder::new(), count),
+            return_data_data: ListBuilder::with_capacity(UInt8Builder::new(), count)
+                .with_field(Field::new("element", DataType::UInt8, true)),
             compute_units_consumed: UInt64Builder::with_capacity(count),
             cost_units: UInt64Builder::with_capacity(count),
         }

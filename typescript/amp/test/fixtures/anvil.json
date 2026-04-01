@@ -435,7 +435,7 @@
               "name": "access_list",
               "type": {
                 "List": {
-                  "name": "item",
+                  "name": "element",
                   "data_type": {
                     "Struct": [
                       {
@@ -452,7 +452,7 @@
                         "name": "storage_keys",
                         "data_type": {
                           "List": {
-                            "name": "item",
+                            "name": "element",
                             "data_type": {
                               "FixedSizeBinary": 32
                             },
@@ -481,7 +481,7 @@
               "name": "blob_versioned_hashes",
               "type": {
                 "List": {
-                  "name": "item",
+                  "name": "element",
                   "data_type": {
                     "FixedSizeBinary": 32
                   },
@@ -497,7 +497,7 @@
               "name": "authorization_list",
               "type": {
                 "List": {
-                  "name": "item",
+                  "name": "element",
                   "data_type": {
                     "Struct": [
                       {

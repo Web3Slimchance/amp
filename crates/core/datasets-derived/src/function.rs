@@ -535,10 +535,10 @@ mod tests {
     #[test]
     fn validate_js_udf_input_type_with_list_types_succeeds() {
         //* Given
-        let list = DataType::List(Arc::new(Field::new("item", DataType::Int32, true)));
-        let large = DataType::LargeList(Arc::new(Field::new("item", DataType::Utf8, true)));
+        let list = DataType::List(Arc::new(Field::new("element", DataType::Int32, true)));
+        let large = DataType::LargeList(Arc::new(Field::new("element", DataType::Utf8, true)));
         let fixed =
-            DataType::FixedSizeList(Arc::new(Field::new("item", DataType::Float64, true)), 3);
+            DataType::FixedSizeList(Arc::new(Field::new("element", DataType::Float64, true)), 3);
 
         //* Then
         assert!(
@@ -559,7 +559,7 @@ mod tests {
     fn validate_js_udf_input_type_with_unsupported_list_element_fails() {
         //* Given
         let dt = DataType::List(Arc::new(Field::new(
-            "item",
+            "element",
             DataType::RunEndEncoded(
                 Arc::new(Field::new("run_ends", DataType::Int32, false)),
                 Arc::new(Field::new("values", DataType::Utf8, true)),
@@ -813,9 +813,9 @@ mod tests {
     fn validate_js_udf_output_type_with_list_types_fails() {
         //* Given
         let cases = [
-            DataType::List(Arc::new(Field::new("item", DataType::Int32, true))),
-            DataType::LargeList(Arc::new(Field::new("item", DataType::Int32, true))),
-            DataType::FixedSizeList(Arc::new(Field::new("item", DataType::Int32, true)), 3),
+            DataType::List(Arc::new(Field::new("element", DataType::Int32, true))),
+            DataType::LargeList(Arc::new(Field::new("element", DataType::Int32, true))),
+            DataType::FixedSizeList(Arc::new(Field::new("element", DataType::Int32, true)), 3),
         ];
 
         //* Then

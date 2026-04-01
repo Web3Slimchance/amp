@@ -69,7 +69,7 @@ fn schema() -> Schema {
     let calls = Field::new(
         "calls",
         DataType::List(Arc::new(Field::new(
-            "item",
+            "element",
             DataType::Struct(Fields::from(vec![
                 Field::new("to", ADDRESS_TYPE, true),
                 Field::new("value", DataType::Utf8, false),
@@ -96,7 +96,7 @@ fn schema() -> Schema {
         Field::new(
             "limits",
             DataType::List(Arc::new(Field::new(
-                "item",
+                "element",
                 DataType::Struct(Fields::from(vec![
                     Field::new("token", ADDRESS_TYPE, false),
                     Field::new("limit", DataType::Utf8, false),
@@ -131,7 +131,7 @@ fn schema() -> Schema {
     let aa_authorization_list = Field::new(
         "aa_authorization_list",
         DataType::List(Arc::new(Field::new(
-            "item",
+            "element",
             DataType::Struct(Fields::from(aa_item_fields)),
             false,
         ))),
@@ -143,12 +143,12 @@ fn schema() -> Schema {
     let access_list = Field::new(
         "access_list",
         DataType::List(Arc::new(Field::new(
-            "item",
+            "element",
             DataType::Struct(Fields::from(vec![
                 Field::new("address", ADDRESS_TYPE, false),
                 Field::new(
                     "storage_keys",
-                    DataType::List(Arc::new(Field::new("item", BYTES32_TYPE, false))),
+                    DataType::List(Arc::new(Field::new("element", BYTES32_TYPE, false))),
                     false,
                 ),
             ])),
@@ -451,7 +451,7 @@ impl TransactionRowsBuilder {
             Field::new("address", ADDRESS_TYPE, false),
             Field::new(
                 "storage_keys",
-                DataType::List(Arc::new(Field::new("item", BYTES32_TYPE, false))),
+                DataType::List(Arc::new(Field::new("element", BYTES32_TYPE, false))),
                 false,
             ),
         ]);
@@ -494,7 +494,7 @@ impl TransactionRowsBuilder {
                 ),
                 count,
             )
-            .with_field(Field::new("item", DataType::Struct(calls_fields), false)),
+            .with_field(Field::new("element", DataType::Struct(calls_fields), false)),
             fee_payer_signature: StructBuilder::new(
                 Fields::from(vec![
                     Field::new("r", BYTES32_TYPE, false),
@@ -520,7 +520,7 @@ impl TransactionRowsBuilder {
                     Field::new(
                         "limits",
                         DataType::List(Arc::new(Field::new(
-                            "item",
+                            "element",
                             DataType::Struct(limits_fields.clone()),
                             false,
                         ))),
@@ -550,7 +550,7 @@ impl TransactionRowsBuilder {
                             0,
                         )
                         .with_field(Field::new(
-                            "item",
+                            "element",
                             DataType::Struct(limits_fields),
                             false,
                         )),
@@ -582,7 +582,11 @@ impl TransactionRowsBuilder {
                     StructBuilder::new(aa_fields.clone(), aa_builders),
                     count,
                 )
-                .with_field(Field::new("item", DataType::Struct(aa_fields), false))
+                .with_field(Field::new(
+                    "element",
+                    DataType::Struct(aa_fields),
+                    false,
+                ))
             },
             valid_before: UInt64Builder::with_capacity(count),
             valid_after: UInt64Builder::with_capacity(count),
@@ -594,14 +598,14 @@ impl TransactionRowsBuilder {
                             Box::new(FixedSizeBinaryBuilder::with_capacity(0, 20)),
                             Box::new(
                                 ListBuilder::new(FixedSizeBinaryBuilder::with_capacity(0, 32))
-                                    .with_field(Field::new("item", BYTES32_TYPE, false)),
+                                    .with_field(Field::new("element", BYTES32_TYPE, false)),
                             ),
                         ],
                     ),
                     count,
                 )
                 .with_field(Field::new(
-                    "item",
+                    "element",
                     DataType::Struct(access_list_fields),
                     false,
                 ))

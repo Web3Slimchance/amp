@@ -549,7 +549,7 @@
               "name": "calls",
               "type": {
                 "List": {
-                  "name": "item",
+                  "name": "element",
                   "data_type": {
                     "Struct": [
                       {
@@ -666,7 +666,7 @@
                     "name": "limits",
                     "data_type": {
                       "List": {
-                        "name": "item",
+                        "name": "element",
                         "data_type": {
                           "Struct": [
                             {
@@ -801,7 +801,7 @@
               "name": "aa_authorization_list",
               "type": {
                 "List": {
-                  "name": "item",
+                  "name": "element",
                   "data_type": {
                     "Struct": [
                       {
@@ -947,7 +947,7 @@
               "name": "access_list",
               "type": {
                 "List": {
-                  "name": "item",
+                  "name": "element",
                   "data_type": {
                     "Struct": [
                       {
@@ -964,7 +964,7 @@
                         "name": "storage_keys",
                         "data_type": {
                           "List": {
-                            "name": "item",
+                            "name": "element",
                             "data_type": {
                               "FixedSizeBinary": 32
                             },

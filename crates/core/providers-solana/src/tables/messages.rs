@@ -38,7 +38,7 @@ fn schema() -> Schema {
         Field::new("address_table_lookups", address_table_lookups_dtype(), true),
         Field::new(
             "account_keys",
-            DataType::List(Arc::new(Field::new("item", DataType::Utf8, true))),
+            DataType::List(Arc::new(Field::new("element", DataType::Utf8, true))),
             false,
         ),
         Field::new("recent_block_hash", DataType::Utf8, false),
@@ -61,19 +61,19 @@ fn address_table_lookups_dtype() -> DataType {
             Field::new("account_key", DataType::Utf8, false),
             Field::new(
                 "writable_indexes",
-                DataType::List(Arc::new(Field::new("item", DataType::UInt8, true))),
+                DataType::List(Arc::new(Field::new("element", DataType::UInt8, true))),
                 false,
             ),
             Field::new(
                 "readonly_indexes",
-                DataType::List(Arc::new(Field::new("item", DataType::UInt8, true))),
+                DataType::List(Arc::new(Field::new("element", DataType::UInt8, true))),
                 false,
             ),
         ]))
     }
 
     DataType::List(Arc::new(Field::new(
-        "item",
+        "element",
         address_table_lookup_dtype(),
         true,
     )))
@@ -219,19 +219,27 @@ impl MessageRowsBuilder {
                     Field::new("account_key", DataType::Utf8, false),
                     Field::new(
                         "writable_indexes",
-                        DataType::List(Arc::new(Field::new("item", DataType::UInt8, true))),
+                        DataType::List(Arc::new(Field::new("element", DataType::UInt8, true))),
                         false,
                     ),
                     Field::new(
                         "readonly_indexes",
-                        DataType::List(Arc::new(Field::new("item", DataType::UInt8, true))),
+                        DataType::List(Arc::new(Field::new("element", DataType::UInt8, true))),
                         false,
                     ),
                 ]),
                 vec![
                     Box::new(StringBuilder::new()),
-                    Box::new(ListBuilder::new(UInt8Builder::new())),
-                    Box::new(ListBuilder::new(UInt8Builder::new())),
+                    Box::new(ListBuilder::new(UInt8Builder::new()).with_field(Field::new(
+                        "element",
+                        DataType::UInt8,
+                        true,
+                    ))),
+                    Box::new(ListBuilder::new(UInt8Builder::new()).with_field(Field::new(
+                        "element",
+                        DataType::UInt8,
+                        true,
+                    ))),
                 ],
             )
         }
@@ -256,11 +264,15 @@ impl MessageRowsBuilder {
             slot: UInt64Builder::with_capacity(capacity),
             tx_index: UInt32Builder::with_capacity(capacity),
             header: header_builder(),
-            address_table_lookups: ListBuilder::with_capacity(
-                address_table_lookup_builder(),
-                capacity,
-            ),
-            account_keys: ListBuilder::with_capacity(StringBuilder::new(), capacity),
+            address_table_lookups: {
+                let DataType::List(element_field) = address_table_lookups_dtype() else {
+                    unreachable!()
+                };
+                ListBuilder::with_capacity(address_table_lookup_builder(), capacity)
+                    .with_field(element_field)
+            },
+            account_keys: ListBuilder::with_capacity(StringBuilder::new(), capacity)
+                .with_field(Field::new("element", DataType::Utf8, true)),
             recent_block_hash: StringBuilder::with_capacity(
                 capacity,
                 capacity * BASE58_ENCODED_HASH_LEN,

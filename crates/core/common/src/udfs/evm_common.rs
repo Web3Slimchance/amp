@@ -1082,11 +1082,13 @@ pub fn sol_to_arrow_type(ty: &DynSolType) -> Result<DataType, DataFusionError> {
         DynSolType::Address => DataType::FixedSizeBinary(20),
         DynSolType::Bytes => DataType::Binary,
         DynSolType::String => DataType::Utf8,
-        DynSolType::Array(ty) => {
-            DataType::List(Arc::new(Field::new("item", sol_to_arrow_type(ty)?, true)))
-        }
+        DynSolType::Array(ty) => DataType::List(Arc::new(Field::new(
+            "element",
+            sol_to_arrow_type(ty)?,
+            true,
+        ))),
         DynSolType::FixedArray(ty, sz) => DataType::FixedSizeList(
-            Arc::new(Field::new("item", sol_to_arrow_type(ty)?, true)),
+            Arc::new(Field::new("element", sol_to_arrow_type(ty)?, true)),
             *sz as i32,
         ),
         DynSolType::Tuple(tys) => {
