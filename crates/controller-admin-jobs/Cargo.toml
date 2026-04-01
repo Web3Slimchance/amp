@@ -13,8 +13,8 @@ amp-data-store = { path = "../core/data-store" }
 amp-datasets-registry = { path = "../core/datasets-registry" }
 amp-job-core = { path = "../core/job-core" }
 amp-worker-core = { path = "../core/worker-core" }
-amp-worker-datasets-derived = { path = "../core/worker-datasets-derived" }
-amp-worker-datasets-raw = { path = "../core/worker-datasets-raw" }
+amp_job_materialize_datasets_derived = { package = "amp-job-materialize-datasets-derived", path = "../core/job-materialize-datasets-derived" }
+amp_job_materialize_datasets_raw = { package = "amp-job-materialize-datasets-raw", path = "../core/job-materialize-datasets-raw" }
 amp-worker-gc = { path = "../core/worker-gc" }
 async-trait.workspace = true
 axum.workspace = true

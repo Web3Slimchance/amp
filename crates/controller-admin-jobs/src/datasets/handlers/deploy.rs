@@ -2,8 +2,8 @@ use std::fmt::Debug;
 
 use amp_datasets_registry::error::{ListVersionTagsError, ResolveRevisionError};
 use amp_job_core::job_id::JobId;
-use amp_worker_datasets_derived::job_descriptor::JobDescriptor as MaterializeDerivedDatasetJobDescriptor;
-use amp_worker_datasets_raw::job_descriptor::JobDescriptor as MaterializeRawDatasetJobDescriptor;
+use amp_job_materialize_datasets_derived::job_descriptor::JobDescriptor as MaterializeDerivedDatasetJobDescriptor;
+use amp_job_materialize_datasets_raw::job_descriptor::JobDescriptor as MaterializeRawDatasetJobDescriptor;
 use axum::{
     Json,
     extract::{
@@ -157,7 +157,7 @@ pub async fn handler(
                 dataset_name: reference.name().clone(),
                 manifest_hash: reference.hash().clone(),
             }),
-            amp_worker_datasets_derived::job_key::idempotency_key(&reference),
+            amp_job_materialize_datasets_derived::job_key::idempotency_key(&reference),
         )
     } else {
         (
@@ -170,7 +170,7 @@ pub async fn handler(
                 verify,
             }
             .into(),
-            amp_worker_datasets_raw::job_key::idempotency_key(&reference),
+            amp_job_materialize_datasets_raw::job_key::idempotency_key(&reference),
         )
     };
 

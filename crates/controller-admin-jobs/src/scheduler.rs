@@ -152,8 +152,8 @@ pub trait SchedulerJobs: Send + Sync {
 /// Invariant-preserving bridge between typed worker job descriptors and the scheduler.
 ///
 /// Acts as the admin-api's canonical job descriptor type, decoupling the scheduler trait
-/// interface from both the typed worker descriptor crates (`amp-worker-datasets-raw`,
-/// `amp-worker-datasets-derived`) and the metadata-db storage type (`EventDetailOwned`).
+/// interface from both the typed worker descriptor crates (`amp-job-materialize-datasets-raw`,
+/// `amp-job-materialize-datasets-derived`) and the metadata-db storage type (`EventDetailOwned`).
 ///
 /// Invariants are established at the point of construction (via the `From` impls from typed
 /// worker descriptors) and preserved throughout. All subsequent conversions to/from
@@ -201,15 +201,15 @@ impl From<&EventDetail<'_>> for JobDescriptor {
     }
 }
 
-impl From<amp_worker_datasets_raw::job_descriptor::JobDescriptor> for JobDescriptor {
-    fn from(desc: amp_worker_datasets_raw::job_descriptor::JobDescriptor) -> Self {
+impl From<amp_job_materialize_datasets_raw::job_descriptor::JobDescriptor> for JobDescriptor {
+    fn from(desc: amp_job_materialize_datasets_raw::job_descriptor::JobDescriptor) -> Self {
         let raw: EventDetailOwned = desc.into();
         Self(raw.into_inner())
     }
 }
 
-impl From<amp_worker_datasets_derived::job_descriptor::JobDescriptor> for JobDescriptor {
-    fn from(desc: amp_worker_datasets_derived::job_descriptor::JobDescriptor) -> Self {
+impl From<amp_job_materialize_datasets_derived::job_descriptor::JobDescriptor> for JobDescriptor {
+    fn from(desc: amp_job_materialize_datasets_derived::job_descriptor::JobDescriptor) -> Self {
         let raw: EventDetailOwned = desc.into();
         Self(raw.into_inner())
     }

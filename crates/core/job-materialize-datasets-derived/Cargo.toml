@@ -1,5 +1,5 @@
 [package]
-name = "amp-worker-datasets-derived"
+name = "amp-job-materialize-datasets-derived"
 edition.workspace = true
 version.workspace = true
 license-file.workspace = true

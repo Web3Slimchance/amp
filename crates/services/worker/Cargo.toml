@@ -8,25 +8,24 @@ license-file.workspace = true
 amp-config = { path = "../../config" }
 amp-data-store = { path = "../../core/data-store" }
 amp-job-core = { path = "../../core/job-core" }
+amp-job-materialize-datasets-derived = { path = "../../core/job-materialize-datasets-derived" }
+amp-job-materialize-datasets-raw = { path = "../../core/job-materialize-datasets-raw" }
 amp-worker-core = { path = "../../core/worker-core" }
-amp-worker-datasets-derived = { path = "../../core/worker-datasets-derived" }
-amp-worker-datasets-raw = { path = "../../core/worker-datasets-raw" }
 amp-worker-gc = { path = "../../core/worker-gc" }
 async-trait.workspace = true
 backon.workspace = true
 chrono.workspace = true
 common = { path = "../../core/common" }
 datasets-common = { path = "../../core/datasets-common" }
-js-runtime = { path = "../../core/js-runtime" }
 fs-err.workspace = true
 futures.workspace = true
+js-runtime = { path = "../../core/js-runtime" }
 metadata-db = { path = "../../core/metadata-db" }
 monitoring = { path = "../../core/monitoring" }
 prost.workspace = true
 rskafka = { version = "0.6", features = ["transport-tls"] }
 rustls.workspace = true
 rustls-pemfile.workspace = true
-webpki-roots.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
@@ -34,6 +33,7 @@ tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
 uuid = { workspace = true, features = ["v7"] }
+webpki-roots.workspace = true
 
 # Protobuf code generation dependencies
 # Run with: RUSTFLAGS="--cfg gen_worker_proto" cargo check -p worker

@@ -1,5 +1,5 @@
 [package]
-name = "amp-worker-datasets-raw"
+name = "amp-job-materialize-datasets-raw"
 edition.workspace = true
 version.workspace = true
 license-file.workspace = true

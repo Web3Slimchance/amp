@@ -19,8 +19,8 @@ use crate::{
 /// Create and run a worker job.
 ///
 /// This function returns a future that executes the job operation.
-/// Raw datasets are handled by `amp_worker_datasets_raw`, derived
-/// datasets by `amp_worker_datasets_derived`, and garbage collection
+/// Raw datasets are handled by `amp_job_materialize_datasets_raw`, derived
+/// datasets by `amp_job_materialize_datasets_derived`, and garbage collection
 /// by `amp_worker_gc`.
 pub(super) async fn new(
     job_ctx: WorkerJobCtx,
@@ -64,9 +64,9 @@ pub(super) async fn new(
             };
             let writer: metadata_db::jobs::JobId = job_id.into();
 
-            let ctx = amp_worker_datasets_raw::job_ctx::Context {
+            let ctx = amp_job_materialize_datasets_raw::job_ctx::Context {
                 job_id: Some(writer),
-                config: amp_worker_datasets_raw::job_ctx::Config {
+                config: amp_job_materialize_datasets_raw::job_ctx::Config {
                     poll_interval: job_ctx.config.poll_interval,
                     progress_interval: job_ctx
                         .config
@@ -86,7 +86,7 @@ pub(super) async fn new(
                 progress_reporter,
             };
 
-            amp_worker_datasets_raw::job_impl::execute(ctx, desc, writer)
+            amp_job_materialize_datasets_raw::job_impl::execute(ctx, desc, writer)
                 .instrument(
                     info_span!("materialize_raw_job", %job_id, dataset = %format!("{reference:#}")),
                 )
@@ -117,9 +117,9 @@ pub(super) async fn new(
             };
             let writer: metadata_db::jobs::JobId = job_id.into();
 
-            let ctx = amp_worker_datasets_derived::job_ctx::Context {
+            let ctx = amp_job_materialize_datasets_derived::job_ctx::Context {
                 job_id: Some(writer),
-                config: amp_worker_datasets_derived::job_ctx::Config {
+                config: amp_job_materialize_datasets_derived::job_ctx::Config {
                     keep_alive_interval: job_ctx.config.keep_alive_interval,
                     max_mem_mb: job_ctx.config.max_mem_mb,
                     query_max_mem_mb: job_ctx.config.query_max_mem_mb,
@@ -144,7 +144,7 @@ pub(super) async fn new(
                 progress_reporter,
             };
 
-            amp_worker_datasets_derived::job_impl::execute(ctx, desc, writer)
+            amp_job_materialize_datasets_derived::job_impl::execute(ctx, desc, writer)
                 .instrument(info_span!("materialize_derived_job", %job_id, dataset = %format!("{reference:#}")))
                 .await
                 .map_err(JobError::MaterializeDerived)?;
@@ -162,11 +162,11 @@ pub(super) async fn new(
 pub(crate) enum JobError {
     /// Raw dataset materialization operation failed.
     #[error("Failed to materialize raw dataset")]
-    MaterializeRaw(#[source] amp_worker_datasets_raw::job_impl::Error),
+    MaterializeRaw(#[source] amp_job_materialize_datasets_raw::job_impl::Error),
 
     /// Derived dataset materialization operation failed.
     #[error("Failed to materialize derived dataset")]
-    MaterializeDerived(#[source] amp_worker_datasets_derived::job_impl::Error),
+    MaterializeDerived(#[source] amp_job_materialize_datasets_derived::job_impl::Error),
 
     /// Garbage collection job failed.
     #[error("Failed to run garbage collection")]

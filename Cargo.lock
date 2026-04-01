@@ -975,9 +975,9 @@ dependencies = [
  "amp-data-store",
  "amp-datasets-registry",
  "amp-job-core",
+ "amp-job-materialize-datasets-derived",
+ "amp-job-materialize-datasets-raw",
  "amp-worker-core",
- "amp-worker-datasets-derived",
- "amp-worker-datasets-raw",
  "amp-worker-gc",
  "async-trait",
  "axum",
@@ -1123,6 +1123,53 @@ dependencies = [
  "serde",
  "sha2",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "amp-job-materialize-datasets-derived"
+version = "0.1.0"
+dependencies = [
+ "amp-data-store",
+ "amp-job-core",
+ "amp-parquet",
+ "amp-worker-core",
+ "common",
+ "datafusion",
+ "datasets-common",
+ "datasets-derived",
+ "futures",
+ "js-runtime",
+ "metadata-db",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "amp-job-materialize-datasets-raw"
+version = "0.1.0"
+dependencies = [
+ "amp-data-store",
+ "amp-job-core",
+ "amp-parquet",
+ "amp-providers-registry",
+ "amp-worker-core",
+ "common",
+ "datafusion",
+ "datasets-common",
+ "datasets-raw",
+ "futures",
+ "metadata-db",
+ "monitoring",
+ "rstest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "verification",
 ]
 
 [[package]]
@@ -1392,53 +1439,6 @@ dependencies = [
  "tokio",
  "tracing",
  "url",
-]
-
-[[package]]
-name = "amp-worker-datasets-derived"
-version = "0.1.0"
-dependencies = [
- "amp-data-store",
- "amp-job-core",
- "amp-parquet",
- "amp-worker-core",
- "common",
- "datafusion",
- "datasets-common",
- "datasets-derived",
- "futures",
- "js-runtime",
- "metadata-db",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "amp-worker-datasets-raw"
-version = "0.1.0"
-dependencies = [
- "amp-data-store",
- "amp-job-core",
- "amp-parquet",
- "amp-providers-registry",
- "amp-worker-core",
- "common",
- "datafusion",
- "datasets-common",
- "datasets-raw",
- "futures",
- "metadata-db",
- "monitoring",
- "rstest",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "verification",
 ]
 
 [[package]]
@@ -15039,9 +15039,9 @@ dependencies = [
  "amp-config",
  "amp-data-store",
  "amp-job-core",
+ "amp-job-materialize-datasets-derived",
+ "amp-job-materialize-datasets-raw",
  "amp-worker-core",
- "amp-worker-datasets-derived",
- "amp-worker-datasets-raw",
  "amp-worker-gc",
  "async-trait",
  "backon",
