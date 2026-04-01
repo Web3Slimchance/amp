@@ -17,6 +17,7 @@ use tracing::{error, info, warn};
 use crate::{
     config::{SyncConfig, TableMapping},
     engine::Engine,
+    health::HealthState,
     task::{StreamTask, StreamTaskConfig},
 };
 
@@ -51,6 +52,7 @@ impl StreamManager {
     /// * `engine` - Database engine for table operations
     /// * `client` - Amp client for streaming queries
     /// * `pool` - PostgreSQL connection pool
+    /// * `health_state` - Shared health state for reporting task liveness
     pub fn new(
         mappings: &[TableMapping],
         dataset: Reference,
@@ -58,6 +60,7 @@ impl StreamManager {
         engine: Engine,
         client: AmpClient,
         pool: PgPool,
+        health_state: HealthState,
     ) -> Self {
         let shutdown = CancellationToken::new();
 
@@ -81,7 +84,8 @@ impl StreamManager {
                     shutdown: shutdown.clone(),
                 };
 
-                let handle = tokio::spawn(Self::run_task_with_restart(task_config));
+                let health = health_state.clone();
+                let handle = tokio::spawn(Self::run_task_with_restart(task_config, health));
                 info!(
                     source = %mapping.source,
                     destination = %mapping.destination,
@@ -95,7 +99,7 @@ impl StreamManager {
     }
 
     /// Runs a single table's streaming task with automatic restart on failure.
-    async fn run_task_with_restart(config: StreamTaskConfig) {
+    async fn run_task_with_restart(config: StreamTaskConfig, health_state: HealthState) {
         let mut restart_count = 0;
 
         loop {
@@ -122,6 +126,7 @@ impl StreamManager {
                             restart_count = restart_count,
                             "max_restart_attempts_reached"
                         );
+                        health_state.mark_unhealthy();
                         break;
                     }
 

@@ -26,6 +26,8 @@ Options:
       --max-db-connections <N>                 Max connections (default: 10, range: 1-1000)
       --retention-blocks <N>                   Retention blocks (default: 128, min: 64)
       --auth-token <TOKEN>                     Authentication token for Arrow Flight
+      --health-port <PORT>                     Health check server port (optional)
+      --strict-health <BOOL>                   Strict health mode (optional)
   -h, --help                                   Print help
   -V, --version                                Print version
 ```
@@ -55,6 +57,8 @@ All CLI arguments can also be set via environment variables:
 - **`MAX_DB_CONNECTIONS`** (default: `10`): Database connection pool size (valid range: 1-1000)
 - **`RETENTION_BLOCKS`** (default: `128`): Watermark retention window (must be >= 64)
 - **`AMP_AUTH_TOKEN`** (optional): Bearer token for authenticating requests to the Arrow Flight server
+- **`HEALTH_PORT`** (optional): Port for health check HTTP server (exposes `/healthz` endpoint)
+- **`STRICT_HEALTH`** (optional): Strict health check mode (see Health Checks section)
 
 ## Running
 
@@ -127,6 +131,23 @@ Ampsync uses amp-client's `TransactionalStream` for crash-safe state management:
 1. **State is persisted** in PostgreSQL (`amp_client_state` table)
 2. **Automatic recovery**: On crash, uncommitted data is detected and deleted via Undo events
 3. **No data loss**: Retry gets a fresh transaction ID with no conflicts
+
+## Health Checks
+
+When `HEALTH_PORT` is set, ampsync exposes a `/healthz` HTTP endpoint for container orchestration (Kubernetes, Docker, etc.).
+
+### Strict Health Mode
+
+The `STRICT_HEALTH` setting controls whether `/healthz` reflects task liveness:
+
+| `STRICT_HEALTH` | Behavior |
+|-----------------|----------|
+| `true` | Returns `503 Service Unavailable` if any streaming task has exhausted its retry attempts |
+| `false` | Always returns `200 OK` regardless of task state |
+| Not set (single table) | Defaults to `true` |
+| Not set (multiple tables) | Defaults to `false` |
+
+**Rationale**: For single-table deployments, if the task dies the process is effectively useless — returning 503 lets Kubernetes restart the pod. For multi-table deployments, partial failure may be acceptable, so the default is more lenient.
 
 ## Performance
 

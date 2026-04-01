@@ -133,6 +133,23 @@ pub struct SyncConfig {
     /// Can also be set via HEALTH_PORT environment variable
     #[arg(long, env = "HEALTH_PORT")]
     pub health_port: Option<u16>,
+
+    /// Strict health check mode (optional)
+    ///
+    /// When enabled, /healthz returns 503 Service Unavailable if any streaming
+    /// task has exhausted its retry attempts and stopped.
+    ///
+    /// Default behavior (when not specified):
+    ///   - Single table: defaults to true (503 if task dies)
+    ///   - Multiple tables: defaults to false (200 even if some tasks die)
+    ///
+    /// Explicit values:
+    ///   --strict-health=true   Always return 503 if any task is dead
+    ///   --strict-health=false  Always return 200 regardless of task state
+    ///
+    /// Can also be set via STRICT_HEALTH environment variable
+    #[arg(long, env = "STRICT_HEALTH")]
+    pub strict_health: Option<bool>,
 }
 
 /// Maps a source table name (in the dataset) to a destination table name (in PostgreSQL).

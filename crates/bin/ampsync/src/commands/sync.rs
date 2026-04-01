@@ -6,7 +6,7 @@ use tracing::info;
 use crate::{
     config::{self, SyncConfig},
     engine::Engine,
-    health,
+    health::{self, HealthState},
     manager::StreamManager,
 };
 
@@ -52,6 +52,19 @@ pub async fn run(config: SyncConfig) -> Result<()> {
         }
     }
 
+    // Resolve strict health mode:
+    // - Explicit value if provided
+    // - Default to true for single table (task death = process useless)
+    // - Default to false for multiple tables (partial failure may be acceptable)
+    let strict_health = config.strict_health.unwrap_or(mappings.len() == 1);
+    info!(
+        strict_health = strict_health,
+        "Health check mode (strict=503 on task death)"
+    );
+
+    // Create shared health state for tracking task liveness
+    let health_state = HealthState::new(strict_health);
+
     // Create streaming client
     let grpc_max_decode_bytes = config.grpc_max_decode_mb as usize * 1024 * 1024;
     info!(
@@ -74,12 +87,20 @@ pub async fn run(config: SyncConfig) -> Result<()> {
     info!("Amp client initialized");
 
     // Spawn streaming tasks (table creation happens in StreamTask::new)
-    let manager = StreamManager::new(&mappings, dataset, &config, engine, client, pool);
+    let manager = StreamManager::new(
+        &mappings,
+        dataset,
+        &config,
+        engine,
+        client,
+        pool,
+        health_state.clone(),
+    );
 
     // Start health server if configured
     if let Some(port) = config.health_port {
         let addr = std::net::SocketAddr::from(([0, 0, 0, 0], port));
-        let (bound_addr, health_fut) = health::serve(addr)
+        let (bound_addr, health_fut) = health::serve(addr, health_state)
             .await
             .context("Failed to start health server")?;
         info!("Health server listening on {}", bound_addr);
