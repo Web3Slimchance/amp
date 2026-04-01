@@ -65,6 +65,7 @@ fn schema() -> Schema {
 
     // Tempo-specific fields
     let fee_token = Field::new("fee_token", ADDRESS_TYPE, true);
+    let fee_payer = Field::new("fee_payer", ADDRESS_TYPE, true);
     let nonce_key = Field::new("nonce_key", BYTES32_TYPE, true);
     let calls = Field::new(
         "calls",
@@ -184,6 +185,7 @@ fn schema() -> Schema {
         v_parity,
         signature,
         fee_token,
+        fee_payer,
         nonce_key,
         calls,
         fee_payer_signature,
@@ -276,6 +278,9 @@ pub struct Transaction {
     // Tempo-specific fields
     /// TIP-20 fee token address. None means native token.
     pub fee_token: Option<Address>,
+
+    /// Fee payer address. None when not sponsored.
+    pub fee_payer: Option<Address>,
 
     /// 2D nonce key (U256 stored as 32 bytes). None for standard EVM tx types.
     pub nonce_key: Option<Bytes32>,
@@ -430,6 +435,7 @@ pub struct TransactionRowsBuilder {
     v_parity: BooleanBuilder,
     signature: StructBuilder,
     fee_token: EvmAddressArrayBuilder,
+    fee_payer: EvmAddressArrayBuilder,
     nonce_key: Bytes32ArrayBuilder,
     calls: ListBuilder<StructBuilder>,
     fee_payer_signature: StructBuilder,
@@ -482,6 +488,7 @@ impl TransactionRowsBuilder {
             v_parity: BooleanBuilder::with_capacity(count),
             signature: tempo_signature_nested_builder(),
             fee_token: EvmAddressArrayBuilder::with_capacity(count),
+            fee_payer: EvmAddressArrayBuilder::with_capacity(count),
             nonce_key: Bytes32ArrayBuilder::with_capacity(count),
             calls: ListBuilder::with_capacity(
                 StructBuilder::new(
@@ -640,6 +647,7 @@ impl TransactionRowsBuilder {
             v_parity,
             signature,
             fee_token,
+            fee_payer,
             nonce_key,
             calls,
             fee_payer_signature,
@@ -697,6 +705,7 @@ impl TransactionRowsBuilder {
             }
         }
         self.fee_token.append_option(*fee_token);
+        self.fee_payer.append_option(*fee_payer);
         self.nonce_key.append_option(*nonce_key);
         self.append_calls(calls.as_deref());
         self.append_fee_payer_signature(fee_payer_signature.as_ref());
@@ -938,6 +947,7 @@ impl TransactionRowsBuilder {
             mut v_parity,
             mut signature,
             fee_token,
+            fee_payer,
             nonce_key,
             mut calls,
             mut fee_payer_signature,
@@ -975,6 +985,7 @@ impl TransactionRowsBuilder {
             Arc::new(v_parity.finish()),
             Arc::new(signature.finish()),
             Arc::new(fee_token.finish()),
+            Arc::new(fee_payer.finish()),
             Arc::new(nonce_key.finish()),
             Arc::new(calls.finish()),
             Arc::new(fee_payer_signature.finish()),
@@ -1077,7 +1088,7 @@ mod tests {
         //* Then
         assert_eq!(
             rows.rows.num_columns(),
-            34,
+            35,
             "transaction schema should have 34 columns"
         );
         assert_eq!(rows.rows.num_rows(), 1, "should contain exactly one row");

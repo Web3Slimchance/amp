@@ -539,6 +539,13 @@
               "nullable": true
             },
             {
+              "name": "fee_payer",
+              "type": {
+                "FixedSizeBinary": 20
+              },
+              "nullable": true
+            },
+            {
               "name": "nonce_key",
               "type": {
                 "FixedSizeBinary": 32

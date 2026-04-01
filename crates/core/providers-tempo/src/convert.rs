@@ -386,6 +386,11 @@ fn rpc_transaction_to_row(
         signature: tx_signature,
         // Tempo-specific
         fee_token,
+        fee_payer: if receipt.fee_payer.is_zero() {
+            None
+        } else {
+            Some(receipt.fee_payer.into())
+        },
         nonce_key,
         calls,
         fee_payer_signature,
