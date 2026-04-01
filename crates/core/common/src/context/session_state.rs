@@ -124,6 +124,10 @@ impl SessionState {
 
     /// Applies DataFusion logical optimizations to an existing plan.
     ///
+    /// Custom rewrites (e.g. filter pushthrough for `evm_decode`) are
+    /// registered as [`OptimizerRule`]s and run as part of DataFusion's
+    /// standard optimizer pipeline.
+    ///
     /// Does not trigger SQL pre-resolution; the plan is assumed to be fully
     /// resolved already.
     ///
@@ -552,7 +556,10 @@ impl SessionStateBuilder {
             .with_config(self.session_config)
             .with_runtime_env(runtime_env)
             .with_scalar_functions(self.scalar_udfs)
-            .with_default_features();
+            .with_default_features()
+            .with_optimizer_rule(Arc::new(
+                crate::filter_pushthrough_decode::FilterPushthroughDecodeRule,
+            ));
 
         for rule in &self.physical_optimizer_rules {
             builder = builder.with_physical_optimizer_rule(rule.clone());

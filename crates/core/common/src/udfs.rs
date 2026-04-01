@@ -15,7 +15,7 @@ use datafusion::logical_expr::ScalarUDF;
 
 pub mod block_num;
 pub mod eth_call;
-mod evm_common;
+pub(crate) mod evm_common;
 mod evm_decode_fast;
 pub mod evm_decode_hex;
 pub mod evm_decode_log;

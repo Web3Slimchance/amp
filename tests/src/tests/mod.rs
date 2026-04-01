@@ -14,6 +14,7 @@ mod it_batch_block_num;
 mod it_client;
 mod it_dependencies;
 mod it_dump;
+mod it_filter_pushthrough_decode;
 mod it_functions;
 mod it_functions_eth_call;
 mod it_gc;

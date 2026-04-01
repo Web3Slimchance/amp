@@ -11,6 +11,7 @@ pub mod dataset_schema_provider;
 pub mod datasets_cache;
 pub mod detached_logical_plan;
 pub mod exec_env;
+pub mod filter_pushthrough_decode;
 pub mod func_catalog;
 pub mod incrementalizer;
 pub mod memory_pool;

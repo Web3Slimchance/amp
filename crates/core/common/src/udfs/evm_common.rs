@@ -226,6 +226,22 @@ impl Event {
         Ok(Fields::from(fields))
     }
 
+    /// Returns the names of the indexed (topic) parameters.
+    pub fn topic_names(&self) -> &[String] {
+        &self.topic_names
+    }
+
+    /// Looks up a field by name among the indexed parameters.
+    ///
+    /// Returns `Some((topic_index_0based, solidity_type))` if the field is an
+    /// indexed parameter, `None` otherwise.
+    pub fn find_indexed_param(&self, field_name: &str) -> Option<(usize, &DynSolType)> {
+        self.topic_names
+            .iter()
+            .position(|n| n == field_name)
+            .map(|i| (i, &self.topic_types[i]))
+    }
+
     pub fn topic_types(&self) -> &[DynSolType] {
         &self.topic_types
     }
