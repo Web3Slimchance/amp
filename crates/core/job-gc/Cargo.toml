@@ -1,5 +1,5 @@
 [package]
-name = "amp-worker-gc"
+name = "amp-job-gc"
 edition.workspace = true
 version.workspace = true
 license-file.workspace = true

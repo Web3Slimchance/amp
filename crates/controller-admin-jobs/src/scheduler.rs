@@ -215,8 +215,8 @@ impl From<amp_job_materialize_datasets_derived::job_descriptor::JobDescriptor> f
     }
 }
 
-impl From<amp_worker_gc::job_descriptor::JobDescriptor> for JobDescriptor {
-    fn from(desc: amp_worker_gc::job_descriptor::JobDescriptor) -> Self {
+impl From<amp_job_gc::job_descriptor::JobDescriptor> for JobDescriptor {
+    fn from(desc: amp_job_gc::job_descriptor::JobDescriptor) -> Self {
         let raw: EventDetailOwned = desc.into();
         Self(raw.into_inner())
     }

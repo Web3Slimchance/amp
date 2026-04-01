@@ -21,7 +21,7 @@ use crate::{
 /// This function returns a future that executes the job operation.
 /// Raw datasets are handled by `amp_job_materialize_datasets_raw`, derived
 /// datasets by `amp_job_materialize_datasets_derived`, and garbage collection
-/// by `amp_worker_gc`.
+/// by `amp_job_gc`.
 pub(super) async fn new(
     job_ctx: WorkerJobCtx,
     job_desc: JobDescriptor,
@@ -29,13 +29,13 @@ pub(super) async fn new(
 ) -> Result<(), JobError> {
     match job_desc {
         JobDescriptor::Gc(desc) => {
-            let ctx = amp_worker_gc::job_ctx::Context {
+            let ctx = amp_job_gc::job_ctx::Context {
                 metadata_db: job_ctx.metadata_db.clone(),
                 data_store: job_ctx.data_store.clone(),
                 meter: job_ctx.meter.clone(),
             };
 
-            amp_worker_gc::job_impl::execute(ctx, desc)
+            amp_job_gc::job_impl::execute(ctx, desc)
                 .instrument(info_span!("gc_job", %job_id))
                 .await
                 .map_err(JobError::Gc)?;
@@ -170,7 +170,7 @@ pub(crate) enum JobError {
 
     /// Garbage collection job failed.
     #[error("Failed to run garbage collection")]
-    Gc(#[source] amp_worker_gc::job_impl::Error),
+    Gc(#[source] amp_job_gc::job_impl::Error),
 }
 
 impl JobErrorExt for JobError {

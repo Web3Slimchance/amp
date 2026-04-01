@@ -8,10 +8,10 @@ license-file.workspace = true
 amp-config = { path = "../../config" }
 amp-data-store = { path = "../../core/data-store" }
 amp-job-core = { path = "../../core/job-core" }
+amp-job-gc = { path = "../../core/job-gc" }
 amp-job-materialize-datasets-derived = { path = "../../core/job-materialize-datasets-derived" }
 amp-job-materialize-datasets-raw = { path = "../../core/job-materialize-datasets-raw" }
 amp-worker-core = { path = "../../core/worker-core" }
-amp-worker-gc = { path = "../../core/worker-gc" }
 async-trait.workspace = true
 backon.workspace = true
 chrono.workspace = true

@@ -47,11 +47,10 @@ pub async fn handler(
                 Error::InvalidLocationId(location_id)
             })?;
 
-            let key = amp_worker_gc::job_key::idempotency_key(location_id);
-            let desc =
-                scheduler::JobDescriptor::from(amp_worker_gc::job_descriptor::JobDescriptor {
-                    location_id,
-                });
+            let key = amp_job_gc::job_key::idempotency_key(location_id);
+            let desc = scheduler::JobDescriptor::from(amp_job_gc::job_descriptor::JobDescriptor {
+                location_id,
+            });
             (key, desc)
         }
     };

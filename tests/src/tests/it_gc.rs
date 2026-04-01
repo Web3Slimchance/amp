@@ -6,7 +6,7 @@
 use std::time::Duration;
 
 use amp_data_store::DataStore;
-use amp_worker_gc::{job_ctx::Context, job_descriptor::JobDescriptor};
+use amp_job_gc::{job_ctx::Context, job_descriptor::JobDescriptor};
 use futures::TryStreamExt;
 use metadata_db::{
     datasets::{DatasetName, DatasetNamespace},
@@ -70,7 +70,7 @@ async fn gc_deletes_expired_files() {
     tokio::time::sleep(Duration::from_secs(2)).await;
 
     //* When
-    amp_worker_gc::job_impl::execute(ctx.gc_context(), JobDescriptor { location_id })
+    amp_job_gc::job_impl::execute(ctx.gc_context(), JobDescriptor { location_id })
         .await
         .expect("GC execution failed");
 
@@ -106,7 +106,7 @@ async fn gc_with_no_expired_files_is_a_noop() {
     let location_id = ctx.register_revision(revision_path).await;
 
     //* When
-    amp_worker_gc::job_impl::execute(ctx.gc_context(), JobDescriptor { location_id })
+    amp_job_gc::job_impl::execute(ctx.gc_context(), JobDescriptor { location_id })
         .await
         .expect("GC execution should succeed with no expired files");
 
@@ -123,14 +123,14 @@ async fn gc_with_nonexistent_location_returns_error() {
     };
 
     //* When
-    let result = amp_worker_gc::job_impl::execute(ctx.gc_context(), desc).await;
+    let result = amp_job_gc::job_impl::execute(ctx.gc_context(), desc).await;
 
     //* Then
     assert!(result.is_err(), "should fail with LocationNotFound");
     assert!(
         matches!(
             result.unwrap_err(),
-            amp_worker_gc::job_impl::Error::LocationNotFound(_)
+            amp_job_gc::job_impl::Error::LocationNotFound(_)
         ),
         "error should be LocationNotFound"
     );
