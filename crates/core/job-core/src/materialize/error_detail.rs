@@ -54,7 +54,7 @@ pub struct ErrorContext<T: serde::Serialize + serde::de::DeserializeOwned = ()> 
 pub trait ErrorDetailsProvider {
     /// Key-value pairs this error layer contributes.
     ///
-    /// Only this layer's own context — never aggregate from inner errors.
+    /// Only this layer's own context -- never aggregate from inner errors.
     fn error_details(&self) -> serde_json::Map<String, serde_json::Value> {
         serde_json::Map::new()
     }
@@ -83,7 +83,7 @@ pub fn block_range_details(
 
 /// Walk the [`ErrorDetailsProvider`] chain and merge all detail maps.
 ///
-/// First occurrence wins — the detail closest to the failure site takes priority
+/// First occurrence wins -- the detail closest to the failure site takes priority
 /// when the same key appears at multiple levels.
 pub fn collect_error_details(
     provider: &dyn ErrorDetailsProvider,

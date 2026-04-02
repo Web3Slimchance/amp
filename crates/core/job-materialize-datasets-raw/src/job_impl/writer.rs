@@ -1,17 +1,15 @@
 use std::{collections::BTreeMap, ops::RangeInclusive, sync::Arc, time::Instant};
 
 use amp_data_store::{DataStore, file_name::FileName};
+use amp_job_core::{
+    materialize::{AmpCompactor, AmpCompactorTaskError, WriterProperties, metrics},
+    retryable::RetryableErrorExt,
+};
 use amp_parquet::{
     commit::{CommitMetadataError, commit_metadata},
     generation::Generation,
     retry::RetryableErrorExt as _,
     writer::{ParquetFileWriter, ParquetFileWriterCloseError, ParquetFileWriterOutput},
-};
-use amp_worker_core::{
-    WriterProperties,
-    compaction::{AmpCompactor, AmpCompactorTaskError},
-    metrics,
-    retryable::RetryableErrorExt,
 };
 use common::{BlockNum, BlockRange, catalog::physical::Catalog, physical_table::PhysicalTable};
 use datafusion::{arrow::array::RecordBatch, parquet::errors::ParquetError};

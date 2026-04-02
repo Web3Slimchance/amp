@@ -1,8 +1,8 @@
-//! Worker-core configuration types for deserialization and JSON Schema generation.
+//! Materialize configuration types for deserialization and JSON Schema generation.
 //!
 //! These are the authoritative configuration types that own serde deserialization,
-//! validation, defaults, and JSON Schema generation (`schemars`). Worker-core's
-//! config types are plain domain structs constructed from these via `From` impls.
+//! validation, defaults, and JSON Schema generation (`schemars`). Job-core's
+//! materialize config types are plain domain structs constructed from these via `From` impls.
 
 use std::{num::NonZeroU64, time::Duration};
 
@@ -67,7 +67,7 @@ fn default_max_row_group_mb() -> u64 {
     512 // 512 MB default row group size
 }
 
-impl From<&ParquetConfig> for amp_worker_core::ParquetConfig {
+impl From<&ParquetConfig> for amp_job_core::materialize::config::ParquetConfig {
     fn from(config: &ParquetConfig) -> Self {
         Self {
             compression: (&config.compression).into(),
@@ -274,7 +274,7 @@ impl Default for CompactorConfig {
     }
 }
 
-impl From<&CompactorConfig> for amp_worker_core::CompactorConfig {
+impl From<&CompactorConfig> for amp_job_core::materialize::config::CompactorConfig {
     fn from(config: &CompactorConfig) -> Self {
         Self {
             active: config.active,
@@ -319,7 +319,9 @@ impl Default for CompactionAlgorithmConfig {
     }
 }
 
-impl From<&CompactionAlgorithmConfig> for amp_worker_core::CompactionAlgorithmConfig {
+impl From<&CompactionAlgorithmConfig>
+    for amp_job_core::materialize::config::CompactionAlgorithmConfig
+{
     fn from(config: &CompactionAlgorithmConfig) -> Self {
         Self {
             cooldown_duration: (&config.cooldown_duration).into(),
@@ -342,7 +344,7 @@ pub struct CollectorConfig {
     pub deletion_lock_duration: ConfigDuration<1800>,
 }
 
-impl From<&CollectorConfig> for amp_worker_core::CollectorConfig {
+impl From<&CollectorConfig> for amp_job_core::materialize::config::CollectorConfig {
     fn from(config: &CollectorConfig) -> Self {
         Self {
             active: config.active,
@@ -379,7 +381,7 @@ impl Default for SizeLimitConfig {
     }
 }
 
-impl From<&SizeLimitConfig> for amp_worker_core::SizeLimitConfig {
+impl From<&SizeLimitConfig> for amp_job_core::materialize::config::SizeLimitConfig {
     fn from(config: &SizeLimitConfig) -> Self {
         Self {
             file_count: 0,
@@ -437,7 +439,9 @@ impl<const DEFAULT_SECS: u64> schemars::JsonSchema for ConfigDuration<DEFAULT_SE
     }
 }
 
-impl<const N: u64> From<&ConfigDuration<N>> for amp_worker_core::ConfigDuration<N> {
+impl<const N: u64> From<&ConfigDuration<N>>
+    for amp_job_core::materialize::config::ConfigDuration<N>
+{
     fn from(d: &ConfigDuration<N>) -> Self {
         d.0.into()
     }
@@ -512,7 +516,7 @@ impl Default for Overflow {
     }
 }
 
-impl From<Overflow> for amp_worker_core::compaction::Overflow {
+impl From<Overflow> for amp_job_core::materialize::Overflow {
     fn from(value: Overflow) -> Self {
         Self::new(value.0, value.1)
     }
@@ -547,13 +551,13 @@ impl std::str::FromStr for Overflow {
             if value <= 0.0 || value.is_nan() || value.is_infinite() {
                 return Err(OverflowParseError::NotPositive);
             }
-            Ok(amp_worker_core::compaction::Overflow::from(value).into())
+            Ok(amp_job_core::materialize::Overflow::from(value).into())
         }
     }
 }
 
-impl From<amp_worker_core::compaction::Overflow> for Overflow {
-    fn from(value: amp_worker_core::compaction::Overflow) -> Self {
+impl From<amp_job_core::materialize::Overflow> for Overflow {
+    fn from(value: amp_job_core::materialize::Overflow) -> Self {
         Self(value.0, value.1)
     }
 }
@@ -591,7 +595,7 @@ impl<'de> serde::Deserialize<'de> for Overflow {
                         "overflow float must be finite and positive, got {value}"
                     )));
                 }
-                Ok(amp_worker_core::compaction::Overflow::from(value).into())
+                Ok(amp_job_core::materialize::Overflow::from(value).into())
             }
 
             fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Overflow, E> {

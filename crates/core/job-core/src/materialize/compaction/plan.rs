@@ -30,9 +30,12 @@ use futures::{
 };
 use metadata_db::{MetadataDb, files::FileId};
 
-use crate::{
+use crate::materialize::{
     WriterProperties,
-    compaction::{CompactionResult, CompactorError, compactor::CompactionGroup},
+    compaction::{
+        compactor::CompactionGroup,
+        error::{CompactionResult, CompactorError},
+    },
     metrics::MetricsRegistry,
 };
 

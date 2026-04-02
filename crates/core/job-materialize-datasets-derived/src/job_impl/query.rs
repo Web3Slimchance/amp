@@ -1,18 +1,18 @@
 use std::{sync::Arc, time::Instant};
 
 use amp_data_store::file_name::FileName;
+use amp_job_core::{
+    materialize::{
+        AmpCompactor, AmpCompactorTaskError, WriterProperties, error_detail::ErrorDetailsProvider,
+        progress::ProgressUpdate,
+    },
+    retryable::RetryableErrorExt,
+};
 use amp_parquet::{
     commit::{CommitMetadataError, commit_metadata},
     generation::Generation,
     retry::RetryableErrorExt as _,
     writer::{ParquetFileWriter, ParquetFileWriterCloseError, ParquetFileWriterOutput},
-};
-use amp_worker_core::{
-    WriterProperties,
-    compaction::{AmpCompactor, AmpCompactorTaskError},
-    error_detail::ErrorDetailsProvider,
-    progress::ProgressUpdate,
-    retryable::RetryableErrorExt,
 };
 use common::{
     BlockNum,
@@ -316,7 +316,7 @@ impl ErrorDetailsProvider for MaterializeSqlQueryError {
             Some((s, e)) => (Some(s), Some(e)),
             None => (None, None),
         };
-        amp_worker_core::error_detail::block_range_details(start, end)
+        amp_job_core::materialize::error_detail::block_range_details(start, end)
     }
 }
 
@@ -395,7 +395,7 @@ impl RetryableErrorExt for MaterializeSqlQueryErrorKind {
 
 #[cfg(test)]
 mod tests {
-    use amp_worker_core::error_detail::ErrorDetailsProvider;
+    use amp_job_core::materialize::error_detail::ErrorDetailsProvider;
     use datafusion::parquet::errors::ParquetError;
 
     use super::MaterializeSqlQueryError;
@@ -494,7 +494,7 @@ mod tests {
 
     #[test]
     fn is_retryable_with_retryable_kind_returns_true() {
-        use amp_worker_core::retryable::RetryableErrorExt;
+        use amp_job_core::retryable::RetryableErrorExt;
 
         //* Given
         let err = MaterializeSqlQueryError::write_batch(ParquetError::General("test".into()));

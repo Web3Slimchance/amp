@@ -3,8 +3,7 @@ use std::{
     future::Future,
 };
 
-use amp_job_core::job_id::JobId;
-use amp_worker_core::retryable::RetryableErrorExt;
+use amp_job_core::{job_id::JobId, retryable::RetryableErrorExt};
 use tokio::task::{AbortHandle, Id as TaskId, JoinError as TokioJoinError, JoinSet};
 
 use super::job_impl::JobError;

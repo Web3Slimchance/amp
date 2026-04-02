@@ -1,22 +1,27 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::{Debug, Display, Formatter},
-    sync::{Arc, atomic::AtomicBool},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering::SeqCst},
+    },
     time::Duration,
 };
 
 use amp_data_store::{DataStore, DeleteFilesStreamError};
+use amp_parquet::timestamp::Timestamp;
 use common::physical_table::PhysicalTable;
 use futures::{StreamExt as _, TryStreamExt as _, stream};
 use metadata_db::{MetadataDb, files::FileId, gc::GcManifestRow};
 use object_store::{Error as ObjectStoreError, path::Path};
+use tokio::task::JoinHandle;
 
-use super::config::ParquetConfig;
-use crate::{
-    WriterProperties,
-    compaction::error::{CollectionResult, CollectorError},
-    metrics::MetricsRegistry,
+use super::{
+    compactor::{AmpCompactorTaskError, Compactor, TaskResult},
+    config::ParquetConfig,
+    error::{CollectionResult, CollectorError, CompactionResult, CompactorError},
 };
+use crate::materialize::{metrics::MetricsRegistry, writer::WriterProperties};
 
 #[derive(Debug, Clone)]
 pub struct CollectorProperties {
@@ -34,6 +39,150 @@ impl<'a> From<&'a ParquetConfig> for CollectorProperties {
         }
     }
 }
+
+#[derive(Clone, Debug)]
+pub struct AmpCollectorInnerTask {
+    pub compactor: Compactor,
+    pub collector: Collector,
+    pub props: Arc<WriterProperties>,
+    pub previous_collection: Timestamp,
+    pub previous_compaction: Timestamp,
+}
+
+impl AmpCollectorInnerTask {
+    pub fn new(
+        metadata_db: MetadataDb,
+        store: DataStore,
+        props: Arc<WriterProperties>,
+        table: Arc<PhysicalTable>,
+        metrics: Option<Arc<MetricsRegistry>>,
+    ) -> Self {
+        let compactor = Compactor::new(
+            metadata_db.clone(),
+            store.clone(),
+            props.clone(),
+            table.clone(),
+            metrics.clone(),
+        );
+        let collector = Collector::new(
+            metadata_db,
+            store,
+            props.clone(),
+            table.clone(),
+            metrics.clone(),
+        );
+        let previous_collection = Timestamp::now();
+        let previous_compaction = Timestamp::now();
+
+        AmpCollectorInnerTask {
+            compactor,
+            collector,
+            props,
+            previous_collection,
+            previous_compaction,
+        }
+    }
+
+    pub fn start(
+        metadata_db: MetadataDb,
+        store: DataStore,
+        props: Arc<WriterProperties>,
+        table: Arc<PhysicalTable>,
+        metrics: Option<Arc<MetricsRegistry>>,
+    ) -> JoinHandle<Result<Self, AmpCompactorTaskError>> {
+        let task = AmpCollectorInnerTask::new(metadata_db, store, props, table, metrics);
+        tokio::spawn(futures::future::ok(task))
+    }
+
+    /// Try to run compaction followed by collection
+    ///
+    /// This will only run compaction and/or collection if the
+    /// configured intervals have elapsed for both or either
+    /// tasks and if they are enabled. If neither is enabled,
+    /// and/or neither respective interval has elapsed this is
+    /// a no-op
+    pub async fn try_run(self) -> TaskResult<Self> {
+        match self.clone().try_compact().await {
+            Ok(task) => match task.try_collect().await {
+                Ok(task) => Ok(task),
+                Err(err) if Self::is_cancellation_task_error(&err) => {
+                    tracing::warn!("Collection task cancelled: {}", err);
+                    Ok(self)
+                }
+                Err(err) => Err(err),
+            },
+            Err(err) if Self::is_cancellation_task_error(&err) => {
+                tracing::warn!("Compaction task cancelled: {}", err);
+                Ok(self)
+            }
+            Err(err) => Err(err),
+        }
+    }
+
+    async fn collect(mut self) -> CollectionResult<Self> {
+        self.collector = self.collector.collect().await?;
+        Ok(self)
+    }
+
+    async fn compact(mut self) -> CompactionResult<Self> {
+        self.compactor = self.compactor.compact().await?;
+        Ok(self)
+    }
+
+    async fn try_collect(mut self) -> TaskResult<Self> {
+        // If collection is active and the interval has elapsed, run collection
+        let is_active = self.props.collector.active.load(SeqCst);
+        let has_elapsed = Timestamp::now()
+            .0
+            .saturating_sub(self.previous_collection.0)
+            > self.props.collector.interval;
+        if is_active && has_elapsed {
+            self.previous_collection = Timestamp::now();
+            Ok(self.collect().await?)
+        // Otherwise, return self without doing anything
+        } else {
+            Ok(self)
+        }
+    }
+
+    async fn try_compact(mut self) -> TaskResult<Self> {
+        // If compaction is active and the interval has elapsed, run compaction
+        let is_active = self.props.compactor.active.load(SeqCst);
+        let has_elapsed = Timestamp::now()
+            .0
+            .saturating_sub(self.previous_compaction.0)
+            > self.props.compactor.interval;
+
+        if is_active && has_elapsed {
+            self.previous_compaction = Timestamp::now();
+            Ok(self.compact().await?)
+        // Otherwise, return self without doing anything
+        } else {
+            Ok(self)
+        }
+    }
+
+    fn is_compactor_cancellation(err: &CompactorError) -> bool {
+        matches!(err, CompactorError::Join(join_err) if join_err.is_cancelled())
+    }
+
+    fn is_collector_cancellation(err: &CollectorError) -> bool {
+        matches!(err, CollectorError::Join(join_err) if join_err.is_cancelled())
+    }
+
+    fn is_cancellation_task_error(err: &AmpCompactorTaskError) -> bool {
+        match err {
+            AmpCompactorTaskError::Join(join_err) => join_err.is_cancelled(),
+            AmpCompactorTaskError::Compaction(compactor_err) => {
+                Self::is_compactor_cancellation(compactor_err)
+            }
+            AmpCompactorTaskError::Collection(collector_err) => {
+                Self::is_collector_cancellation(collector_err)
+            }
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct Collector {
     metadata_db: MetadataDb,
@@ -49,6 +198,17 @@ impl Debug for Collector {
             f,
             "Garbage Collector {{ table: {} }}",
             self.table.table_ref_compact()
+        )
+    }
+}
+
+impl Display for Collector {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Garbage Collector {{ table: {}, opts: {:?} }}",
+            self.table.table_ref_compact(),
+            self.props
         )
     }
 }
@@ -71,7 +231,7 @@ impl Collector {
     }
 
     #[tracing::instrument(skip_all, err, fields(location_id=%self.table.location_id(), table=self.table.table_ref_compact()))]
-    pub(super) async fn collect(self) -> CollectionResult<Self> {
+    pub async fn collect(self) -> CollectionResult<Self> {
         let table_name: Arc<str> = Arc::from(self.table.table_name().as_str());
 
         let location_id = self.table.location_id();
@@ -173,16 +333,5 @@ impl Collector {
         }
 
         return Ok(self);
-    }
-}
-
-impl Display for Collector {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Garbage Collector {{ table: {}, opts: {:?} }}",
-            self.table.table_ref_compact(),
-            self.props
-        )
     }
 }

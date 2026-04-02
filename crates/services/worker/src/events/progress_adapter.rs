@@ -1,21 +1,23 @@
-//! Progress reporter adapter for bridging worker core progress to event emitter.
+//! Progress reporter adapter for bridging job core progress to event emitter.
 //!
-//! This module provides a [`WorkerProgressReporter`] that implements the worker core crate's
-//! [`amp_worker_core::ProgressReporter`] trait and forwards progress updates to the worker's
-//! [`EventEmitter`] for Kafka streaming.
+//! This module provides a [`WorkerProgressReporter`] that implements the job core crate's
+//! [`amp_job_core::materialize::progress::ProgressReporter`] trait and forwards progress updates
+//! to the worker's [`EventEmitter`] for Kafka streaming.
 
 use std::sync::Arc;
 
-use amp_job_core::job_id::JobId;
-use amp_worker_core::{ProgressUpdate, SyncCompletedInfo, SyncFailedInfo, SyncStartedInfo};
+use amp_job_core::{
+    job_id::JobId,
+    materialize::progress::{ProgressUpdate, SyncCompletedInfo, SyncFailedInfo, SyncStartedInfo},
+};
 
 use super::EventEmitter;
 use crate::kafka::proto;
 
-/// Adapter that bridges worker core progress reporting to worker event emission.
+/// Adapter that bridges job core progress reporting to worker event emission.
 ///
-/// This struct implements [`amp_worker_core::ProgressReporter`] and translates progress updates
-/// into proto events that are sent to the configured [`EventEmitter`].
+/// This struct implements [`amp_job_core::materialize::progress::ProgressReporter`] and translates
+/// progress updates into proto events that are sent to the configured [`EventEmitter`].
 pub struct WorkerProgressReporter {
     job_id: JobId,
     dataset_info: proto::DatasetInfo,
@@ -37,7 +39,7 @@ impl WorkerProgressReporter {
     }
 }
 
-impl amp_worker_core::ProgressReporter for WorkerProgressReporter {
+impl amp_job_core::materialize::progress::ProgressReporter for WorkerProgressReporter {
     fn report_progress(&self, update: ProgressUpdate) {
         let event = proto::SyncProgress {
             job_id: *self.job_id,

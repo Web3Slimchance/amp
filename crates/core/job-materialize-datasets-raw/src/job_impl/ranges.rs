@@ -13,14 +13,15 @@ use std::{
 };
 
 use amp_data_store::DataStore;
-use amp_worker_core::{
-    WriterProperties,
-    compaction::AmpCompactor,
-    error_detail::ErrorDetailsProvider,
-    metrics,
-    progress::{ProgressReporter, ProgressUpdate},
+use amp_job_core::{
+    materialize::{
+        AmpCompactor, WriterProperties,
+        error_detail::ErrorDetailsProvider,
+        metrics,
+        progress::{ProgressReporter, ProgressUpdate},
+        tasks::{FailFastJoinSet, TryWaitAllError},
+    },
     retryable::RetryableErrorExt,
-    tasks::{FailFastJoinSet, TryWaitAllError},
 };
 use common::{
     BlockNum,
@@ -717,7 +718,7 @@ impl ErrorDetailsProvider for RunRangeError {
             Some((s, e)) => (Some(s), Some(e)),
             None => (None, None),
         };
-        amp_worker_core::error_detail::block_range_details(start, end)
+        amp_job_core::materialize::error_detail::block_range_details(start, end)
     }
 }
 
@@ -915,7 +916,7 @@ mod test {
         time::{Duration, Instant},
     };
 
-    use amp_worker_core::progress::{
+    use amp_job_core::materialize::progress::{
         ProgressReporter, ProgressUpdate, SyncCompletedInfo, SyncFailedInfo, SyncStartedInfo,
     };
     use datasets_common::table_name::TableName;
@@ -1359,7 +1360,7 @@ mod test {
     }
 
     mod run_range_error {
-        use amp_worker_core::error_detail::ErrorDetailsProvider;
+        use amp_job_core::materialize::error_detail::ErrorDetailsProvider;
         use common::parquet::errors::ParquetError;
 
         use super::super::RunRangeError;
@@ -1454,7 +1455,7 @@ mod test {
 
         #[test]
         fn is_retryable_with_retryable_kind_returns_true() {
-            use amp_worker_core::retryable::RetryableErrorExt;
+            use amp_job_core::retryable::RetryableErrorExt;
 
             //* Given
             let err = RunRangeError::create_writer(ParquetError::General("test".into()));
@@ -1468,7 +1469,7 @@ mod test {
 
         #[test]
         fn is_retryable_with_fatal_kind_returns_false() {
-            use amp_worker_core::retryable::RetryableErrorExt;
+            use amp_job_core::retryable::RetryableErrorExt;
 
             //* Given
             let err = RunRangeError::non_increasing_block_num(10, 5);

@@ -1,7 +1,9 @@
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use amp_data_store::DataStore;
-use amp_worker_core::{ParquetConfig, metrics::MetricsRegistry, progress::ProgressReporter};
+use amp_job_core::materialize::{
+    config::ParquetConfig, metrics::MetricsRegistry, progress::ProgressReporter,
+};
 use common::{datasets_cache::DatasetsCache, udfs::eth_call::EthCallUdfsCache};
 use js_runtime::isolate_pool::IsolatePool;
 use metadata_db::{MetadataDb, NotificationMultiplexerHandle, jobs::JobId};

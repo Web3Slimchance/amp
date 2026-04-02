@@ -1,13 +1,16 @@
 use std::{collections::BTreeMap, sync::Arc, time::Instant};
 
-use amp_worker_core::{
-    EndBlock, ResolvedEndBlock, WriterProperties,
-    block_ranges::{GetLatestBlockError, ResolutionError, resolve_end_block},
-    compaction::AmpCompactor,
-    error_detail::ErrorDetailsProvider,
-    progress::{SyncCompletedInfo, SyncFailedInfo, SyncStartedInfo},
+use amp_job_core::{
+    materialize::{
+        AmpCompactor, WriterProperties,
+        block_ranges::{
+            EndBlock, GetLatestBlockError, ResolutionError, ResolvedEndBlock, resolve_end_block,
+        },
+        error_detail::ErrorDetailsProvider,
+        progress::{SyncCompletedInfo, SyncFailedInfo, SyncStartedInfo},
+        tasks::{self, TryWaitAllError},
+    },
     retryable::RetryableErrorExt,
-    tasks::{self, TryWaitAllError},
 };
 use common::{
     BlockNum,

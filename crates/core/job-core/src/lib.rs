@@ -6,5 +6,7 @@
 
 pub mod job_id;
 pub mod job_key;
+pub mod materialize;
 pub mod retry_strategy;
+pub mod retryable;
 pub mod status;

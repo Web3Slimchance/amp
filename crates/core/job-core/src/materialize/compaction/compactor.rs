@@ -13,20 +13,78 @@ use amp_parquet::{
     reader::AmpReaderFactory,
     writer::{ParquetFileWriter, ParquetFileWriterOutput},
 };
-use common::{BlockNum, BlockRange, metadata::SegmentSize, physical_table::PhysicalTable};
-use futures::{StreamExt, TryStreamExt, stream};
+use common::{metadata::SegmentSize, physical_table::PhysicalTable};
+use datasets_common::{block_num::BlockNum, block_range::BlockRange};
+use futures::{FutureExt as _, StreamExt as _, TryStreamExt as _, stream};
 use metadata_db::MetadataDb;
 use monitoring::logging;
+use parking_lot::RwLock;
+use tokio::task::JoinError;
 
-use super::config::ParquetConfig;
-use crate::{
-    WriterProperties,
-    compaction::{
-        CompactionAlgorithm, CompactionResult, CompactorError,
-        plan::{CompactionFile, CompactionPlan},
-    },
-    metrics::MetricsRegistry,
+use super::{
+    AmpCompactorTask,
+    algorithm::CompactionAlgorithm,
+    config::ParquetConfig,
+    error::{CollectorError, CompactionResult, CompactorError},
+    plan::{CompactionFile, CompactionPlan},
 };
+use crate::{
+    materialize::{metrics::MetricsRegistry, writer::WriterProperties},
+    retryable::RetryableErrorExt,
+};
+
+pub type TaskResult<T> = Result<T, AmpCompactorTaskError>;
+
+/// Errors that can occur during compaction or garbage-collection task execution.
+///
+/// The custom [`From`] impls flatten inner `Join` variants so that all
+/// task-cancellation / join failures surface uniformly as [`Self::Join`].
+#[derive(Debug, thiserror::Error)]
+pub enum AmpCompactorTaskError {
+    /// A compaction operation failed (e.g. I/O, metadata, or merge error).
+    #[error(transparent)]
+    Compaction(CompactorError),
+    /// A garbage-collection (file deletion) operation failed.
+    #[error(transparent)]
+    Collection(CollectorError),
+    /// The spawned Tokio task panicked or was cancelled.
+    #[error(transparent)]
+    Join(JoinError),
+}
+
+impl RetryableErrorExt for AmpCompactorTaskError {
+    fn is_retryable(&self) -> bool {
+        match self {
+            Self::Compaction(err) => err.is_retryable(),
+            Self::Collection(err) => err.is_retryable(),
+            Self::Join(_) => false,
+        }
+    }
+}
+
+impl From<CollectorError> for AmpCompactorTaskError {
+    fn from(err: CollectorError) -> Self {
+        match err {
+            CollectorError::Join(err) => AmpCompactorTaskError::Join(err),
+            other => AmpCompactorTaskError::Collection(other),
+        }
+    }
+}
+
+impl From<CompactorError> for AmpCompactorTaskError {
+    fn from(err: CompactorError) -> Self {
+        match err {
+            CompactorError::Join(err) => AmpCompactorTaskError::Join(err),
+            other => AmpCompactorTaskError::Compaction(other),
+        }
+    }
+}
+
+impl From<JoinError> for AmpCompactorTaskError {
+    fn from(err: JoinError) -> Self {
+        AmpCompactorTaskError::Join(err)
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct CompactorProperties {
@@ -46,6 +104,50 @@ impl<'a> From<&'a ParquetConfig> for CompactorProperties {
             metadata_concurrency: config.compactor.metadata_concurrency,
             write_concurrency: config.compactor.write_concurrency,
         }
+    }
+}
+
+pub struct AmpCompactor {
+    task: RwLock<AmpCompactorTask>,
+}
+
+impl AmpCompactor {
+    pub fn start(
+        metadata_db: MetadataDb,
+        store: DataStore,
+        props: Arc<WriterProperties>,
+        table: Arc<PhysicalTable>,
+        metrics: Option<Arc<MetricsRegistry>>,
+    ) -> Self {
+        let task = AmpCompactorTask::start(metadata_db, store, props, table, metrics).into();
+        Self { task }
+    }
+
+    pub fn is_finished(&self) -> bool {
+        self.task
+            .try_read()
+            .map(|t| t.is_finished())
+            .unwrap_or_default()
+    }
+
+    pub fn try_run(&self) -> TaskResult<()> {
+        if let Some(mut task) = self.task.try_write()
+            && task.is_finished()
+        {
+            task.join_current_then_spawn_new().now_or_never().unwrap()?;
+        }
+        Ok(())
+    }
+
+    #[allow(clippy::await_holding_lock)]
+    pub async fn join_current_then_spawn_new(&mut self) -> TaskResult<()> {
+        // Clippy: This is a test utility, so holding the lock while awaiting
+        // is acceptable here because we know there won't be contention and we
+        // always ensure the task is finished before acquiring the lock.
+        if let Some(mut task) = self.task.try_write() {
+            task.join_current_then_spawn_new().await?;
+        }
+        Ok(())
     }
 }
 
@@ -98,7 +200,7 @@ impl Compactor {
     }
 
     #[tracing::instrument(skip_all, fields(table = self.table.table_ref_compact()))]
-    pub(super) async fn compact(self) -> CompactionResult<Self> {
+    pub async fn compact(self) -> CompactionResult<Self> {
         if !self.props.compactor.active.load(Ordering::SeqCst) {
             return Ok(self);
         }
@@ -214,64 +316,6 @@ impl CompactionGroup {
         self.streams.push(file);
     }
 
-    async fn write_and_finish(self) -> CompactionResult<ParquetFileWriterOutput> {
-        let range = {
-            let start_range = &self
-                .streams
-                .first()
-                .expect("At least one stream in group")
-                .range;
-
-            let end_range = &self
-                .streams
-                .last()
-                .expect("At least one stream in group")
-                .range;
-
-            let network = start_range.network.to_owned();
-            let numbers = start_range.start()..=end_range.end();
-
-            BlockRange {
-                network,
-                numbers,
-                hash: end_range.hash,
-                prev_hash: start_range.prev_hash,
-                timestamp: end_range.timestamp,
-            }
-        };
-
-        let filename = FileName::new_with_random_suffix(range.start());
-        let buf_writer = self
-            .store
-            .create_revision_file_writer(self.table.revision(), &filename);
-        let mut writer = ParquetFileWriter::new(
-            self.store,
-            buf_writer,
-            filename,
-            self.table.schema(),
-            self.table.table_ref_compact(),
-            &*self.table,
-            self.props.max_row_group_bytes,
-            self.props.parquet.clone(),
-        )
-        .map_err(CompactorError::create_writer_error(&self.props))?;
-
-        let mut parent_ids = Vec::with_capacity(self.streams.len());
-        for mut file in self.streams {
-            while let Some(ref batch) = file.sendable_stream.try_next().await? {
-                writer.write(batch).await?;
-            }
-            parent_ids.push(file.file_id);
-        }
-        // Increment generation for new file
-        let generation = self.size.generation + 1;
-
-        writer
-            .close(range, parent_ids, generation)
-            .await
-            .map_err(CompactorError::FileWrite)
-    }
-
     #[tracing::instrument(skip_all, fields(files = self.len(), start = self.range().start(), end = self.range().end()))]
     pub async fn compact(self) -> CompactionResult<BlockNum> {
         let start = *self.range().start();
@@ -342,6 +386,64 @@ impl CompactionGroup {
             .range
             .end();
         start..=end
+    }
+
+    async fn write_and_finish(self) -> CompactionResult<ParquetFileWriterOutput> {
+        let range = {
+            let start_range = &self
+                .streams
+                .first()
+                .expect("At least one stream in group")
+                .range;
+
+            let end_range = &self
+                .streams
+                .last()
+                .expect("At least one stream in group")
+                .range;
+
+            let network = start_range.network.to_owned();
+            let numbers = start_range.start()..=end_range.end();
+
+            BlockRange {
+                network,
+                numbers,
+                hash: end_range.hash,
+                prev_hash: start_range.prev_hash,
+                timestamp: end_range.timestamp,
+            }
+        };
+
+        let filename = FileName::new_with_random_suffix(range.start());
+        let buf_writer = self
+            .store
+            .create_revision_file_writer(self.table.revision(), &filename);
+        let mut writer = ParquetFileWriter::new(
+            self.store,
+            buf_writer,
+            filename,
+            self.table.schema(),
+            self.table.table_ref_compact(),
+            &*self.table,
+            self.props.max_row_group_bytes,
+            self.props.parquet.clone(),
+        )
+        .map_err(CompactorError::create_writer_error(&self.props))?;
+
+        let mut parent_ids = Vec::with_capacity(self.streams.len());
+        for mut file in self.streams {
+            while let Some(ref batch) = file.sendable_stream.try_next().await? {
+                writer.write(batch).await?;
+            }
+            parent_ids.push(file.file_id);
+        }
+        // Increment generation for new file
+        let generation = self.size.generation + 1;
+
+        writer
+            .close(range, parent_ids, generation)
+            .await
+            .map_err(CompactorError::FileWrite)
     }
 }
 

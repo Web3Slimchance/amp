@@ -4,11 +4,8 @@ use std::{
     time::Duration,
 };
 
+use amp_job_core::materialize::{AmpCompactor, SegmentSizeLimit, parquet_opts};
 use amp_parquet::generation::Generation;
-use amp_worker_core::{
-    compaction::{AmpCompactor, SegmentSizeLimit},
-    parquet_opts,
-};
 use anyhow::Result;
 use common::datasets_cache::DatasetsCache;
 use datasets_common::reference::Reference;
@@ -165,7 +162,7 @@ impl TestCtx {
             .unwrap();
 
         let config = self.ctx.daemon_worker().config();
-        let wc_parquet: amp_worker_core::ParquetConfig = (&config.parquet).into();
+        let wc_parquet: amp_job_core::materialize::config::ParquetConfig = (&config.parquet).into();
         let mut opts = parquet_opts(wc_parquet);
         opts.compactor.active.swap(true, Ordering::SeqCst);
         opts.collector.active.swap(false, Ordering::SeqCst);
@@ -196,7 +193,7 @@ impl TestCtx {
             .find(|t| t.table_name() == table)
             .unwrap();
         let config = self.ctx.daemon_worker().config();
-        let wc_parquet: amp_worker_core::ParquetConfig = (&config.parquet).into();
+        let wc_parquet: amp_job_core::materialize::config::ParquetConfig = (&config.parquet).into();
         let mut opts = parquet_opts(wc_parquet);
         opts.compactor.active.swap(false, Ordering::SeqCst);
         opts.collector.active.swap(true, Ordering::SeqCst);

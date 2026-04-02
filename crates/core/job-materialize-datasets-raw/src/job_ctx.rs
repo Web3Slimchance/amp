@@ -1,8 +1,10 @@
 use std::{sync::Arc, time::Duration};
 
 use amp_data_store::DataStore;
+use amp_job_core::materialize::{
+    config::ParquetConfig, metrics::MetricsRegistry, progress::ProgressReporter,
+};
 use amp_providers_registry::ProvidersRegistry;
-use amp_worker_core::{ParquetConfig, metrics::MetricsRegistry, progress::ProgressReporter};
 use common::{datasets_cache::DatasetsCache, udfs::eth_call::EthCallUdfsCache};
 use metadata_db::{MetadataDb, NotificationMultiplexerHandle, jobs::JobId};
 

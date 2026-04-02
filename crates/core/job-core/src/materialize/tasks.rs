@@ -5,7 +5,8 @@ use std::future::Future;
 use monitoring::logging;
 use tokio::task::{JoinError, JoinSet};
 
-use crate::{error_detail::ErrorDetailsProvider, retryable::RetryableErrorExt};
+use super::error_detail::ErrorDetailsProvider;
+use crate::retryable::RetryableErrorExt;
 
 /// A wrapper around [`JoinSet`] that implements fail-fast semantics.
 ///
@@ -14,7 +15,7 @@ use crate::{error_detail::ErrorDetailsProvider, retryable::RetryableErrorExt};
 ///
 /// ## Behavior
 /// - **Success**: All tasks must complete successfully
-/// - **Failure**: First error/panic aborts all remaining tasks  
+/// - **Failure**: First error/panic aborts all remaining tasks
 /// - **Cancellation**: Individual cancellations are logged but don't abort others
 /// - **Drop**: Aborts all tasks if dropped
 ///

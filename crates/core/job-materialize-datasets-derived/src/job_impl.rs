@@ -104,9 +104,12 @@ use std::{
 };
 
 use amp_data_store::retryable::RetryableErrorExt as _;
-use amp_worker_core::{
-    check::consistency_check, compaction::AmpCompactor, error_detail::ErrorDetailsProvider,
-    retryable::RetryableErrorExt, tasks::TryWaitAllError,
+use amp_job_core::{
+    materialize::{
+        AmpCompactor, check::consistency_check, error_detail::ErrorDetailsProvider,
+        tasks::TryWaitAllError,
+    },
+    retryable::RetryableErrorExt,
 };
 use common::{physical_table::PhysicalTable, retryable::RetryableErrorExt as _};
 use datasets_common::{hash_reference::HashReference, table_name::TableName};
@@ -139,7 +142,7 @@ pub async fn execute(
         .map(Arc::new)
         .map_err(Error::GetDerivedManifest)?;
 
-    let parquet_opts = amp_worker_core::parquet_opts(ctx.config.parquet_writer.clone());
+    let parquet_opts = amp_job_core::materialize::parquet_opts(ctx.config.parquet_writer.clone());
 
     // Get dataset for table resolution
     let dataset = ctx
@@ -233,8 +236,9 @@ pub async fn execute(
         .collect();
 
     // Process all tables in parallel using FailFastJoinSet
-    let mut join_set =
-        amp_worker_core::tasks::FailFastJoinSet::<Result<(), MaterializeTableError>>::new();
+    let mut join_set = amp_job_core::materialize::tasks::FailFastJoinSet::<
+        Result<(), MaterializeTableError>,
+    >::new();
 
     let env = common::exec_env::create(
         ctx.config.max_mem_mb,
@@ -344,7 +348,7 @@ pub enum Error {
     ConsistencyCheck {
         table_name: String,
         #[source]
-        source: amp_worker_core::check::ConsistencyError,
+        source: amp_job_core::materialize::check::ConsistencyError,
     },
 
     /// Failed to resolve networks from dependency chain
@@ -442,7 +446,7 @@ impl ErrorDetailsProvider for Error {
     }
 }
 
-impl amp_worker_core::retryable::JobErrorExt for Error {
+impl amp_job_core::retryable::JobErrorExt for Error {
     fn error_code(&self) -> &'static str {
         match self {
             Self::GetDataset(_) => "GET_DATASET",
@@ -461,7 +465,7 @@ impl amp_worker_core::retryable::JobErrorExt for Error {
 
 #[cfg(test)]
 mod tests {
-    use amp_worker_core::block_ranges::ResolutionError;
+    use amp_job_core::materialize::block_ranges::ResolutionError;
     use common::sql::ParseSqlError;
 
     use self::table::{MaterializeTableError, MaterializeTableSpawnError};

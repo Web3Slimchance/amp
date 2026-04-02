@@ -33,8 +33,8 @@ use figment::{
 };
 
 use crate::{
+    materialize::{ConfigDuration, ParquetConfig},
     monitoring::OpenTelemetryConfig,
-    worker_core::{ConfigDuration, ParquetConfig},
 };
 
 /// Default data directory name - stores Parquet files

@@ -1015,8 +1015,8 @@ dependencies = [
 name = "amp-config"
 version = "0.1.0"
 dependencies = [
+ "amp-job-core",
  "amp-object-store",
- "amp-worker-core",
  "common",
  "figment",
  "fs-err",
@@ -1218,12 +1218,24 @@ dependencies = [
 name = "amp-job-core"
 version = "0.1.0"
 dependencies = [
+ "amp-data-store",
+ "amp-parquet",
+ "common",
+ "datafusion",
+ "datasets-common",
+ "futures",
  "hex",
  "metadata-db",
+ "monitoring",
+ "object_store",
+ "parking_lot",
  "serde",
  "serde_json",
  "sha2 0.10.9",
  "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "url",
 ]
 
 [[package]]
@@ -1232,7 +1244,6 @@ version = "0.1.0"
 dependencies = [
  "amp-data-store",
  "amp-job-core",
- "amp-worker-core",
  "futures",
  "metadata-db",
  "monitoring",
@@ -1250,7 +1261,6 @@ dependencies = [
  "amp-data-store",
  "amp-job-core",
  "amp-parquet",
- "amp-worker-core",
  "common",
  "datafusion",
  "datasets-common",
@@ -1272,7 +1282,6 @@ dependencies = [
  "amp-job-core",
  "amp-parquet",
  "amp-providers-registry",
- "amp-worker-core",
  "common",
  "datafusion",
  "datasets-common",
@@ -1541,22 +1550,9 @@ dependencies = [
 name = "amp-worker-core"
 version = "0.1.0"
 dependencies = [
- "amp-data-store",
- "amp-parquet",
- "common",
- "datafusion",
- "datasets-common",
- "futures",
  "metadata-db",
- "monitoring",
- "object_store",
- "parking_lot",
  "serde",
- "serde_json",
  "thiserror 2.0.18",
- "tokio",
- "tracing",
- "url",
 ]
 
 [[package]]

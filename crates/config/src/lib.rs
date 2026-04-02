@@ -8,11 +8,11 @@ use fs_err as fs;
 
 mod config_file;
 pub mod controller;
+pub mod materialize;
 pub mod metadb;
 pub mod monitoring;
 mod redacted;
 pub mod server;
-pub mod worker_core;
 
 pub use self::{
     config_file::{
@@ -25,9 +25,9 @@ pub use self::{
 };
 use self::{
     controller::ControllerAddrs,
+    materialize::{ConfigDuration, ParquetConfig},
     monitoring::OpenTelemetryConfig,
     server::ServerAddrs,
-    worker_core::{ConfigDuration, ParquetConfig},
 };
 
 /// Default amp dir name (created inside the base directory)

@@ -81,17 +81,18 @@
 use std::{collections::BTreeMap, ops::RangeInclusive, sync::Arc, time::Instant};
 
 use amp_data_store::retryable::RetryableErrorExt as _;
-use amp_providers_registry::retryable::RetryableErrorExt as _;
-use amp_worker_core::{
-    ResolvedEndBlock,
-    block_ranges::resolve_end_block,
-    check::consistency_check,
-    compaction::AmpCompactor,
-    error_detail::ErrorDetailsProvider,
-    progress::{SyncCompletedInfo, SyncFailedInfo, SyncStartedInfo},
+use amp_job_core::{
+    materialize::{
+        AmpCompactor,
+        block_ranges::{ResolvedEndBlock, resolve_end_block},
+        check::consistency_check,
+        error_detail::ErrorDetailsProvider,
+        progress::{SyncCompletedInfo, SyncFailedInfo, SyncStartedInfo},
+        tasks::TryWaitAllError,
+    },
     retryable::RetryableErrorExt,
-    tasks::TryWaitAllError,
 };
+use amp_providers_registry::retryable::RetryableErrorExt as _;
 use common::{
     catalog::{logical::LogicalTable, physical::Catalog},
     physical_table::{MissingRangesError, PhysicalTable, segments::merge_ranges},
@@ -142,7 +143,7 @@ pub async fn execute(
     let dataset_reference = dataset.reference();
 
     let materialize_start_time = Instant::now();
-    let parquet_opts = amp_worker_core::parquet_opts(ctx.config.parquet_writer.clone());
+    let parquet_opts = amp_job_core::materialize::parquet_opts(ctx.config.parquet_writer.clone());
 
     // Initialize physical tables and compactors
     let mut tables: Vec<(Arc<PhysicalTable>, Arc<AmpCompactor>)> = vec![];
@@ -532,7 +533,7 @@ pub enum Error {
     ConsistencyCheck {
         table_name: TableName,
         #[source]
-        source: amp_worker_core::check::ConsistencyError,
+        source: amp_job_core::materialize::check::ConsistencyError,
     },
 
     /// No provider found matching the dataset's kind and network.
@@ -552,7 +553,7 @@ pub enum Error {
     /// - RPC provider returning invalid block numbers
     /// - Provider temporarily unavailable
     #[error("Failed to resolve end block")]
-    ResolveEndBlock(#[source] amp_worker_core::block_ranges::ResolutionError),
+    ResolveEndBlock(#[source] amp_job_core::materialize::block_ranges::ResolutionError),
 
     /// Failed to get latest block number from blockchain client
     ///
@@ -642,7 +643,7 @@ impl ErrorDetailsProvider for Error {
     }
 }
 
-impl amp_worker_core::retryable::JobErrorExt for Error {
+impl amp_job_core::retryable::JobErrorExt for Error {
     fn error_code(&self) -> &'static str {
         match self {
             Self::GetDataset(_) => "GET_DATASET",

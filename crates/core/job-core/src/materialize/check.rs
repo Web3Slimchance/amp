@@ -25,7 +25,7 @@ use object_store::ObjectMeta;
 ///
 /// ## Side Effects
 ///
-/// ⚠️ **Warning**: This function has side effects - it deletes orphaned files from object store.
+/// Warning: This function has side effects - it deletes orphaned files from object store.
 /// These deletions are logged at `WARN` level before execution.
 pub async fn consistency_check(
     table: &PhysicalTable,

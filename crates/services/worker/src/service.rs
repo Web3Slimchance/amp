@@ -20,12 +20,13 @@ mod job_impl;
 mod job_queue;
 mod job_set;
 
-use amp_job_core::{job_id::JobId, status::JobStatus};
-use amp_worker_core::{
-    error_detail::{ErrorContext, ErrorDetailPayload, collect_error_details},
-    node_id::NodeId,
+use amp_job_core::{
+    job_id::JobId,
+    materialize::error_detail::{ErrorContext, ErrorDetailPayload, collect_error_details},
     retryable::JobErrorExt as _,
+    status::JobStatus,
 };
+use amp_worker_core::node_id::NodeId;
 
 pub use self::error::{
     AbortJobError, HeartbeatLoopInitError, HeartbeatTaskError, InitError, JobCreationError,

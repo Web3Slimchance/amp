@@ -51,8 +51,8 @@ use amp_data_store::DataStore;
 use amp_datasets_registry::{
     DatasetsRegistry, error::ResolveRevisionError, manifests::DatasetManifestsStore,
 };
+use amp_job_core::materialize::check::consistency_check;
 use amp_providers_registry::{ProviderConfigsStore, ProvidersRegistry};
-use amp_worker_core::consistency_check;
 use anyhow::{Result, anyhow};
 use clap::Parser;
 use common::datasets_cache::{DatasetsCache, GetDatasetError};

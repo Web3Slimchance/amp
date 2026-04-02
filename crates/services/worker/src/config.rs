@@ -1,6 +1,6 @@
 use std::{path::PathBuf, time::Duration};
 
-use amp_config::{WorkerEventsConfig, worker_core::ParquetConfig};
+use amp_config::{WorkerEventsConfig, materialize::ParquetConfig};
 
 /// Configuration specific to the worker service
 ///

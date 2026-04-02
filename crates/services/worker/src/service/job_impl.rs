@@ -2,11 +2,11 @@
 
 use std::sync::Arc;
 
-use amp_job_core::job_id::JobId;
-use amp_worker_core::{
-    ProgressReporter,
-    error_detail::ErrorDetailsProvider,
-    metrics::MetricsRegistry,
+use amp_job_core::{
+    job_id::JobId,
+    materialize::{
+        error_detail::ErrorDetailsProvider, metrics::MetricsRegistry, progress::ProgressReporter,
+    },
     retryable::{JobErrorExt, RetryableErrorExt},
 };
 use datasets_common::hash_reference::HashReference;

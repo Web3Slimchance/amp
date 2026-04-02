@@ -7,8 +7,10 @@
 
 use std::sync::Arc;
 
-use amp_job_core::job_id::JobId;
-use amp_worker_core::{ProgressReporter, ProgressUpdate};
+use amp_job_core::{
+    job_id::JobId,
+    materialize::progress::{ProgressReporter, ProgressUpdate},
+};
 use monitoring::logging;
 use worker::{
     events::{EventEmitter, WorkerProgressReporter},
