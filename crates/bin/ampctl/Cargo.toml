@@ -17,7 +17,7 @@ path = "src/main.rs"
 amp-client-admin = { package = "admin-client", path = "../../clients/admin" }
 amp-job-core = { path = "../../job-core" }
 amp-object-store = { path = "../../core/object-store" }
-amp-worker-core = { path = "../../core/worker-core" }
+amp-worker-core = { path = "../../worker-core" }
 anyhow.workspace = true
 clap.workspace = true
 console = "0.16.1"

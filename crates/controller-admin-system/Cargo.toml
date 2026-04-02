@@ -9,7 +9,7 @@ license-file.workspace = true
 utoipa = ["dep:utoipa"]
 
 [dependencies]
-amp-worker-core = { path = "../core/worker-core" }
+amp-worker-core = { path = "../worker-core" }
 async-trait.workspace = true
 axum.workspace = true
 metadata-db = { path = "../core/metadata-db" }

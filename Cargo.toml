@@ -30,7 +30,6 @@ members = [
     "crates/core/object-store",
     "crates/core/parquet",
     "crates/core/verification",
-    "crates/core/worker-core",
     "crates/extractors/evm-rpc",
     "crates/extractors/evm-rpc/gen",
     "crates/extractors/firehose",
@@ -62,6 +61,7 @@ members = [
     "crates/services/metadata-db-postgres",
     "crates/services/server",
     "crates/services/worker",
+    "crates/worker-core",
     "tests",
 ]
 

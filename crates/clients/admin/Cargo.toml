@@ -6,7 +6,7 @@ license-file.workspace = true
 
 [dependencies]
 amp-job-core = { path = "../../job-core" }
-amp-worker-core = { path = "../../core/worker-core" }
+amp-worker-core = { path = "../../worker-core" }
 datasets-common = { path = "../../core/datasets-common" }
 monitoring = { path = "../../core/monitoring" }
 reqwest.workspace = true

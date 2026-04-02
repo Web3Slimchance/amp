@@ -17,7 +17,7 @@ amp-data-store = { path = "../../core/data-store" }
 amp-datasets-registry = { version = "0.1.0", path = "../../core/datasets-registry" }
 amp-job-core = { path = "../../job-core" }
 amp-providers-registry = { version = "0.1.0", path = "../../providers-registry" }
-amp-worker-core = { path = "../../core/worker-core" }
+amp-worker-core = { path = "../../worker-core" }
 async-trait.workspace = true
 axum.workspace = true
 chrono.workspace = true
