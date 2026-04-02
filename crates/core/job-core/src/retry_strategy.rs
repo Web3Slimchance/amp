@@ -127,6 +127,16 @@ impl Backoff {
 }
 
 impl RetryStrategy {
+    /// Parse a `RetryStrategy` from a job descriptor JSON string.
+    ///
+    /// Extracts the `retry_strategy` field from the descriptor object and
+    /// deserializes it. Returns `None` if the field is missing or malformed.
+    pub fn from_descriptor(descriptor_json: &str) -> Option<Self> {
+        let value: serde_json::Value = serde_json::from_str(descriptor_json).ok()?;
+        let retry_obj = value.get("retry_strategy")?;
+        serde_json::from_value(retry_obj.clone()).ok()
+    }
+
     /// Returns `true` if retries are exhausted for the given attempt index (0-based).
     pub fn is_exhausted(&self, attempt_index: u32) -> bool {
         match self {
@@ -134,6 +144,19 @@ impl RetryStrategy {
             RetryStrategy::Bounded { max_attempts, .. } => attempt_index >= *max_attempts,
             RetryStrategy::UnlessStopped { .. } => false,
         }
+    }
+
+    /// Returns `true` if the backoff variant is `ExponentialWithJitter`.
+    pub fn needs_jitter(&self) -> bool {
+        matches!(
+            self,
+            RetryStrategy::Bounded {
+                backoff: Backoff::ExponentialWithJitter { .. },
+                ..
+            } | RetryStrategy::UnlessStopped {
+                backoff: Backoff::ExponentialWithJitter { .. }
+            }
+        )
     }
 
     /// Compute the backoff delay for a given attempt index (0-based).
@@ -311,6 +334,99 @@ mod tests {
 
         //* Then
         assert!(!exhausted, "unless_stopped should never be exhausted");
+    }
+
+    #[test]
+    fn from_descriptor_with_valid_json_returns_strategy() {
+        //* Given
+        let descriptor = r#"{"retry_strategy":{"strategy":"bounded","max_attempts":5,"backoff":{"kind":"fixed","base_delay_secs":10}}}"#;
+
+        //* When
+        let strategy = RetryStrategy::from_descriptor(descriptor);
+
+        //* Then
+        assert_eq!(
+            strategy,
+            Some(RetryStrategy::Bounded {
+                max_attempts: 5,
+                backoff: Backoff::Fixed {
+                    base_delay_secs: 10
+                },
+            }),
+            "should parse retry_strategy from descriptor JSON"
+        );
+    }
+
+    #[test]
+    fn from_descriptor_without_retry_strategy_field_returns_none() {
+        //* Given
+        let descriptor = r#"{"test":"job"}"#;
+
+        //* When
+        let strategy = RetryStrategy::from_descriptor(descriptor);
+
+        //* Then
+        assert_eq!(
+            strategy, None,
+            "should return None when retry_strategy field is absent"
+        );
+    }
+
+    #[test]
+    fn from_descriptor_with_invalid_json_returns_none() {
+        //* When
+        let strategy = RetryStrategy::from_descriptor("not json");
+
+        //* Then
+        assert_eq!(strategy, None, "should return None for malformed JSON");
+    }
+
+    #[test]
+    fn needs_jitter_with_exponential_with_jitter_returns_true() {
+        //* Given
+        let strategy = RetryStrategy::Bounded {
+            max_attempts: 3,
+            backoff: Backoff::ExponentialWithJitter {
+                params: ExponentialParams::default(),
+            },
+        };
+
+        //* Then
+        assert!(
+            strategy.needs_jitter(),
+            "ExponentialWithJitter should need jitter"
+        );
+    }
+
+    #[test]
+    fn needs_jitter_with_exponential_returns_false() {
+        //* Given
+        let strategy = RetryStrategy::Bounded {
+            max_attempts: 3,
+            backoff: Backoff::Exponential {
+                params: ExponentialParams::default(),
+            },
+        };
+
+        //* Then
+        assert!(
+            !strategy.needs_jitter(),
+            "plain Exponential should not need jitter"
+        );
+    }
+
+    #[test]
+    fn needs_jitter_with_fixed_returns_false() {
+        //* Given
+        let strategy = RetryStrategy::UnlessStopped {
+            backoff: Backoff::Fixed { base_delay_secs: 5 },
+        };
+
+        //* Then
+        assert!(
+            !strategy.needs_jitter(),
+            "Fixed backoff should not need jitter"
+        );
     }
 
     #[test]

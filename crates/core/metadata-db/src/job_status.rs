@@ -219,6 +219,31 @@ where
     .map_err(Error::JobStatusUpdate)
 }
 
+/// Transition a failed job to FATAL when retries are exhausted.
+///
+/// Only affects jobs currently in ERROR status. If the job is in any other
+/// state, the update is a no-op. Callers use this after determining that
+/// the per-job retry strategy has been exhausted.
+#[tracing::instrument(skip(exe), err)]
+pub async fn mark_fatal_from_error<'c, E>(
+    exe: E,
+    id: impl Into<JobId> + std::fmt::Debug,
+    detail: Option<&EventDetail<'_>>,
+) -> Result<(), Error>
+where
+    E: Executor<'c>,
+{
+    sql::update_status_if_any_state(
+        exe,
+        id.into(),
+        &[JobStatus::Error],
+        JobStatus::Fatal,
+        detail,
+    )
+    .await
+    .map_err(Error::JobStatusUpdate)
+}
+
 /// Reschedule a failed job for retry
 ///
 /// Updates the job status to SCHEDULED in the `jobs_status` projection and assigns

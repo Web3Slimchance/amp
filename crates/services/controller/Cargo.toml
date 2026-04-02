@@ -20,6 +20,7 @@ amp-providers-registry = { version = "0.1.0", path = "../../providers-registry" 
 amp-worker-core = { path = "../../core/worker-core" }
 async-trait.workspace = true
 axum.workspace = true
+chrono.workspace = true
 common = { path = "../../core/common" }
 datasets-common = { version = "0.1.0", path = "../../core/datasets-common" }
 metadata-db = { version = "0.1.0", path = "../../core/metadata-db" }

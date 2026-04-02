@@ -509,7 +509,7 @@ async fn delete_by_statuses_deletes_jobs_with_any_matching_status() {
 }
 
 #[tokio::test]
-async fn get_failed_jobs_ready_for_retry_returns_eligible_jobs() {
+async fn get_failed_for_retry_evaluation_with_single_error_job_returns_it() {
     //* Given
     let (_db, conn) = setup_test_db().await;
     let worker_id = WorkerNodeId::from_ref_unchecked(TEST_WORKER_ID);
@@ -519,42 +519,25 @@ async fn get_failed_jobs_ready_for_retry_returns_eligible_jobs() {
     // Create a failed (recoverable) job
     let job_id = register_job(&conn, &job_desc, &worker_id, None, Some(JobStatus::Error)).await;
 
-    // Wait longer than initial backoff (1 second)
-    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-
     //* When
-    let ready_jobs = jobs::sql::get_failed_jobs_ready_for_retry(&conn)
+    let failed_jobs = jobs::sql::get_failed_for_retry_evaluation(&conn)
         .await
-        .expect("Failed to get ready jobs");
+        .expect("Failed to get failed jobs");
 
     //* Then
-    assert_eq!(ready_jobs.len(), 1);
-    assert_eq!(ready_jobs[0].job.id, job_id);
-    assert_eq!(ready_jobs[0].next_retry_index, 0);
+    assert_eq!(failed_jobs.len(), 1, "should return exactly one failed job");
+    assert_eq!(
+        failed_jobs[0].job.id, job_id,
+        "should return the correct job"
+    );
+    assert_eq!(
+        failed_jobs[0].next_retry_index, 0,
+        "first attempt should have retry index 0"
+    );
 }
 
 #[tokio::test]
-async fn get_failed_jobs_ready_for_retry_excludes_not_ready() {
-    //* Given
-    let (_db, conn) = setup_test_db().await;
-    let worker_id = WorkerNodeId::from_ref_unchecked(TEST_WORKER_ID);
-
-    let job_desc = raw_descriptor(&serde_json::json!({"test": "job"}));
-
-    // Create a failed (recoverable) job
-    register_job(&conn, &job_desc, &worker_id, None, Some(JobStatus::Error)).await;
-
-    //* When (immediately check, before backoff expires)
-    let ready_jobs = jobs::sql::get_failed_jobs_ready_for_retry(&conn)
-        .await
-        .expect("Failed to get ready jobs");
-
-    //* Then
-    assert_eq!(ready_jobs.len(), 0);
-}
-
-#[tokio::test]
-async fn get_failed_jobs_calculates_retry_index_from_attempts() {
+async fn get_failed_for_retry_evaluation_with_scheduled_events_returns_correct_retry_index() {
     //* Given
     let (_db, conn) = setup_test_db().await;
     let worker_id = WorkerNodeId::from_ref_unchecked(TEST_WORKER_ID);
@@ -571,43 +554,47 @@ async fn get_failed_jobs_calculates_retry_index_from_attempts() {
             .expect("Failed to insert SCHEDULED event");
     }
 
-    // Wait longer than backoff for 3 SCHEDULED events (2^3 = 8 seconds)
-    tokio::time::sleep(tokio::time::Duration::from_secs(9)).await;
-
     //* When
-    let ready_jobs = jobs::sql::get_failed_jobs_ready_for_retry(&conn)
+    let failed_jobs = jobs::sql::get_failed_for_retry_evaluation(&conn)
         .await
-        .expect("Failed to get ready jobs");
+        .expect("Failed to get failed jobs");
 
     //* Then
-    assert_eq!(ready_jobs.len(), 1);
-    assert_eq!(ready_jobs[0].job.id, job_id);
-    assert_eq!(ready_jobs[0].next_retry_index, 3); // COUNT of SCHEDULED events
+    assert_eq!(failed_jobs.len(), 1, "should return exactly one failed job");
+    assert_eq!(
+        failed_jobs[0].job.id, job_id,
+        "should return the correct job"
+    );
+    assert_eq!(
+        failed_jobs[0].next_retry_index, 3,
+        "retry index should equal count of SCHEDULED events"
+    );
 }
 
 #[tokio::test]
-async fn get_failed_jobs_handles_missing_attempts() {
+async fn get_failed_for_retry_evaluation_without_events_returns_zero_retry_index() {
     //* Given
     let (_db, conn) = setup_test_db().await;
     let worker_id = WorkerNodeId::from_ref_unchecked(TEST_WORKER_ID);
 
     let job_desc = raw_descriptor(&serde_json::json!({"test": "job"}));
-
-    // Create a failed (recoverable) job WITHOUT any SCHEDULED events (edge case)
     let job_id = register_job(&conn, &job_desc, &worker_id, None, Some(JobStatus::Error)).await;
 
-    // Wait longer than initial backoff (1 second for retry_index 0)
-    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-
     //* When
-    let ready_jobs = jobs::sql::get_failed_jobs_ready_for_retry(&conn)
+    let failed_jobs = jobs::sql::get_failed_for_retry_evaluation(&conn)
         .await
-        .expect("Failed to get ready jobs");
+        .expect("Failed to get failed jobs");
 
     //* Then
-    assert_eq!(ready_jobs.len(), 1);
-    assert_eq!(ready_jobs[0].job.id, job_id);
-    assert_eq!(ready_jobs[0].next_retry_index, 0); // COUNT returns 0 when no SCHEDULED events
+    assert_eq!(failed_jobs.len(), 1, "should return exactly one failed job");
+    assert_eq!(
+        failed_jobs[0].job.id, job_id,
+        "should return the correct job"
+    );
+    assert_eq!(
+        failed_jobs[0].next_retry_index, 0,
+        "retry index should be 0 with no SCHEDULED events"
+    );
 }
 
 #[tokio::test]

@@ -32,7 +32,7 @@ use amp_controller_admin_jobs::scheduler::{
     ListJobDescriptorsError, ListJobsByDatasetError, ListJobsError, ListWorkersError, NodeSelector,
     ScheduleJobError, SchedulerJobs, SchedulerWorkers, StopJobError,
 };
-use amp_job_core::{job_id::JobId, status::JobStatus};
+use amp_job_core::{job_id::JobId, retry_strategy::RetryStrategy, status::JobStatus};
 use amp_worker_core::node_id::NodeId;
 use async_trait::async_trait;
 use datasets_common::{hash::Hash, name::Name, namespace::Namespace};
@@ -268,22 +268,17 @@ impl Scheduler {
         Ok(())
     }
 
-    /// Reconcile failed jobs by retrying recoverable failures with exponential backoff
+    /// Reconcile failed jobs using per-job retry strategy evaluation.
     ///
-    /// This method:
-    /// 1. Queries failed recoverable jobs that are ready for retry (based on exponential backoff timing)
-    /// 2. For each job: reschedules it on the same worker and sends notification
-    ///
-    /// Only `FailedRecoverable` jobs are retried. `FailedFatal` jobs remain in the database
-    /// until manually removed by operators using `ampctl job prune --status error`.
-    ///
-    /// Jobs retry indefinitely with exponential backoff (2^next_retry_index seconds).
-    /// Retry tracking is managed via the job_attempts table.
+    /// For each ERROR job:
+    /// 1. Parse `retry_strategy` from the job descriptor (or use default)
+    /// 2. If exhausted → transition to FATAL
+    /// 3. If backoff delay not elapsed → skip
+    /// 4. Otherwise → reschedule
     pub async fn reconcile_failed_jobs(&self) -> Result<(), ReconcileFailedJobsError> {
-        // Reschedule failed (recoverable) jobs that are ready for retry.
-        let failed_jobs = metadata_db::jobs::get_failed_jobs_ready_for_retry(&self.metadata_db)
+        let failed_jobs = metadata_db::jobs::get_failed_for_retry_evaluation(&self.metadata_db)
             .await
-            .map_err(ReconcileFailedJobsError::GetFailedJobsReadyForRetry)?;
+            .map_err(ReconcileFailedJobsError::GetFailedJobs)?;
 
         if failed_jobs.is_empty() {
             return Ok(());
@@ -297,10 +292,13 @@ impl Scheduler {
                 .map_err(ReconcileFailedJobsError::GetLatestDescriptor)?;
         let descriptors: HashMap<_, _> = descriptor_list.into_iter().collect();
 
+        let now = chrono::Utc::now();
+
         for job_with_retry in failed_jobs {
             let job = &job_with_retry.job;
             let job_id: JobId = job.id.into();
             let retry_index = job_with_retry.next_retry_index;
+
             let Some(descriptor_raw) = descriptors.get(&job.id).cloned() else {
                 tracing::error!(
                     job_id = %job_id,
@@ -308,6 +306,48 @@ impl Scheduler {
                 );
                 continue;
             };
+
+            // Parse per-job retry strategy from descriptor, fall back to default
+            let strategy =
+                RetryStrategy::from_descriptor(descriptor_raw.as_str()).unwrap_or_default();
+
+            let attempt = retry_index.max(0) as u32;
+
+            // Check if retries are exhausted
+            if strategy.is_exhausted(attempt) {
+                tracing::info!(
+                    job_id = %job_id,
+                    retry_index,
+                    strategy = ?strategy,
+                    "retry strategy exhausted, marked as FATAL"
+                );
+                if let Err(err) =
+                    metadata_db::job_status::mark_fatal_from_error(&self.metadata_db, job_id, None)
+                        .await
+                {
+                    tracing::error!(
+                        job_id = %job_id,
+                        error = %err,
+                        error_source = logging::error_source(&err),
+                        "failed to mark exhausted job as FATAL"
+                    );
+                }
+                continue;
+            }
+
+            // Compute backoff delay and check eligibility
+            let mut delay = strategy.compute_delay(retry_index as u32);
+            if strategy.needs_jitter() {
+                let jitter_ms = (delay.as_millis() as u64 / 4).max(1);
+                delay += Duration::from_millis(rand::random_range(0..jitter_ms));
+            }
+
+            let eligible_at =
+                job.updated_at + chrono::Duration::from_std(delay).unwrap_or_default();
+            if now < eligible_at {
+                continue;
+            }
+
             let result: Result<(), RescheduleJobError> = async {
                 let mut tx = self
                     .metadata_db
@@ -344,7 +384,7 @@ impl Scheduler {
             if let Err(err) = result {
                 tracing::error!(
                     job_id = %job_id,
-                    retry_index = retry_index,
+                    retry_index,
                     error = %err,
                     error_source = logging::error_source(&err),
                     "failed to reschedule and notify for failed job"
@@ -359,13 +399,12 @@ impl Scheduler {
 /// Errors that occur during failed job reconciliation [`Scheduler::reconcile_failed_jobs`]
 #[derive(Debug, thiserror::Error)]
 pub enum ReconcileFailedJobsError {
-    /// Failed to query jobs that are ready for retry
+    /// Failed to query failed jobs for retry evaluation
     ///
-    /// This occurs when the database query to retrieve recoverable failed jobs
-    /// (filtered by exponential backoff timing) fails. Without this list,
-    /// no retry scheduling can proceed.
-    #[error("failed to get failed jobs ready for retry")]
-    GetFailedJobsReadyForRetry(#[source] metadata_db::Error),
+    /// This occurs when the database query to retrieve ERROR jobs with their
+    /// attempt counts fails. Without this list, no retry scheduling can proceed.
+    #[error("failed to get failed jobs for retry evaluation")]
+    GetFailedJobs(#[source] metadata_db::Error),
 
     /// Failed to get the latest job descriptor for a job
     ///

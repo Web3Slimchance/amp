@@ -192,19 +192,16 @@ where
         .map_err(Error::Database)
 }
 
-/// Get failed (recoverable) jobs that are ready for retry
+/// Get all failed (ERROR) jobs with their attempt counts for retry evaluation.
 ///
-/// Returns failed jobs where enough time has passed since last failure based on
-/// exponential backoff. Jobs retry indefinitely with exponentially increasing delays.
-///
-/// The backoff is calculated as 2^next_retry_index seconds (unbounded exponential growth).
-/// The next_retry_index is derived from SCHEDULED events in the job_events table.
+/// Returns every job in ERROR status with its attempt count. The caller
+/// evaluates per-job backoff eligibility.
 #[tracing::instrument(skip(exe), err)]
-pub async fn get_failed_jobs_ready_for_retry<'c, E>(exe: E) -> Result<Vec<JobWithRetryInfo>, Error>
+pub async fn get_failed_for_retry_evaluation<'c, E>(exe: E) -> Result<Vec<JobWithRetryInfo>, Error>
 where
     E: Executor<'c>,
 {
-    sql::get_failed_jobs_ready_for_retry(exe)
+    sql::get_failed_for_retry_evaluation(exe)
         .await
         .map_err(Error::Database)
 }

@@ -296,15 +296,12 @@ where
     }
 }
 
-/// Get failed jobs that are ready for retry
+/// Get all failed (ERROR) jobs with their attempt counts for retry evaluation.
 ///
-/// Returns failed jobs where enough time has passed since last failure based on
-/// exponential backoff. Jobs retry indefinitely with exponentially increasing delays.
-///
-/// The backoff is calculated as 2^(COUNT(SCHEDULED events)) seconds, where the
-/// retry count is derived from SCHEDULED events in job_events. Jobs without events
-/// are treated as having retry count 0 (initial attempt).
-pub async fn get_failed_jobs_ready_for_retry<'c, E>(
+/// Returns every job in ERROR status with the count of SCHEDULED events
+/// (attempt index). Backoff eligibility is evaluated by the caller,
+/// to support per-job retry strategies.
+pub async fn get_failed_for_retry_evaluation<'c, E>(
     exe: E,
 ) -> Result<Vec<JobWithRetryInfo>, sqlx::Error>
 where
@@ -323,8 +320,6 @@ where
         LEFT JOIN job_events je ON j.id = je.job_id AND je.event_type = $1
         WHERE js.status = $2
         GROUP BY j.id, js.node_id, js.status, j.created_at, js.updated_at
-        HAVING js.updated_at + INTERVAL '1 second' * POW(2, COUNT(je.id))::bigint
-            <= timezone('UTC', now())
         ORDER BY j.id ASC
     "#};
 
