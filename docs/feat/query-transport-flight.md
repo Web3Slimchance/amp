@@ -112,18 +112,31 @@ for batch in reader:
 ### Rust Client (arrow-flight)
 
 ```rust
-use arrow_flight::flight_service_client::FlightServiceClient;
-use arrow_flight::FlightDescriptor;
+// uses:
+//   - arrow-flight: v57.0, with "flight-sql-experimental" feature
+//   - futures: v0.3
+//   - tonic: v0.14
+use arrow_flight::sql::client::FlightSqlServiceClient;
+use futures::TryStreamExt;
+use tonic::transport::Channel;
 
-let mut client = FlightServiceClient::connect("http://localhost:1602").await?;
+async fn foo() -> Result<(), Box<dyn std::error::Error>> {
+    let mut client = Channel::from_static("http://localhost:1602")
+        .connect()
+        .await
+        .map(FlightSqlServiceClient::new)?;
 
-let descriptor = FlightDescriptor::new_cmd(
-    "SELECT * FROM eth_rpc.blocks LIMIT 10".as_bytes().to_vec()
-);
+    let query = "SELECT * FROM 'namespace/eth_rpc'.blocks SETTINGS stream = true";
+    let flight_info = client.execute(query.to_string(), None).await?;
+    let ticket = flight_info.endpoint[0].ticket.clone().unwrap();
 
-let flight_info = client.get_flight_info(descriptor).await?;
-let ticket = flight_info.endpoint[0].ticket.clone();
-let stream = client.do_get(ticket).await?;
+    let mut stream = client.do_get(ticket).await?;
+    while let Some(batch) = stream.try_next().await? {
+        println!("{batch:?}");
+    }
+
+    Ok(())
+}
 ```
 
 ## Implementation
