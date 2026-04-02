@@ -911,6 +911,66 @@
           }
         }
       },
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Handler for the `POST /jobs` endpoint",
+        "description": "Schedules a new job for execution by an available worker. The job type is\ndetermined by the `kind` field in the request body (`gc`, `materialize-raw`,\nor `materialize-derived`). Additional fields depend on the job kind and are\ndefined by the corresponding job descriptor type.\n\n## Response\n- **202 Accepted**: Job scheduled successfully\n- **400 Bad Request**: Invalid request body or unsupported job kind\n- **409 Conflict**: An active job with the same idempotency key already exists\n- **500 Internal Server Error**: Scheduler error\n\n## Error Codes\n- `INVALID_BODY`: The request body is not valid JSON or has missing/invalid fields\n- `NO_WORKERS_AVAILABLE`: No active workers to handle the job\n- `ACTIVE_JOB_CONFLICT`: An active job with the same idempotency key already exists\n- `SCHEDULER_ERROR`: Internal scheduler failure",
+        "operationId": "jobs_create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateJobRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Job scheduled successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateJobResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request (invalid body or no workers)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Active job conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
       "delete": {
         "tags": [
           "jobs"
@@ -2578,6 +2638,133 @@
           "table_name": {
             "type": "string",
             "description": "Table name"
+          }
+        }
+      },
+      "CreateJobRequest": {
+        "oneOf": [
+          {
+            "allOf": [
+              {
+                "type": "object",
+                "description": "The job descriptor fields (flattened from the GC job descriptor)."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "worker_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Optional worker selector (exact ID or glob pattern)."
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "description": "Schedule a garbage collection job for a physical table revision.",
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "gc"
+                    ]
+                  }
+                }
+              }
+            ],
+            "description": "Schedule a garbage collection job for a physical table revision."
+          },
+          {
+            "allOf": [
+              {
+                "type": "object",
+                "description": "The job descriptor fields (flattened from the raw materialization descriptor)."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "worker_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Optional worker selector (exact ID or glob pattern)."
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "description": "Schedule a raw dataset materialization job.",
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "materialize-raw"
+                    ]
+                  }
+                }
+              }
+            ],
+            "description": "Schedule a raw dataset materialization job."
+          },
+          {
+            "allOf": [
+              {
+                "type": "object",
+                "description": "The job descriptor fields (flattened from the derived materialization descriptor)."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "worker_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Optional worker selector (exact ID or glob pattern)."
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "description": "Schedule a derived dataset materialization job.",
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "materialize-derived"
+                    ]
+                  }
+                }
+              }
+            ],
+            "description": "Schedule a derived dataset materialization job."
+          }
+        ],
+        "description": "Request body for creating a job.\n\nDispatches on the `kind` field to determine the job type.\nFields for each variant are defined by the corresponding job descriptor type."
+      },
+      "CreateJobResponse": {
+        "type": "object",
+        "description": "Response body for a created job.",
+        "required": [
+          "job_id"
+        ],
+        "properties": {
+          "job_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The ID of the scheduled job."
           }
         }
       },

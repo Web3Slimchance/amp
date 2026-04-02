@@ -75,6 +75,7 @@ pub(crate) fn router(ctx: Ctx) -> Router<()> {
         amp_controller_admin_datasets::manifests::handlers::list_datasets::handler,
         amp_controller_admin_datasets::manifests::handlers::prune::handler,
         // Job endpoints
+        amp_controller_admin_jobs::jobs::handlers::create::handler,
         amp_controller_admin_jobs::jobs::handlers::get_all::handler,
         amp_controller_admin_jobs::jobs::handlers::get_by_id::handler,
         amp_controller_admin_jobs::jobs::handlers::stop::handler,
@@ -130,6 +131,8 @@ pub(crate) fn router(ctx: Ctx) -> Router<()> {
         amp_controller_admin_tables::datasets::handlers::restore::RestoredTableInfo,
         amp_controller_admin_tables::datasets::handlers::restore_table::RestoreTablePayload,
         // Job schemas
+        amp_controller_admin_jobs::jobs::handlers::create::CreateJobRequest,
+        amp_controller_admin_jobs::jobs::handlers::create::CreateJobResponse,
         amp_controller_admin_jobs::jobs::handlers::progress::JobProgressResponse,
         amp_controller_admin_jobs::jobs::handlers::progress::TableProgress,
         amp_controller_admin_jobs::jobs::handlers::events::JobEventsResponse,
