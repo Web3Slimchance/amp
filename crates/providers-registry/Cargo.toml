@@ -11,10 +11,10 @@ amp-providers-firehose = { path = "../providers-firehose" }
 amp-providers-solana = { path = "../providers-solana" }
 amp-providers-tempo = { path = "../providers-tempo" }
 async-stream.workspace = true
-datasets-common = { path = "../datasets-common" }
-datasets-raw = { path = "../datasets-raw" }
+datasets-common = { path = "../core/datasets-common" }
+datasets-raw = { path = "../core/datasets-raw" }
 futures.workspace = true
-monitoring = { path = "../monitoring" }
+monitoring = { path = "../core/monitoring" }
 object_store.workspace = true
 parking_lot = "0.12.4"
 thiserror.workspace = true

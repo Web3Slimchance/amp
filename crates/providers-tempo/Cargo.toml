@@ -12,12 +12,12 @@ schemars = ["dep:schemars", "amp-providers-common/schemars"]
 alloy.workspace = true
 amp-providers-common = { path = "../providers-common" }
 async-stream.workspace = true
-datasets-common = { path = "../datasets-common" }
-datasets-raw = { path = "../datasets-raw" }
+datasets-common = { path = "../core/datasets-common" }
+datasets-raw = { path = "../core/datasets-raw" }
 futures.workspace = true
 governor.workspace = true
 headers.workspace = true
-monitoring = { path = "../monitoring" }
+monitoring = { path = "../core/monitoring" }
 schemars = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true

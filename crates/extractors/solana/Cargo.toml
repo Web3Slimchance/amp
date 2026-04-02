@@ -5,6 +5,6 @@ version.workspace = true
 license-file.workspace = true
 
 [dependencies]
-amp-providers-solana = { path = "../../core/providers-solana" }
+amp-providers-solana = { path = "../../providers-solana" }
 datasets-common = { path = "../../core/datasets-common" }
 datasets-raw = { path = "../../core/datasets-raw" }

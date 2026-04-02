@@ -9,8 +9,8 @@ license-file.workspace = true
 utoipa = ["dep:utoipa"]
 
 [dependencies]
-amp-providers-common = { path = "../core/providers-common" }
-amp-providers-registry = { path = "../core/providers-registry" }
+amp-providers-common = { path = "../providers-common" }
+amp-providers-registry = { path = "../providers-registry" }
 axum.workspace = true
 monitoring = { path = "../core/monitoring" }
 serde.workspace = true

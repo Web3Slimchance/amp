@@ -18,7 +18,7 @@ amp-config = { path = "../../config" }
 amp-data-store = { path = "../../core/data-store" }
 amp-datasets-registry = { path = "../../core/datasets-registry" }
 amp-object-store = { path = "../../core/object-store" }
-amp-providers-registry = { path = "../../core/providers-registry" }
+amp-providers-registry = { path = "../../providers-registry" }
 amp-worker-core = { path = "../../core/worker-core" }
 clap.workspace = true
 common = { path = "../../core/common" }

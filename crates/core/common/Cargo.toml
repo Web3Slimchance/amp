@@ -9,8 +9,8 @@ alloy.workspace = true
 amp-data-store = { path = "../data-store" }
 amp-datasets-registry = { path = "../datasets-registry" }
 amp-parquet = { path = "../parquet" }
-amp-providers-common = { path = "../providers-common" }
-amp-providers-registry = { path = "../providers-registry" }
+amp-providers-common = { path = "../../providers-common" }
+amp-providers-registry = { path = "../../providers-registry" }
 arrow.workspace = true
 async-stream.workspace = true
 async-trait.workspace = true

@@ -5,6 +5,6 @@ version.workspace = true
 license-file.workspace = true
 
 [dependencies]
-amp-providers-evm-rpc = { path = "../../core/providers-evm-rpc" }
+amp-providers-evm-rpc = { path = "../../providers-evm-rpc" }
 datasets-common = { path = "../../core/datasets-common" }
 datasets-raw = { path = "../../core/datasets-raw" }
