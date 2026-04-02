@@ -246,7 +246,6 @@ impl GcTestCtx {
     /// Build a GC execution context.
     fn gc_context(&self) -> Context {
         Context {
-            metadata_db: self.conn.clone(),
             data_store: self.data_store(),
             meter: None,
         }

@@ -674,7 +674,7 @@ impl DataStore {
 
         futures::stream::iter(files)
             .map(|file| {
-                let metadata_db = self.metadata_db.clone();
+                let store = self.clone();
                 let object_store = self.object_store.clone();
                 async move {
                     // Delete from object store (treat "not found" as success)
@@ -702,9 +702,7 @@ impl DataStore {
                     }
 
                     // Delete file_metadata row from DB (warn and continue on failure)
-                    if let Err(err) =
-                        metadata_db::files::delete_by_ids(&metadata_db, &[file.file_id]).await
-                    {
+                    if let Err(err) = store.delete_file_metadata_by_ids(&[file.file_id]).await {
                         tracing::warn!(
                             file_id = %file.file_id,
                             file_name = %file.file_name,
@@ -742,6 +740,19 @@ impl DataStore {
         metadata_db::gc::upsert(&self.metadata_db, location_id, file_ids, delay)
             .await
             .map_err(ScheduleFilesForGcError)
+    }
+
+    /// Deletes file metadata rows from the metadata database.
+    ///
+    /// Returns the IDs that were deleted, allowing callers to reconcile
+    /// metadata changes against object-store paths they already computed.
+    pub async fn delete_file_metadata_by_ids(
+        &self,
+        file_ids: &[FileId],
+    ) -> Result<Vec<FileId>, DeleteFileMetadataByIdsError> {
+        metadata_db::files::delete_by_ids(&self.metadata_db, file_ids)
+            .await
+            .map_err(DeleteFileMetadataByIdsError)
     }
 
     /// Streams files from the GC manifest that have passed their expiration time
@@ -1128,6 +1139,12 @@ pub enum CreateAndActivateTableRevisionError {
 #[error("Failed to get revision by location ID from metadata database")]
 pub struct GetRevisionByLocationIdError(#[source] metadata_db::Error);
 
+impl retryable::RetryableErrorExt for GetRevisionByLocationIdError {
+    fn is_retryable(&self) -> bool {
+        self.0.is_retryable()
+    }
+}
+
 /// Failed to retrieve active physical table revision from metadata database
 ///
 /// This error occurs when querying the metadata database for the currently active
@@ -1467,6 +1484,25 @@ pub enum TruncateError {
 #[derive(Debug, thiserror::Error)]
 #[error("Failed to register file in metadata database")]
 pub struct RegisterFileError(#[source] pub metadata_db::Error);
+
+/// Failed to delete file metadata from the metadata database
+///
+/// This error occurs when removing file metadata rows by ID fails.
+///
+/// Common causes:
+/// - Database connection lost during delete
+/// - Database server unreachable
+/// - Network connectivity issues
+/// - Transaction conflicts or deadlocks
+#[derive(Debug, thiserror::Error)]
+#[error("Failed to delete file metadata from metadata database")]
+pub struct DeleteFileMetadataByIdsError(#[source] pub metadata_db::Error);
+
+impl crate::retryable::RetryableErrorExt for DeleteFileMetadataByIdsError {
+    fn is_retryable(&self) -> bool {
+        self.0.is_retryable()
+    }
+}
 
 /// Failed to stream file metadata from metadata database
 ///

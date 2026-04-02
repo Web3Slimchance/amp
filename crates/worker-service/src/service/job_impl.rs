@@ -28,7 +28,6 @@ pub(super) async fn new(
     match job_desc {
         JobDescriptor::Gc(desc) => {
             let ctx = amp_job_gc::job_ctx::Context {
-                metadata_db: job_ctx.metadata_db.clone(),
                 data_store: job_ctx.data_store.clone(),
                 meter: job_ctx.meter.clone(),
             };

@@ -5,7 +5,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use amp_data_store::{DeleteFilesStreamError, physical_table::PhyTableRevisionPath};
+use amp_data_store::{
+    DeleteFileMetadataByIdsError, DeleteFilesStreamError, GetRevisionByLocationIdError,
+    physical_table::PhyTableRevisionPath, retryable::RetryableErrorExt as _,
+};
 use amp_job_core::error::{ErrorDetailsProvider, RetryableErrorExt};
 use futures::{StreamExt as _, TryStreamExt as _, stream};
 use metadata_db::{files::FileId, gc::GcManifestRow};
@@ -28,11 +31,12 @@ pub async fn execute(ctx: Context, desc: JobDescriptor) -> Result<(), Error> {
     let location_id = desc.location_id;
 
     // Look up the revision to get its storage path
-    let revision =
-        metadata_db::physical_table_revision::get_by_location_id(&ctx.metadata_db, location_id)
-            .await
-            .map_err(Error::MetadataDb)?
-            .ok_or(Error::LocationNotFound(location_id))?;
+    let revision = ctx
+        .data_store
+        .get_revision_by_location_id(location_id)
+        .await
+        .map_err(Error::GetRevisionByLocationId)?
+        .ok_or(Error::LocationNotFound(location_id))?;
 
     // Record table_ref on the current span now that we have the revision path
     tracing::Span::current().record("table_ref", revision.path.as_str());
@@ -73,13 +77,14 @@ pub async fn execute(ctx: Context, desc: JobDescriptor) -> Result<(), Error> {
 
     // Step 2: Delete file metadata from Postgres
     let file_ids_to_delete: Vec<FileId> = found_file_ids_to_paths.keys().copied().collect();
-    let paths_to_remove: BTreeSet<Path> =
-        metadata_db::files::delete_by_ids(&ctx.metadata_db, &file_ids_to_delete)
-            .await
-            .map_err(Error::FileMetadataDelete)?
-            .into_iter()
-            .filter_map(|file_id| found_file_ids_to_paths.get(&file_id).cloned())
-            .collect();
+    let paths_to_remove: BTreeSet<Path> = ctx
+        .data_store
+        .delete_file_metadata_by_ids(&file_ids_to_delete)
+        .await
+        .map_err(Error::DeleteFileMetadata)?
+        .into_iter()
+        .filter_map(|file_id| found_file_ids_to_paths.get(&file_id).cloned())
+        .collect();
 
     tracing::debug!(
         metadata_entries_deleted = paths_to_remove.len(),
@@ -143,12 +148,13 @@ pub enum Error {
     #[error("location not found: {0}")]
     LocationNotFound(metadata_db::physical_table_revision::LocationId),
 
-    /// Failed to query the metadata database for the physical table revision.
+    /// Failed to retrieve the physical table revision from the data store.
     ///
     /// This occurs when looking up the revision by `location_id` at the start of
-    /// the GC job. Common causes include database connectivity issues or timeouts.
-    #[error("metadata database error")]
-    MetadataDb(#[source] metadata_db::Error),
+    /// the GC job. Common causes include metadata database connectivity issues
+    /// or timeouts.
+    #[error("failed to get revision by location id")]
+    GetRevisionByLocationId(#[source] GetRevisionByLocationIdError),
 
     /// Failed to stream expired files from the GC manifest.
     ///
@@ -158,13 +164,13 @@ pub enum Error {
     #[error("failed to stream expired files")]
     FileStream(#[source] amp_data_store::StreamExpiredGcFilesError),
 
-    /// Failed to delete file metadata records from Postgres.
+    /// Failed to delete file metadata records from the data store.
     ///
     /// This occurs during step 2 of the collection algorithm when removing
-    /// `file_metadata` rows for expired files. Common causes include database
-    /// connectivity issues or transaction conflicts.
+    /// `file_metadata` rows for expired files. Common causes include metadata
+    /// database connectivity issues or transaction conflicts.
     #[error("failed to delete file metadata")]
-    FileMetadataDelete(#[source] metadata_db::Error),
+    DeleteFileMetadata(#[source] DeleteFileMetadataByIdsError),
 
     /// Failed to delete a physical file from object storage.
     ///
@@ -182,9 +188,9 @@ impl RetryableErrorExt for Error {
     fn is_retryable(&self) -> bool {
         match self {
             Self::LocationNotFound(_) => false,
-            Self::MetadataDb(_) => true,
+            Self::GetRevisionByLocationId(err) => err.is_retryable(),
             Self::FileStream(_) => true,
-            Self::FileMetadataDelete(_) => true,
+            Self::DeleteFileMetadata(err) => err.is_retryable(),
             Self::ObjectStore(_) => true,
         }
     }
@@ -194,9 +200,9 @@ impl amp_job_core::error::JobErrorExt for Error {
     fn error_code(&self) -> &'static str {
         match self {
             Self::LocationNotFound(_) => "GC_LOCATION_NOT_FOUND",
-            Self::MetadataDb(_) => "GC_METADATA_DB",
+            Self::GetRevisionByLocationId(_) => "GC_GET_REVISION_BY_LOCATION_ID",
             Self::FileStream(_) => "GC_FILE_STREAM",
-            Self::FileMetadataDelete(_) => "GC_FILE_METADATA_DELETE",
+            Self::DeleteFileMetadata(_) => "GC_DELETE_FILE_METADATA",
             Self::ObjectStore(_) => "GC_OBJECT_STORE",
         }
     }
