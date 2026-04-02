@@ -4,7 +4,7 @@
 //! [`amp_job_core::materialize::progress::ProgressReporter`] trait and forwards progress updates
 //! to the worker's [`EventEmitter`] for Kafka streaming.
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use amp_job_core::{
     job_id::JobId,
@@ -59,7 +59,12 @@ impl amp_job_core::materialize::progress::ProgressReporter for WorkerProgressRep
         // but EventEmitter::emit_sync_progress is asynchronous.
         let emitter = Arc::clone(&self.event_emitter);
         tokio::spawn(async move {
-            emitter.emit_sync_progress(event).await;
+            if tokio::time::timeout(Duration::from_secs(30), emitter.emit_sync_progress(event))
+                .await
+                .is_err()
+            {
+                tracing::warn!("emit_sync_progress timeout");
+            }
         });
     }
 
@@ -74,7 +79,12 @@ impl amp_job_core::materialize::progress::ProgressReporter for WorkerProgressRep
 
         let emitter = Arc::clone(&self.event_emitter);
         tokio::spawn(async move {
-            emitter.emit_sync_started(event).await;
+            if tokio::time::timeout(Duration::from_secs(30), emitter.emit_sync_started(event))
+                .await
+                .is_err()
+            {
+                tracing::warn!("emit_sync_started timeout");
+            }
         });
     }
 
@@ -89,7 +99,12 @@ impl amp_job_core::materialize::progress::ProgressReporter for WorkerProgressRep
 
         let emitter = Arc::clone(&self.event_emitter);
         tokio::spawn(async move {
-            emitter.emit_sync_completed(event).await;
+            if tokio::time::timeout(Duration::from_secs(30), emitter.emit_sync_completed(event))
+                .await
+                .is_err()
+            {
+                tracing::warn!("emit_sync_completed timeout");
+            }
         });
     }
 
@@ -104,7 +119,12 @@ impl amp_job_core::materialize::progress::ProgressReporter for WorkerProgressRep
 
         let emitter = Arc::clone(&self.event_emitter);
         tokio::spawn(async move {
-            emitter.emit_sync_failed(event).await;
+            if tokio::time::timeout(Duration::from_secs(30), emitter.emit_sync_failed(event))
+                .await
+                .is_err()
+            {
+                tracing::warn!("emit_sync_failed timeout");
+            }
         });
     }
 }

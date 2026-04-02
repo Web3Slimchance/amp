@@ -113,8 +113,10 @@ impl KafkaProducer {
     /// Sends an event to Kafka with retry logic.
     ///
     /// Events are partitioned by the partition key (table discriminator).
-    /// Retries 3 times with fixed delays: 1s, 5s, 60s.
+    /// Each produce attempt times out after 30 seconds. Retries 3 times with fixed delays: 1s, 5s, 60s.
     pub async fn send(&self, partition_key: &str, payload: &[u8]) -> Result<(), Error> {
+        const KAFKA_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(30);
+
         let partition = self.partition_for_key(partition_key);
 
         let partition_client = self
@@ -132,10 +134,14 @@ impl KafkaProducer {
 
         // Retry with fixed delays: 1s, 5s, 60s
         (|| async {
-            partition_client
-                .produce(vec![record.clone()], Compression::Gzip)
-                .await
-                .map_err(Error::Send)
+            tokio::time::timeout(
+                KAFKA_ATTEMPT_TIMEOUT,
+                partition_client.produce(vec![record.clone()], Compression::Gzip),
+            )
+            .await
+            .map_err(|_| Error::Timeout)?
+            .map_err(Error::Send)
+            .map(|_| ())
         })
         .retry(Self::retry_policy())
         .when(|e| e.is_retryable())
@@ -147,9 +153,7 @@ impl KafkaProducer {
                 dur.as_secs_f32()
             );
         })
-        .await?;
-
-        Ok(())
+        .await
     }
 
     /// Returns the retry policy for Kafka sends.
@@ -190,6 +194,10 @@ pub enum Error {
     #[error("failed to send event to Kafka")]
     Send(#[source] rskafka::client::error::Error),
 
+    /// Kafka operation timed out
+    #[error("Kafka operation timed out")]
+    Timeout,
+
     /// Failed to encode protobuf message
     #[error("failed to encode protobuf message")]
     Encode(#[source] prost::EncodeError),
@@ -225,7 +233,10 @@ impl Error {
     /// - `Connection`: Initial broker connection failed (configuration issue)
     /// - `Encode`: Protobuf encoding failed (programming error)
     pub fn is_retryable(&self) -> bool {
-        matches!(self, Self::Send(_) | Self::PartitionClient(_))
+        matches!(
+            self,
+            Self::Send(_) | Self::PartitionClient(_) | Self::Timeout
+        )
     }
 }
 
@@ -344,6 +355,14 @@ mod tests {
         let encode_err = encode_result.expect_err("encoding to tiny buffer should fail");
         let err = Error::Encode(encode_err);
         assert!(!err.is_retryable(), "Encode errors should not be retryable");
+    }
+
+    #[test]
+    fn timeout_error_is_retryable() {
+        assert!(
+            Error::Timeout.is_retryable(),
+            "Timeout errors should be retryable"
+        );
     }
 
     #[test]

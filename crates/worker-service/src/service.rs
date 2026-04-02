@@ -707,12 +707,24 @@ async fn create_event_emitter(
         return Arc::new(NoOpEmitter);
     };
 
-    let producer = match crate::kafka::KafkaProducer::new(kafka_config).await {
-        Ok(producer) => producer,
-        Err(err) => {
+    let producer = match tokio::time::timeout(
+        Duration::from_secs(30),
+        crate::kafka::KafkaProducer::new(kafka_config),
+    )
+    .await
+    {
+        Ok(Ok(producer)) => producer,
+        Ok(Err(err)) => {
             tracing::warn!(
                 error = %err,
                 error_source = logging::error_source(&err),
+                "Failed to create Kafka producer, events disabled"
+            );
+            return Arc::new(NoOpEmitter);
+        }
+        Err(elapsed) => {
+            tracing::error!(
+                error = %elapsed,
                 "Failed to create Kafka producer, events disabled"
             );
             return Arc::new(NoOpEmitter);
