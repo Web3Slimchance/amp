@@ -24,6 +24,7 @@ amp-providers-solana = { path = "../crates/providers-solana" }
 amp-job-core = { path = "../crates/job-core" }
 amp-job-gc = { path = "../crates/job-gc" }
 amp-worker-core = { path = "../crates/worker-core" }
+amp-worker-service = { path = "../crates/worker-service" }
 amp-client-admin = { package = "admin-client", path = "../crates/clients/admin" }
 ampctl = { path = "../crates/bin/ampctl" }
 anyhow.workspace = true
@@ -59,10 +60,10 @@ reqwest.workspace = true
 rustls.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-sqlx = { version = "0.8.3", features = ["postgres", "runtime-tokio"] }
 serde_yaml.workspace = true
 server = { path = "../crates/services/server" }
 solana-datasets = { path = "../crates/extractors/solana" }
+sqlx = { version = "0.8.3", features = ["postgres", "runtime-tokio"] }
 tempo-datasets = { path = "../crates/extractors/tempo" }
 tempfile.workspace = true
 thiserror.workspace = true
@@ -72,7 +73,6 @@ tonic.workspace = true
 tracing.workspace = true
 url.workspace = true
 verification = { path = "../crates/core/verification" }
-worker = { path = "../crates/services/worker" }
 
 
 [build-dependencies]

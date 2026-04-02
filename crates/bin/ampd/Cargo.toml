@@ -20,11 +20,12 @@ amp-datasets-registry = { path = "../../core/datasets-registry" }
 amp-object-store = { path = "../../core/object-store" }
 amp-providers-registry = { path = "../../providers-registry" }
 amp-worker-core = { path = "../../worker-core" }
+amp-worker-service = { path = "../../worker-service" }
 clap.workspace = true
 common = { path = "../../core/common" }
-js-runtime = { path = "../../core/js-runtime" }
 console-subscriber = { version = "0.5.0", default-features = false, optional = true }
 controller = { path = "../../services/controller" }
+js-runtime = { path = "../../core/js-runtime" }
 metadata-db = { path = "../../core/metadata-db" }
 metadata-db-postgres = { path = "../../services/metadata-db-postgres" }
 monitoring = { path = "../../core/monitoring" }
@@ -34,7 +35,6 @@ snmalloc-rs = { version = "0.3.4", optional = true }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["signal"] }
 tracing.workspace = true
-worker = { path = "../../services/worker" }
 
 [build-dependencies]
 vergen-gitcl = { version = "9.0.0", features = ["build"] }

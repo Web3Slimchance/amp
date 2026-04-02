@@ -52,7 +52,7 @@ tokio::select! {biased;
 ## Reference Implementation
 
 **Current services implementing this pattern**:
-- `crates/services/worker/src/service.rs` - Sync init, event loop service
+- `crates/worker-service/src/service.rs` - Sync init, event loop service
 - `crates/services/server/src/service.rs` - Async init, multiple servers, conditional startup
 - `crates/services/controller/src/service.rs` - Async init, HTTP server with router
 

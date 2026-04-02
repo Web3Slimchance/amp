@@ -188,7 +188,7 @@ pub async fn run(
 
     // Initialize worker
     let worker_config = worker_cmd::config_from_common(&config);
-    let worker_fut = worker::service::new(
+    let worker_fut = amp_worker_service::service::new(
         worker_config,
         build_info,
         metadata_db,
@@ -338,7 +338,7 @@ pub enum Error {
     /// This occurs during the worker initialization phase (registration, heartbeat
     /// setup, notification listener setup, or bootstrap).
     #[error("Failed to initialize worker: {0}")]
-    WorkerInit(#[source] worker::service::InitError),
+    WorkerInit(#[source] amp_worker_service::service::InitError),
 
     /// Managed PostgreSQL exited unexpectedly.
     ///
@@ -359,7 +359,7 @@ pub enum Error {
     ///
     /// This occurs when the worker process encounters an error during operation.
     #[error("Worker runtime error: {0}")]
-    WorkerRuntime(#[source] worker::service::RuntimeError),
+    WorkerRuntime(#[source] amp_worker_service::service::RuntimeError),
 
     /// Query server encountered a runtime error.
     ///

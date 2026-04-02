@@ -88,6 +88,7 @@ const AMP_CRATES: &[&str] = &[
     "amp_providers_static",
     "amp_providers_tempo",
     "amp_worker_core",
+    "amp_worker_service",
     "ampcc",
     "ampctl",
     "ampd",
@@ -111,7 +112,6 @@ const AMP_CRATES: &[&str] = &[
     "tempo_datasets",
     "tests",
     "verification",
-    "worker",
 ];
 
 fn env_filter() -> EnvFilter {

@@ -68,7 +68,7 @@ pub async fn run(
     let worker_config = config_from_common(&config);
 
     // Initialize the worker (setup phase)
-    let worker_fut = worker::service::new(
+    let worker_fut = amp_worker_service::service::new(
         worker_config,
         build_info,
         metadata_db,
@@ -120,18 +120,18 @@ pub enum Error {
     /// This occurs during the initialization phase (registration, heartbeat
     /// setup, notification listener setup, or bootstrap).
     #[error("Worker initialization failed")]
-    Init(#[source] worker::service::InitError),
+    Init(#[source] amp_worker_service::service::InitError),
 
     /// Worker runtime error.
     ///
     /// This occurs during the worker's main event loop after successful initialization.
     #[error("Worker runtime error: {0}")]
-    Runtime(#[source] worker::service::RuntimeError),
+    Runtime(#[source] amp_worker_service::service::RuntimeError),
 }
 
-/// Convert config::Config to worker::config::Config
-pub(crate) fn config_from_common(config: &Config) -> worker::config::Config {
-    worker::config::Config {
+/// Convert config::Config to amp_worker_service::config::Config
+pub(crate) fn config_from_common(config: &Config) -> amp_worker_service::config::Config {
+    amp_worker_service::config::Config {
         microbatch_max_interval: config.microbatch_max_interval,
         poll_interval: config.poll_interval,
         keep_alive_interval: config.keep_alive_interval,

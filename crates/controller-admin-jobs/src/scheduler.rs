@@ -25,6 +25,7 @@
 
 use amp_job_core::{job_id::JobId, status::JobStatus};
 use amp_worker_core::node_id::{InvalidIdError, NodeId, validate_node_id};
+use amp_worker_service::job::Job;
 use async_trait::async_trait;
 use datasets_common::{hash::Hash, name::Name, namespace::Namespace};
 use metadata_db::{
@@ -33,7 +34,6 @@ use metadata_db::{
     workers::Worker,
 };
 use serde_json::value::RawValue;
-use worker::job::Job;
 
 /// Combined trait for scheduler functionality
 ///

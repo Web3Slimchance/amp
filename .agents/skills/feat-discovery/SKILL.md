@@ -91,7 +91,7 @@ Read the full content of matched feature docs using the Read tool.
 
 ### Component Matches
 
-- User working in `crates/services/worker` -> match `components: "service:worker"`
+- User working in `crates/worker-service` -> match `components: "service:worker"`
 - User editing `admin-api` handlers -> match `components: "crate:admin-api"`
 - User modifying `server` code -> match `components: "service:server"`
 

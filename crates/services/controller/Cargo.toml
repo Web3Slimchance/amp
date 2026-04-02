@@ -18,6 +18,7 @@ amp-datasets-registry = { version = "0.1.0", path = "../../core/datasets-registr
 amp-job-core = { path = "../../job-core" }
 amp-providers-registry = { version = "0.1.0", path = "../../providers-registry" }
 amp-worker-core = { path = "../../worker-core" }
+amp-worker-service = { path = "../../worker-service" }
 async-trait.workspace = true
 axum.workspace = true
 chrono.workspace = true
@@ -33,4 +34,3 @@ tokio.workspace = true
 tower-http = { workspace = true, features = ["cors"] }
 tracing.workspace = true
 utoipa = { version = "5.4.0", features = ["axum_extras"], optional = true }
-worker = { version = "0.1.0", path = "../worker" }

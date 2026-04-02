@@ -11,11 +11,11 @@ use amp_job_core::{
     job_id::JobId,
     materialize::progress::{ProgressReporter, ProgressUpdate},
 };
-use monitoring::logging;
-use worker::{
+use amp_worker_service::{
     events::{EventEmitter, WorkerProgressReporter},
     kafka::proto,
 };
+use monitoring::logging;
 
 /// Test hash constant (64 hex characters).
 const TEST_HASH: &str = "0000000000000000000000000000000000000000000000000000000000000001";

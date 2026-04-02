@@ -15,8 +15,8 @@
 
 use amp_client_admin as client;
 use amp_job_core::job_id::JobId;
+use amp_worker_service::job::JobDescriptor;
 use monitoring::logging;
-use worker::job::JobDescriptor;
 
 use crate::args::GlobalArgs;
 

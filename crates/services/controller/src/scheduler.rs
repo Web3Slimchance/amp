@@ -34,6 +34,7 @@ use amp_controller_admin_jobs::scheduler::{
 };
 use amp_job_core::{job_id::JobId, retry_strategy::RetryStrategy, status::JobStatus};
 use amp_worker_core::node_id::NodeId;
+use amp_worker_service::job::{Job, JobNotification};
 use async_trait::async_trait;
 use datasets_common::{hash::Hash, name::Name, namespace::Namespace};
 use metadata_db::{
@@ -45,7 +46,6 @@ use metadata_db::{
 };
 use monitoring::logging;
 use rand::seq::IndexedRandom as _;
-use worker::job::{Job, JobNotification};
 
 /// A worker is considered active if it has sent a heartbeat in this period
 ///

@@ -16,6 +16,7 @@ amp-job-gc = { path = "../job-gc" }
 amp_job_materialize_datasets_derived = { package = "amp-job-materialize-datasets-derived", path = "../job-materialize-datasets-derived" }
 amp_job_materialize_datasets_raw = { package = "amp-job-materialize-datasets-raw", path = "../job-materialize-datasets-raw" }
 amp-worker-core = { path = "../worker-core" }
+amp-worker-service = { path = "../worker-service" }
 async-trait.workspace = true
 axum.workspace = true
 common = { path = "../core/common" }
@@ -28,4 +29,3 @@ serde_json = { workspace = true, features = ["raw_value"] }
 thiserror.workspace = true
 tracing.workspace = true
 utoipa = { version = "5.4.0", features = ["axum_extras"], optional = true }
-worker = { path = "../services/worker" }

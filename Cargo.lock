@@ -1079,6 +1079,7 @@ dependencies = [
  "amp-job-materialize-datasets-derived",
  "amp-job-materialize-datasets-raw",
  "amp-worker-core",
+ "amp-worker-service",
  "async-trait",
  "axum",
  "common",
@@ -1091,7 +1092,6 @@ dependencies = [
  "thiserror 2.0.18",
  "tracing",
  "utoipa",
- "worker",
 ]
 
 [[package]]
@@ -1115,6 +1115,7 @@ name = "amp-controller-admin-system"
 version = "0.1.0"
 dependencies = [
  "amp-worker-core",
+ "amp-worker-service",
  "async-trait",
  "axum",
  "metadata-db",
@@ -1123,7 +1124,6 @@ dependencies = [
  "thiserror 2.0.18",
  "tracing",
  "utoipa",
- "worker",
 ]
 
 [[package]]
@@ -1556,6 +1556,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "amp-worker-service"
+version = "0.1.0"
+dependencies = [
+ "amp-config",
+ "amp-data-store",
+ "amp-job-core",
+ "amp-job-gc",
+ "amp-job-materialize-datasets-derived",
+ "amp-job-materialize-datasets-raw",
+ "amp-worker-core",
+ "async-trait",
+ "backon",
+ "chrono",
+ "common",
+ "datasets-common",
+ "fs-err",
+ "futures",
+ "js-runtime",
+ "metadata-db",
+ "monitoring",
+ "prost",
+ "prost-build",
+ "rskafka",
+ "rustls",
+ "rustls-pemfile",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "uuid",
+ "webpki-roots 0.26.11",
+]
+
+[[package]]
 name = "ampcc"
 version = "0.1.0"
 dependencies = [
@@ -1595,6 +1631,7 @@ dependencies = [
  "amp-job-core",
  "amp-object-store",
  "amp-worker-core",
+ "amp-worker-service",
  "anyhow",
  "chrono",
  "clap",
@@ -1622,7 +1659,6 @@ dependencies = [
  "urlencoding",
  "vergen-gitcl",
  "verification",
- "worker",
 ]
 
 [[package]]
@@ -1635,6 +1671,7 @@ dependencies = [
  "amp-object-store",
  "amp-providers-registry",
  "amp-worker-core",
+ "amp-worker-service",
  "clap",
  "common",
  "console-subscriber",
@@ -1650,7 +1687,6 @@ dependencies = [
  "tokio",
  "tracing",
  "vergen-gitcl",
- "worker",
 ]
 
 [[package]]
@@ -3792,6 +3828,7 @@ dependencies = [
  "amp-job-core",
  "amp-providers-registry",
  "amp-worker-core",
+ "amp-worker-service",
  "async-trait",
  "axum",
  "chrono",
@@ -3807,7 +3844,6 @@ dependencies = [
  "tower-http",
  "tracing",
  "utoipa",
- "worker",
 ]
 
 [[package]]
@@ -14643,6 +14679,7 @@ dependencies = [
  "amp-providers-registry",
  "amp-providers-solana",
  "amp-worker-core",
+ "amp-worker-service",
  "ampctl",
  "anyhow",
  "arrow-flight",
@@ -14689,7 +14726,6 @@ dependencies = [
  "url",
  "vergen-gitcl",
  "verification",
- "worker",
 ]
 
 [[package]]
@@ -16653,42 +16689,6 @@ dependencies = [
  "serde_json",
  "unicode-xid",
  "wasmparser",
-]
-
-[[package]]
-name = "worker"
-version = "0.1.0"
-dependencies = [
- "amp-config",
- "amp-data-store",
- "amp-job-core",
- "amp-job-gc",
- "amp-job-materialize-datasets-derived",
- "amp-job-materialize-datasets-raw",
- "amp-worker-core",
- "async-trait",
- "backon",
- "chrono",
- "common",
- "datasets-common",
- "fs-err",
- "futures",
- "js-runtime",
- "metadata-db",
- "monitoring",
- "prost",
- "prost-build",
- "rskafka",
- "rustls",
- "rustls-pemfile",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tokio-util",
- "tracing",
- "uuid",
- "webpki-roots 0.26.11",
 ]
 
 [[package]]

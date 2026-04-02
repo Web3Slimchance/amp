@@ -8,13 +8,15 @@ use std::sync::Arc;
 
 use amp_data_store::DataStore;
 use amp_worker_core::node_id::NodeId;
+use amp_worker_service::{
+    config::Config, events::EventEmitter, service::RuntimeError as WorkerRuntimeError,
+};
 use anyhow::Result;
 use common::{datasets_cache::DatasetsCache, udfs::eth_call::EthCallUdfsCache};
 use js_runtime::isolate_pool::IsolatePool;
 use metadata_db::MetadataDb;
 use opentelemetry::metrics::Meter;
 use tokio::task::JoinHandle;
-use worker::{config::Config, events::EventEmitter, service::RuntimeError as WorkerRuntimeError};
 
 use crate::testlib::build_info::BuildInfo;
 
@@ -89,7 +91,7 @@ impl DaemonWorker {
     ) -> Result<Self> {
         let worker_config = worker_config_from_common(&config);
 
-        let worker_fut = worker::service::new(
+        let worker_fut = amp_worker_service::service::new(
             worker_config.clone(),
             build_info,
             metadata_db.clone(),
@@ -121,7 +123,7 @@ impl DaemonWorker {
 
     /// Get the worker-specific configuration.
     ///
-    /// Returns the `worker::config::Config` that can be used directly with
+    /// Returns the `amp_worker_service::config::Config` that can be used directly with
     /// worker-related operations like `dump_internal` and `dump_dataset`.
     pub fn config(&self) -> &Config {
         &self.config
@@ -150,7 +152,7 @@ impl Drop for DaemonWorker {
     }
 }
 
-/// Convert config::Config to worker::config::Config for tests
+/// Convert config::Config to amp_worker_service::config::Config for tests
 fn worker_config_from_common(config: &amp_config::Config) -> Config {
     Config {
         microbatch_max_interval: config.microbatch_max_interval,
@@ -165,7 +167,7 @@ fn worker_config_from_common(config: &amp_config::Config) -> Config {
     }
 }
 
-impl From<BuildInfo> for worker::build_info::BuildInfo {
+impl From<BuildInfo> for amp_worker_service::build_info::BuildInfo {
     fn from(value: BuildInfo) -> Self {
         Self {
             version: Some(value.version),

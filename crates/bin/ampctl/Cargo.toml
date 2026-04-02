@@ -18,10 +18,11 @@ amp-client-admin = { package = "admin-client", path = "../../clients/admin" }
 amp-job-core = { path = "../../job-core" }
 amp-object-store = { path = "../../core/object-store" }
 amp-worker-core = { path = "../../worker-core" }
+amp-worker-service = { path = "../../worker-service" }
 anyhow.workspace = true
+chrono.workspace = true
 clap.workspace = true
 console = "0.16.1"
-chrono.workspace = true
 datasets-common = { path = "../../core/datasets-common" }
 datasets-derived = { path = "../../core/datasets-derived" }
 datasets-raw = { path = "../../core/datasets-raw" }
@@ -39,12 +40,11 @@ solana-datasets = { path = "../../extractors/solana" }
 tempo-datasets = { path = "../../extractors/tempo" }
 thiserror.workspace = true
 tokio.workspace = true
-urlencoding = "2"
 toml.workspace = true
 tracing.workspace = true
 url.workspace = true
+urlencoding = "2"
 verification = { path = "../../core/verification" }
-worker = { path = "../../services/worker" }
 
 [build-dependencies]
 vergen-gitcl = { version = "9.0.0", features = ["build"] }

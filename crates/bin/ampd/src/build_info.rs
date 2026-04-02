@@ -32,7 +32,7 @@ impl From<BuildInfo> for controller::build_info::BuildInfo {
     }
 }
 
-impl From<BuildInfo> for worker::build_info::BuildInfo {
+impl From<BuildInfo> for amp_worker_service::build_info::BuildInfo {
     fn from(value: BuildInfo) -> Self {
         Self {
             version: Some(value.version.clone()),

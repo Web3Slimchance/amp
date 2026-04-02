@@ -9,7 +9,7 @@
 //!
 //! ```ignore
 //! use amp_config::KafkaEventsConfig;
-//! use worker::kafka::KafkaProducer;
+//! use amp_worker_service::kafka::KafkaProducer;
 //!
 //! let config = KafkaEventsConfig {
 //!     brokers: vec!["localhost:9092".to_string()],

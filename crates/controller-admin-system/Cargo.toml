@@ -10,6 +10,7 @@ utoipa = ["dep:utoipa"]
 
 [dependencies]
 amp-worker-core = { path = "../worker-core" }
+amp-worker-service = { path = "../worker-service" }
 async-trait.workspace = true
 axum.workspace = true
 metadata-db = { path = "../core/metadata-db" }
@@ -18,4 +19,3 @@ serde.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 utoipa = { version = "5.4.0", features = ["axum_extras"], optional = true }
-worker = { path = "../services/worker" }
