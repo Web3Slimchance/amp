@@ -28,13 +28,12 @@ use std::{collections::HashMap, time::Duration};
 
 use amp_controller_admin_jobs::scheduler::{
     DeleteJobError, DeleteJobsByStatusError, GetEventForJobError, GetEventsForJobError,
-    GetJobDescriptorError, GetJobDetailError, GetJobError, GetWorkerError, JobDescriptor,
+    GetJobDescriptorError, GetJobDetailError, GetJobError, GetWorkerError, Job, JobDescriptor,
     ListJobDescriptorsError, ListJobsByDatasetError, ListJobsError, ListWorkersError, NodeSelector,
     ScheduleJobError, SchedulerJobs, SchedulerWorkers, StopJobError,
 };
 use amp_job_core::{job_id::JobId, retry_strategy::RetryStrategy, status::JobStatus};
 use amp_worker_core::node_id::NodeId;
-use amp_worker_service::job::{Job, JobNotification};
 use async_trait::async_trait;
 use datasets_common::{hash::Hash, name::Name, namespace::Namespace};
 use metadata_db::{
@@ -189,7 +188,7 @@ impl Scheduler {
         .await
         .map_err(ScheduleJobError::RegisterJobEvent)?;
 
-        metadata_db::workers::send_job_notif(&mut tx, node_id, &JobNotification::start(job_id))
+        metadata_db::workers::send_job_notif(&mut tx, node_id, &JobNotification::Start { job_id })
             .await
             .map_err(ScheduleJobError::NotifyWorker)?;
 
@@ -256,7 +255,7 @@ impl Scheduler {
             metadata_db::workers::send_job_notif(
                 &mut tx,
                 job.node_id,
-                &JobNotification::stop(job_id),
+                &JobNotification::Stop { job_id },
             )
             .await
             .map_err(StopJobError::SendNotification)?;
@@ -369,7 +368,7 @@ impl Scheduler {
                 metadata_db::workers::send_job_notif(
                     &mut tx,
                     job.node_id.clone(),
-                    &JobNotification::start(job_id),
+                    &JobNotification::Start { job_id },
                 )
                 .await
                 .map_err(RescheduleJobError::SendJobNotification)?;
@@ -627,4 +626,16 @@ impl SchedulerWorkers for Scheduler {
             .await
             .map_err(GetWorkerError)
     }
+}
+
+/// A job notification sent to worker nodes via PostgreSQL LISTEN/NOTIFY.
+///
+/// Wire format: `{"job_id": <id>, "action": "START"|"STOP"}`
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "action", rename_all = "SCREAMING_SNAKE_CASE")]
+enum JobNotification {
+    /// Start the job.
+    Start { job_id: JobId },
+    /// Stop the job.
+    Stop { job_id: JobId },
 }

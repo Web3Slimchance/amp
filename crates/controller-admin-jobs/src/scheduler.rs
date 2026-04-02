@@ -25,8 +25,8 @@
 
 use amp_job_core::{job_id::JobId, status::JobStatus};
 use amp_worker_core::node_id::{InvalidIdError, NodeId, validate_node_id};
-use amp_worker_service::job::Job;
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use datasets_common::{hash::Hash, name::Name, namespace::Namespace};
 use metadata_db::{
     job_events::{EventDetail, EventDetailOwned, JobEvent},
@@ -147,6 +147,33 @@ pub trait SchedulerJobs: Send + Sync {
         &self,
         job_id: JobId,
     ) -> Result<Vec<JobEvent>, GetEventsForJobError>;
+}
+
+/// Job data transfer object for the Admin API.
+#[derive(Clone, Debug)]
+pub struct Job {
+    /// Unique identifier for the job
+    pub id: JobId,
+    /// Node ID assigned to execute this job
+    pub node_id: NodeId,
+    /// Current status of the job
+    pub status: JobStatus,
+    /// Job creation timestamp
+    pub created_at: DateTime<Utc>,
+    /// Job last update timestamp
+    pub updated_at: DateTime<Utc>,
+}
+
+impl From<metadata_db::jobs::Job> for Job {
+    fn from(job_meta: metadata_db::jobs::Job) -> Self {
+        Self {
+            id: job_meta.id.into(),
+            node_id: job_meta.node_id.into(),
+            status: job_meta.status.into(),
+            created_at: job_meta.created_at,
+            updated_at: job_meta.updated_at,
+        }
+    }
 }
 
 /// Invariant-preserving bridge between typed worker job descriptors and the scheduler.

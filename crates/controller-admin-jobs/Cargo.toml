@@ -16,9 +16,9 @@ amp-job-gc = { path = "../job-gc" }
 amp_job_materialize_datasets_derived = { package = "amp-job-materialize-datasets-derived", path = "../job-materialize-datasets-derived" }
 amp_job_materialize_datasets_raw = { package = "amp-job-materialize-datasets-raw", path = "../job-materialize-datasets-raw" }
 amp-worker-core = { path = "../worker-core" }
-amp-worker-service = { path = "../worker-service" }
 async-trait.workspace = true
 axum.workspace = true
+chrono.workspace = true
 common = { path = "../core/common" }
 datasets-common = { path = "../core/datasets-common" }
 datasets-derived = { path = "../core/datasets-derived" }

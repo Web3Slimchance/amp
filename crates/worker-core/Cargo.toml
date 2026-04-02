@@ -5,8 +5,13 @@ version.workspace = true
 license-file.workspace = true
 
 [dependencies]
+amp-job-core = { path = "../job-core" }
+backon.workspace = true
+chrono.workspace = true
 metadata-db = { path = "../core/metadata-db" }
+monitoring = { path = "../core/monitoring" }
 serde.workspace = true
 thiserror.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]

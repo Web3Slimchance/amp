@@ -1079,9 +1079,9 @@ dependencies = [
  "amp-job-materialize-datasets-derived",
  "amp-job-materialize-datasets-raw",
  "amp-worker-core",
- "amp-worker-service",
  "async-trait",
  "axum",
+ "chrono",
  "common",
  "datasets-common",
  "datasets-derived",
@@ -1550,9 +1550,14 @@ dependencies = [
 name = "amp-worker-core"
 version = "0.1.0"
 dependencies = [
+ "amp-job-core",
+ "backon",
+ "chrono",
  "metadata-db",
+ "monitoring",
  "serde",
  "thiserror 2.0.18",
+ "tracing",
 ]
 
 [[package]]
@@ -3829,7 +3834,6 @@ dependencies = [
  "amp-job-core",
  "amp-providers-registry",
  "amp-worker-core",
- "amp-worker-service",
  "async-trait",
  "axum",
  "chrono",

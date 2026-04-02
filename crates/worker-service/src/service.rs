@@ -17,7 +17,6 @@ use tracing::instrument;
 
 mod error;
 mod job_impl;
-mod job_queue;
 mod job_set;
 
 use amp_job_core::{
@@ -26,22 +25,21 @@ use amp_job_core::{
     retryable::JobErrorExt as _,
     status::JobStatus,
 };
-use amp_worker_core::node_id::NodeId;
+use amp_worker_core::{
+    job_ledger::{Job, JobLedger, JobNotification},
+    node_id::NodeId,
+};
 
 pub use self::error::{
     AbortJobError, HeartbeatLoopInitError, HeartbeatTaskError, InitError, JobCreationError,
     JobResultError, NotificationError, ReconcileError, RuntimeError, SpawnJobError,
     StartActionError,
 };
-use self::{
-    job_queue::JobQueue,
-    job_set::{JobSet, JoinError as JobSetJoinError},
-};
+use self::job_set::{JobSet, JoinError as JobSetJoinError};
 use crate::{
     build_info::BuildInfo,
     config::Config,
     events::{EventEmitter, KafkaEventEmitter, NoOpEmitter},
-    job::{Job, JobAction, JobNotification},
 };
 
 /// Frequency on which to send a heartbeat.
@@ -98,8 +96,8 @@ pub async fn new(
         .await
         .map_err(InitError::NotificationSetup)?;
 
-    // Create the job queue
-    let queue = JobQueue::new(metadata_db.clone());
+    // Create the job ledger
+    let ledger = JobLedger::new(metadata_db.clone());
 
     // Create notification multiplexer
     let notification_multiplexer = Arc::new(notification_multiplexer::spawn(metadata_db.clone()));
@@ -117,9 +115,9 @@ pub async fn new(
     // from the last known state.
     //
     // This is done by fetching all the active jobs (jobs in [`JobStatus::Scheduled`] or
-    // [`JobStatus::Running`]) from the queue and spawning them in the jobs
-    // set, ensuring the worker is in sync with the queue state.
-    let scheduled_jobs = queue
+    // [`JobStatus::Running`]) from the ledger and spawning them in the jobs
+    // set, ensuring the worker is in sync with the ledger state.
+    let scheduled_jobs = ledger
         .get_scheduled_jobs(&node_id)
         .await
         .map_err(InitError::BootstrapFetchScheduledJobs)?;
@@ -127,7 +125,7 @@ pub async fn new(
     // Create the worker instance with pre-constructed dependencies
     let mut worker = Worker::new(
         node_id,
-        queue,
+        ledger,
         WorkerJobCtx {
             config,
             metadata_db: metadata_db.clone(),
@@ -214,7 +212,7 @@ pub async fn new(
                         }
                     };
 
-                    worker.handle_job_notification_action(notif.job_id, notif.action)
+                    worker.handle_job_notification(notif)
                         .await
                         .map_err(RuntimeError::NotificationHandling)?;
                 },
@@ -261,7 +259,7 @@ pub(crate) struct WorkerJobCtx {
 
 pub struct Worker {
     node_id: NodeId,
-    queue: JobQueue,
+    ledger: JobLedger,
     job_ctx: WorkerJobCtx,
     job_set: JobSet,
 }
@@ -269,28 +267,27 @@ pub struct Worker {
 impl Worker {
     /// Create a new worker instance
     #[must_use]
-    pub(crate) fn new(node_id: NodeId, queue: JobQueue, job_ctx: WorkerJobCtx) -> Self {
+    pub(crate) fn new(node_id: NodeId, ledger: JobLedger, job_ctx: WorkerJobCtx) -> Self {
         Self {
             node_id,
-            queue,
+            ledger,
             job_ctx,
             job_set: JobSet::default(),
         }
     }
 
-    /// Handles a job notification action
+    /// Handles a job notification.
     ///
     /// This method is called when a job notification is received from the Metadata DB job
     /// notifications channel.
-    async fn handle_job_notification_action(
+    async fn handle_job_notification(
         &mut self,
-        job_id: JobId,
-        action: JobAction,
+        notif: JobNotification,
     ) -> Result<(), NotificationError> {
-        match action {
-            JobAction::Start => {
-                // Load the job from the queue (retry on failure)
-                let job = self.queue.get_job(job_id).await.map_err(|err| {
+        match notif {
+            JobNotification::Start { job_id } => {
+                // Load the job from the ledger (retry on failure)
+                let job = self.ledger.get_job(job_id).await.map_err(|err| {
                     NotificationError::StartActionFailed {
                         job_id,
                         source: StartActionError::JobLoadFailed(err),
@@ -310,7 +307,7 @@ impl Worker {
                         source: StartActionError::SpawnFailed(error),
                     })
             }
-            JobAction::Stop => {
+            JobNotification::Stop { job_id } => {
                 self.abort_job(job_id)
                     .await
                     .map_err(|error| NotificationError::StopActionFailed {
@@ -339,7 +336,7 @@ impl Worker {
                 tracing::info!(node_id=%self.node_id, %job_id, "job completed successfully");
 
                 // Mark the job as COMPLETED (retry on failure)
-                self.queue
+                self.ledger
                     .mark_job_completed(job_id, &self.node_id)
                     .await
                     .map_err(|error| JobResultError::MarkCompletedFailed {
@@ -362,13 +359,13 @@ impl Worker {
                     &error_message,
                     stack_trace,
                     error_details,
-                    &self.queue,
+                    &self.ledger,
                     job_id,
                 )
                 .await;
 
                 // Mark the job as ERROR (retry on failure)
-                self.queue
+                self.ledger
                     .mark_job_failed(job_id, /* fatal */ false, &self.node_id, detail)
                     .await
                     .map_err(|error| JobResultError::MarkFailedFailed {
@@ -391,13 +388,13 @@ impl Worker {
                     &error_message,
                     stack_trace,
                     error_details,
-                    &self.queue,
+                    &self.ledger,
                     job_id,
                 )
                 .await;
 
                 // Mark the job as FATAL (retry on failure)
-                self.queue
+                self.ledger
                     .mark_job_failed(job_id, /* fatal */ true, &self.node_id, detail)
                     .await
                     .map_err(|error| JobResultError::MarkFailedFailed {
@@ -409,7 +406,7 @@ impl Worker {
                 tracing::info!(node_id=%self.node_id, %job_id, "job cancelled");
 
                 // Mark the job as STOPPED (retry on failure)
-                self.queue
+                self.ledger
                     .mark_job_stopped(job_id, &self.node_id)
                     .await
                     .map_err(|error| JobResultError::MarkStoppedFailed {
@@ -432,13 +429,13 @@ impl Worker {
                     &error_message,
                     stack_trace,
                     serde_json::Map::new(),
-                    &self.queue,
+                    &self.ledger,
                     job_id,
                 )
                 .await;
 
                 // Mark the job as FATAL (retry on failure)
-                self.queue
+                self.ledger
                     .mark_job_failed(job_id, /* fatal */ true, &self.node_id, detail)
                     .await
                     .map_err(|error| JobResultError::MarkFailedFailed {
@@ -470,12 +467,12 @@ async fn build_error_detail(
     error_message: &str,
     stack_trace: Vec<String>,
     error_details: serde_json::Map<String, serde_json::Value>,
-    queue: &job_queue::JobQueue,
+    ledger: &JobLedger,
     job_id: amp_job_core::job_id::JobId,
 ) -> metadata_db::job_events::EventDetail<'static> {
     let (attempt_result, job_desc_result) = tokio::join!(
-        queue.get_attempt_count(job_id),
-        queue.get_latest_job_descriptor(job_id)
+        ledger.get_attempt_count(job_id),
+        ledger.get_latest_job_descriptor(job_id)
     );
 
     let job_desc = match job_desc_result {
@@ -579,7 +576,7 @@ impl Worker {
     ///
     /// This method is called periodically to maintain consistency between the worker and database state.
     async fn reconcile_jobs(&mut self) -> Result<(), ReconcileError> {
-        let active_jobs = match self.queue.get_active_jobs(&self.node_id).await {
+        let active_jobs = match self.ledger.get_active_jobs(&self.node_id).await {
             Ok(active_jobs) => active_jobs,
             Err(err) => {
                 // If any error occurs while fetching active jobs, we consider the worker to be
@@ -635,7 +632,7 @@ impl Worker {
 
         // Mark the job as RUNNING (retry on failure)
         if job.status != JobStatus::Running {
-            self.queue
+            self.ledger
                 .mark_job_running(job.id, &self.node_id)
                 .await
                 .map_err(SpawnJobError::StatusUpdateFailed)?;
@@ -644,7 +641,7 @@ impl Worker {
         // Construct the job instance and spawn it in the job set
         let job_id = job.id;
         let job_desc = self
-            .queue
+            .ledger
             .get_latest_job_descriptor(job_id)
             .await
             .map_err(SpawnJobError::GetLatestJobDescriptorFailed)?;
@@ -682,7 +679,7 @@ impl Worker {
         tracing::info!(node_id=%self.node_id, %job_id, "job stop requested");
 
         // Mark the job as STOPPING (retry on failure)
-        self.queue
+        self.ledger
             .mark_job_stopping(job_id, &self.node_id)
             .await
             .map_err(AbortJobError)?;

@@ -1,12 +1,12 @@
-//! Job queue abstraction for the Worker service.
+//! Job ledger abstraction for worker job lifecycle tracking.
 //!
-//! This module provides a `JobQueue` wrapper around `MetadataDb` that encapsulates
-//! all job queue operations. The Worker service interacts with the queue through this
-//! abstraction rather than directly accessing the metadata database.
+//! This module provides the `JobLedger` wrapper around `MetadataDb` that encapsulates
+//! all job lifecycle operations, along with the `Job` DTO and notification types used
+//! by the Worker service.
 
 use amp_job_core::job_id::JobId;
-use amp_worker_core::node_id::NodeId;
 use backon::{ExponentialBuilder, Retryable};
+use chrono::{DateTime, Utc};
 use metadata_db::{
     Error as MetadataDbError, MetadataDb,
     job_events::{EventDetail, EventDetailOwned},
@@ -15,20 +15,20 @@ use metadata_db::{
 };
 use monitoring::logging;
 
-use crate::job::Job;
+use crate::node_id::NodeId;
 
-/// A job queue abstraction that wraps `MetadataDb` operations.
+/// A job ledger abstraction that wraps `MetadataDb` operations.
 ///
-/// The `JobQueue` provides a clean interface for Worker service to interact
-/// with the job queue without directly depending on metadata database implementation
+/// The `JobLedger` provides a clean interface for the Worker service to interact
+/// with the job lifecycle without directly depending on metadata database implementation
 /// details. All operations include automatic retry logic on connection errors.
 #[derive(Clone, Debug)]
-pub(crate) struct JobQueue {
+pub struct JobLedger {
     metadata_db: MetadataDb,
 }
 
-impl JobQueue {
-    /// Creates a new `JobQueue` instance wrapping the provided metadata database.
+impl JobLedger {
+    /// Creates a new `JobLedger` instance wrapping the provided metadata database.
     #[must_use]
     pub fn new(metadata_db: MetadataDb) -> Self {
         Self { metadata_db }
@@ -385,7 +385,63 @@ impl JobQueue {
     }
 }
 
-/// A retry policy for the worker queue operations.
+/// A job notification sent between the controller and worker nodes.
+///
+/// These notifications coordinate job lifecycle transitions via PostgreSQL LISTEN/NOTIFY.
+///
+/// Wire format: `{"job_id": <id>, "action": "START"|"STOP"}`
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "action", rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum JobNotification {
+    /// Start the job: fetch the descriptor from the Metadata DB and begin execution.
+    Start { job_id: JobId },
+    /// Stop the job: mark it as stopped and release output table locations.
+    Stop { job_id: JobId },
+}
+
+/// Job data transfer object for the Worker service.
+///
+/// This DTO decouples the Worker service from the metadata-db `Job` type,
+/// providing a stable interface that can evolve independently of the database schema.
+#[derive(Clone, Debug)]
+pub struct Job {
+    /// Unique identifier for the job
+    pub id: JobId,
+    /// Node ID assigned to execute this job
+    pub node_id: NodeId,
+    /// Current status of the job
+    pub status: amp_job_core::status::JobStatus,
+    /// Job creation timestamp
+    pub created_at: DateTime<Utc>,
+    /// Job last update timestamp
+    pub updated_at: DateTime<Utc>,
+}
+
+impl From<metadata_db::jobs::Job> for Job {
+    fn from(job_meta: metadata_db::jobs::Job) -> Self {
+        Self {
+            id: job_meta.id.into(),
+            node_id: job_meta.node_id.into(),
+            status: job_meta.status.into(),
+            created_at: job_meta.created_at,
+            updated_at: job_meta.updated_at,
+        }
+    }
+}
+
+impl From<Job> for metadata_db::jobs::Job {
+    fn from(job: Job) -> Self {
+        Self {
+            id: job.id.into(),
+            node_id: job.node_id.into(),
+            status: job.status.into(),
+            created_at: job.created_at,
+            updated_at: job.updated_at,
+        }
+    }
+}
+
+/// A retry policy for the worker ledger operations.
 ///
 /// The retry policy is an exponential backoff with:
 /// - jitter: false
