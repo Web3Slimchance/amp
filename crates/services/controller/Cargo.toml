@@ -15,7 +15,7 @@ amp-controller-admin-system = { path = "../../controller-admin-system" }
 amp-controller-admin-tables = { path = "../../controller-admin-tables" }
 amp-data-store = { path = "../../core/data-store" }
 amp-datasets-registry = { version = "0.1.0", path = "../../core/datasets-registry" }
-amp-job-core = { path = "../../core/job-core" }
+amp-job-core = { path = "../../job-core" }
 amp-providers-registry = { version = "0.1.0", path = "../../providers-registry" }
 amp-worker-core = { path = "../../core/worker-core" }
 async-trait.workspace = true

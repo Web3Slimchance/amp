@@ -5,16 +5,16 @@ version.workspace = true
 license-file.workspace = true
 
 [dependencies]
-amp-data-store = { path = "../data-store" }
+amp-data-store = { path = "../core/data-store" }
 amp-job-core = { path = "../job-core" }
-amp-parquet = { path = "../parquet" }
-common = { path = "../common" }
+amp-parquet = { path = "../core/parquet" }
+common = { path = "../core/common" }
 datafusion.workspace = true
-datasets-common = { path = "../datasets-common" }
-datasets-derived = { path = "../datasets-derived" }
+datasets-common = { path = "../core/datasets-common" }
+datasets-derived = { path = "../core/datasets-derived" }
 futures.workspace = true
-js-runtime = { path = "../js-runtime" }
-metadata-db = { path = "../metadata-db" }
+js-runtime = { path = "../core/js-runtime" }
+metadata-db = { path = "../core/metadata-db" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
