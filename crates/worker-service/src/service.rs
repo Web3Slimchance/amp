@@ -20,9 +20,8 @@ mod job_impl;
 mod job_set;
 
 use amp_job_core::{
+    error::{ErrorContext, ErrorDetailPayload, JobErrorExt as _, collect_error_details},
     job_id::JobId,
-    materialize::error_detail::{ErrorContext, ErrorDetailPayload, collect_error_details},
-    retryable::JobErrorExt as _,
     status::JobStatus,
 };
 use amp_worker_core::{

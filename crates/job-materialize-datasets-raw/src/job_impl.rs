@@ -82,15 +82,14 @@ use std::{collections::BTreeMap, ops::RangeInclusive, sync::Arc, time::Instant};
 
 use amp_data_store::retryable::RetryableErrorExt as _;
 use amp_job_core::{
+    error::{ErrorDetailsProvider, RetryableErrorExt},
     materialize::{
         AmpCompactor,
         block_ranges::{ResolvedEndBlock, resolve_end_block},
         check::consistency_check,
-        error_detail::ErrorDetailsProvider,
         progress::{SyncCompletedInfo, SyncFailedInfo, SyncStartedInfo},
         tasks::TryWaitAllError,
     },
-    retryable::RetryableErrorExt,
 };
 use amp_providers_registry::retryable::RetryableErrorExt as _;
 use common::{
@@ -643,7 +642,7 @@ impl ErrorDetailsProvider for Error {
     }
 }
 
-impl amp_job_core::retryable::JobErrorExt for Error {
+impl amp_job_core::error::JobErrorExt for Error {
     fn error_code(&self) -> &'static str {
         match self {
             Self::GetDataset(_) => "GET_DATASET",

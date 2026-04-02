@@ -1,16 +1,15 @@
 use std::{collections::BTreeMap, sync::Arc, time::Instant};
 
 use amp_job_core::{
+    error::{ErrorDetailsProvider, RetryableErrorExt},
     materialize::{
         AmpCompactor, WriterProperties,
         block_ranges::{
             EndBlock, GetLatestBlockError, ResolutionError, ResolvedEndBlock, resolve_end_block,
         },
-        error_detail::ErrorDetailsProvider,
         progress::{SyncCompletedInfo, SyncFailedInfo, SyncStartedInfo},
         tasks::{self, TryWaitAllError},
     },
-    retryable::RetryableErrorExt,
 };
 use common::{
     BlockNum,

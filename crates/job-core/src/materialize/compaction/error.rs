@@ -13,7 +13,7 @@ use metadata_db::files::FileId;
 use object_store::{Error as ObjectStoreError, path::Error as PathError};
 use tokio::task::JoinError;
 
-use crate::{materialize::writer::WriterProperties, retryable::RetryableErrorExt};
+use crate::{error::RetryableErrorExt, materialize::writer::WriterProperties};
 
 pub type CompactionResult<T> = Result<T, CompactorError>;
 pub type CollectionResult<T> = Result<T, CollectorError>;

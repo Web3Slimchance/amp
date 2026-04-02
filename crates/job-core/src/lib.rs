@@ -4,9 +4,9 @@
 //! This crate provides the common vocabulary types for job management
 //! without pulling in worker-specific dependencies.
 
+pub mod error;
 pub mod job_id;
 pub mod job_key;
 pub mod materialize;
 pub mod retry_strategy;
-pub mod retryable;
 pub mod status;

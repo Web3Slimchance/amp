@@ -6,7 +6,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use amp_data_store::{DeleteFilesStreamError, physical_table::PhyTableRevisionPath};
-use amp_job_core::{materialize::error_detail::ErrorDetailsProvider, retryable::RetryableErrorExt};
+use amp_job_core::error::{ErrorDetailsProvider, RetryableErrorExt};
 use futures::{StreamExt as _, TryStreamExt as _, stream};
 use metadata_db::{files::FileId, gc::GcManifestRow};
 use object_store::{Error as ObjectStoreError, path::Path};
@@ -190,7 +190,7 @@ impl RetryableErrorExt for Error {
     }
 }
 
-impl amp_job_core::retryable::JobErrorExt for Error {
+impl amp_job_core::error::JobErrorExt for Error {
     fn error_code(&self) -> &'static str {
         match self {
             Self::LocationNotFound(_) => "GC_LOCATION_NOT_FOUND",

@@ -3,7 +3,7 @@ use std::future::Future;
 use datasets_common::block_num::BlockNum;
 pub use datasets_common::end_block::EndBlock;
 
-use crate::retryable::RetryableErrorExt;
+use crate::error::RetryableErrorExt;
 
 /// Result of resolving an EndBlock configuration.
 ///

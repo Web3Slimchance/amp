@@ -5,8 +5,7 @@ use std::future::Future;
 use monitoring::logging;
 use tokio::task::{JoinError, JoinSet};
 
-use super::error_detail::ErrorDetailsProvider;
-use crate::retryable::RetryableErrorExt;
+use crate::error::{ErrorDetailsProvider, RetryableErrorExt};
 
 /// A wrapper around [`JoinSet`] that implements fail-fast semantics.
 ///

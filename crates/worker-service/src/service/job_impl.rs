@@ -3,11 +3,9 @@
 use std::sync::Arc;
 
 use amp_job_core::{
+    error::{ErrorDetailsProvider, JobErrorExt, RetryableErrorExt},
     job_id::JobId,
-    materialize::{
-        error_detail::ErrorDetailsProvider, metrics::MetricsRegistry, progress::ProgressReporter,
-    },
-    retryable::{JobErrorExt, RetryableErrorExt},
+    materialize::{metrics::MetricsRegistry, progress::ProgressReporter},
 };
 use datasets_common::hash_reference::HashReference;
 use tracing::{Instrument, info_span};

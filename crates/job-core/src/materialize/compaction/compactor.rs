@@ -29,8 +29,8 @@ use super::{
     plan::{CompactionFile, CompactionPlan},
 };
 use crate::{
+    error::RetryableErrorExt,
     materialize::{metrics::MetricsRegistry, writer::WriterProperties},
-    retryable::RetryableErrorExt,
 };
 
 pub type TaskResult<T> = Result<T, AmpCompactorTaskError>;

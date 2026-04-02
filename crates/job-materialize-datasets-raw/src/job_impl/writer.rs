@@ -2,8 +2,8 @@ use std::{collections::BTreeMap, ops::RangeInclusive, sync::Arc, time::Instant};
 
 use amp_data_store::{DataStore, file_name::FileName};
 use amp_job_core::{
+    error::RetryableErrorExt,
     materialize::{AmpCompactor, AmpCompactorTaskError, WriterProperties, metrics},
-    retryable::RetryableErrorExt,
 };
 use amp_parquet::{
     commit::{CommitMetadataError, commit_metadata},

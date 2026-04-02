@@ -1,9 +1,42 @@
-//! Structured error detail payload for job failures.
+//! Job error reporting: retryability classification and structured error details.
 //!
-//! Also defines [`ErrorDetailsProvider`], a trait for errors that contribute
-//! structured key-value details. Each error layer provides only its own context
-//! via [`ErrorDetailsProvider::error_details`], and
-//! [`collect_error_details`] walks the chain to merge them.
+//! This module consolidates two concerns:
+//!
+//! - **Retryability** ([`RetryableErrorExt`], [`JobErrorExt`]): classifying errors as transient
+//!   (retryable) or permanent (fatal), with machine-readable error codes.
+//! - **Structured details** ([`ErrorDetailsProvider`], [`ErrorDetailPayload`]): attaching
+//!   key-value context to errors so failure information is persisted as structured JSONB.
+
+/// Extension trait for classifying errors as retryable or fatal.
+///
+/// The primary method is [`is_retryable`](RetryableErrorExt::is_retryable), which returns `true`
+/// when the error is transient and the operation may succeed on retry. The default for
+/// [`is_fatal`](RetryableErrorExt::is_fatal) is the logical inverse, so implementors only need to
+/// define `is_retryable`.
+///
+/// **Fail-safe convention:** new or forgotten variants default to *non-retryable* (fatal).
+/// This prevents infinite retry loops when a new error variant is added but `is_retryable`
+/// is not updated to cover it.
+pub trait RetryableErrorExt: std::error::Error {
+    /// Returns `true` if the error is transient and the operation may succeed on retry.
+    fn is_retryable(&self) -> bool;
+
+    /// Returns `true` if the error is permanent and the operation should not be retried.
+    fn is_fatal(&self) -> bool {
+        !self.is_retryable()
+    }
+}
+
+/// Extension of [`RetryableErrorExt`] that associates a machine-readable error code with each
+/// error variant.
+///
+/// Error codes use `SCREAMING_SNAKE_CASE` and should uniquely identify the error variant within
+/// the crate so that, when shared by a user or searched in the codebase, the exact error source
+/// can be located.
+pub trait JobErrorExt: RetryableErrorExt {
+    /// A machine-readable error code identifying this specific error variant.
+    fn error_code(&self) -> &'static str;
+}
 
 /// Structured error detail persisted as JSONB on job failure.
 ///
@@ -63,22 +96,6 @@ pub trait ErrorDetailsProvider {
     fn detail_source(&self) -> Option<&dyn ErrorDetailsProvider> {
         None
     }
-}
-
-/// Build a details map containing `block_range_start` and `block_range_end` entries
-/// for the given optional block numbers. Returns an empty map when both are `None`.
-pub fn block_range_details(
-    start: Option<u64>,
-    end: Option<u64>,
-) -> serde_json::Map<String, serde_json::Value> {
-    let mut map = serde_json::Map::new();
-    if let Some(start) = start {
-        map.insert("block_range_start".into(), serde_json::Value::from(start));
-    }
-    if let Some(end) = end {
-        map.insert("block_range_end".into(), serde_json::Value::from(end));
-    }
-    map
 }
 
 /// Walk the [`ErrorDetailsProvider`] chain and merge all detail maps.

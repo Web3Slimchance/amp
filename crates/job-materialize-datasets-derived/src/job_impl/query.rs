@@ -2,11 +2,10 @@ use std::{sync::Arc, time::Instant};
 
 use amp_data_store::file_name::FileName;
 use amp_job_core::{
+    error::{ErrorDetailsProvider, RetryableErrorExt},
     materialize::{
-        AmpCompactor, AmpCompactorTaskError, WriterProperties, error_detail::ErrorDetailsProvider,
-        progress::ProgressUpdate,
+        AmpCompactor, AmpCompactorTaskError, WriterProperties, progress::ProgressUpdate,
     },
-    retryable::RetryableErrorExt,
 };
 use amp_parquet::{
     commit::{CommitMetadataError, commit_metadata},
@@ -316,7 +315,7 @@ impl ErrorDetailsProvider for MaterializeSqlQueryError {
             Some((s, e)) => (Some(s), Some(e)),
             None => (None, None),
         };
-        amp_job_core::materialize::error_detail::block_range_details(start, end)
+        block_range_details(start, end)
     }
 }
 
@@ -393,9 +392,25 @@ impl RetryableErrorExt for MaterializeSqlQueryErrorKind {
     }
 }
 
+/// Build a details map containing `block_range_start` and `block_range_end` entries
+/// for the given optional block numbers. Returns an empty map when both are `None`.
+fn block_range_details(
+    start: Option<u64>,
+    end: Option<u64>,
+) -> serde_json::Map<String, serde_json::Value> {
+    let mut map = serde_json::Map::new();
+    if let Some(start) = start {
+        map.insert("block_range_start".into(), serde_json::Value::from(start));
+    }
+    if let Some(end) = end {
+        map.insert("block_range_end".into(), serde_json::Value::from(end));
+    }
+    map
+}
+
 #[cfg(test)]
 mod tests {
-    use amp_job_core::materialize::error_detail::ErrorDetailsProvider;
+    use amp_job_core::error::{ErrorDetailsProvider, RetryableErrorExt};
     use datafusion::parquet::errors::ParquetError;
 
     use super::MaterializeSqlQueryError;
@@ -494,8 +509,6 @@ mod tests {
 
     #[test]
     fn is_retryable_with_retryable_kind_returns_true() {
-        use amp_job_core::retryable::RetryableErrorExt;
-
         //* Given
         let err = MaterializeSqlQueryError::write_batch(ParquetError::General("test".into()));
 

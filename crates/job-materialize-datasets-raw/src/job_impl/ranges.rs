@@ -14,14 +14,12 @@ use std::{
 
 use amp_data_store::DataStore;
 use amp_job_core::{
+    error::{ErrorDetailsProvider, RetryableErrorExt},
     materialize::{
-        AmpCompactor, WriterProperties,
-        error_detail::ErrorDetailsProvider,
-        metrics,
+        AmpCompactor, WriterProperties, metrics,
         progress::{ProgressReporter, ProgressUpdate},
         tasks::{FailFastJoinSet, TryWaitAllError},
     },
-    retryable::RetryableErrorExt,
 };
 use common::{
     BlockNum,
@@ -718,7 +716,7 @@ impl ErrorDetailsProvider for RunRangeError {
             Some((s, e)) => (Some(s), Some(e)),
             None => (None, None),
         };
-        amp_job_core::materialize::error_detail::block_range_details(start, end)
+        block_range_details(start, end)
     }
 }
 
@@ -904,6 +902,22 @@ pub(super) fn spawn_freshness_tracker(
             }
         }
     })
+}
+
+/// Build a details map containing `block_range_start` and `block_range_end` entries
+/// for the given optional block numbers. Returns an empty map when both are `None`.
+fn block_range_details(
+    start: Option<u64>,
+    end: Option<u64>,
+) -> serde_json::Map<String, serde_json::Value> {
+    let mut map = serde_json::Map::new();
+    if let Some(start) = start {
+        map.insert("block_range_start".into(), serde_json::Value::from(start));
+    }
+    if let Some(end) = end {
+        map.insert("block_range_end".into(), serde_json::Value::from(end));
+    }
+    map
 }
 
 #[cfg(test)]
@@ -1360,7 +1374,7 @@ mod test {
     }
 
     mod run_range_error {
-        use amp_job_core::materialize::error_detail::ErrorDetailsProvider;
+        use amp_job_core::error::{ErrorDetailsProvider, RetryableErrorExt};
         use common::parquet::errors::ParquetError;
 
         use super::super::RunRangeError;
@@ -1455,8 +1469,6 @@ mod test {
 
         #[test]
         fn is_retryable_with_retryable_kind_returns_true() {
-            use amp_job_core::retryable::RetryableErrorExt;
-
             //* Given
             let err = RunRangeError::create_writer(ParquetError::General("test".into()));
 
@@ -1469,8 +1481,6 @@ mod test {
 
         #[test]
         fn is_retryable_with_fatal_kind_returns_false() {
-            use amp_job_core::retryable::RetryableErrorExt;
-
             //* Given
             let err = RunRangeError::non_increasing_block_num(10, 5);
 

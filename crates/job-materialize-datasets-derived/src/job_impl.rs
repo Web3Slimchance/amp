@@ -105,11 +105,8 @@ use std::{
 
 use amp_data_store::retryable::RetryableErrorExt as _;
 use amp_job_core::{
-    materialize::{
-        AmpCompactor, check::consistency_check, error_detail::ErrorDetailsProvider,
-        tasks::TryWaitAllError,
-    },
-    retryable::RetryableErrorExt,
+    error::{ErrorDetailsProvider, RetryableErrorExt},
+    materialize::{AmpCompactor, check::consistency_check, tasks::TryWaitAllError},
 };
 use common::{physical_table::PhysicalTable, retryable::RetryableErrorExt as _};
 use datasets_common::{hash_reference::HashReference, table_name::TableName};
@@ -446,7 +443,7 @@ impl ErrorDetailsProvider for Error {
     }
 }
 
-impl amp_job_core::retryable::JobErrorExt for Error {
+impl amp_job_core::error::JobErrorExt for Error {
     fn error_code(&self) -> &'static str {
         match self {
             Self::GetDataset(_) => "GET_DATASET",
