@@ -1,7 +1,7 @@
 use datafusion::{
     arrow::{
         array,
-        datatypes::{DataType, Field, Schema},
+        datatypes::{DataType, Field, Schema, TimeUnit},
     },
     common::Column,
     datasource::{MemTable, provider_as_source},
@@ -13,6 +13,10 @@ use datasets_common::block_num::RESERVED_BLOCK_NUM_COLUMN_NAME as BN;
 use super::*;
 use crate::udfs::block_num::{BLOCK_NUM_UDF_SCHEMA_NAME, is_block_num_udf};
 
+fn ts_type() -> DataType {
+    DataType::Timestamp(TimeUnit::Nanosecond, Some("+00:00".into()))
+}
+
 /// Test helper: checks if an expression outputs `_block_num` (by column name, alias, or UDF).
 fn expr_outputs_block_num(expr: &Expr) -> bool {
     is_block_num_udf(expr) || physical_name(expr).is_ok_and(|name| name == BN)
@@ -20,11 +24,12 @@ fn expr_outputs_block_num(expr: &Expr) -> bool {
 
 // ── helpers ──────────────────────────────────────────────────────────────
 
-/// Simple single-table scan: id Int32, _block_num UInt64, value Int64.
+/// Simple single-table scan: id Int32, _block_num UInt64, _ts Timestamp, value Int64.
 fn simple_scan(name: &str) -> LogicalPlan {
     let schema = Arc::new(Schema::new(vec![
         Field::new("id", DataType::Int32, false),
         Field::new(RESERVED_BLOCK_NUM_COLUMN_NAME, DataType::UInt64, false),
+        Field::new(RESERVED_TS_COLUMN_NAME, ts_type(), true),
         Field::new("value", DataType::Int64, false),
     ]));
     let batch = array::RecordBatch::new_empty(schema.clone());
@@ -54,11 +59,12 @@ fn block_num_call() -> Expr {
 async fn sql_plan(sql: &str) -> LogicalPlan {
     use datafusion::{logical_expr::ScalarUDF, prelude::SessionContext};
 
-    use crate::udfs::block_num::BlockNumUdf;
+    use crate::udfs::{block_num::BlockNumUdf, ts::TsUdf};
 
     let schema = Arc::new(Schema::new(vec![
         Field::new("id", DataType::Int32, false),
         Field::new(RESERVED_BLOCK_NUM_COLUMN_NAME, DataType::UInt64, false),
+        Field::new(RESERVED_TS_COLUMN_NAME, ts_type(), true),
         Field::new("value", DataType::Int64, false),
     ]));
     let batch = array::RecordBatch::new_empty(schema.clone());
@@ -68,6 +74,7 @@ async fn sql_plan(sql: &str) -> LogicalPlan {
 
     let ctx = SessionContext::new();
     ctx.register_udf(ScalarUDF::from(BlockNumUdf::new()));
+    ctx.register_udf(ScalarUDF::from(TsUdf::new()));
     ctx.register_table("t", table)
         .expect("should register table");
 
@@ -87,11 +94,12 @@ async fn sql_plan(sql: &str) -> LogicalPlan {
 async fn execute_propagated(sql: &str) -> Vec<array::RecordBatch> {
     use datafusion::{logical_expr::ScalarUDF, prelude::SessionContext};
 
-    use crate::udfs::block_num::BlockNumUdf;
+    use crate::udfs::{block_num::BlockNumUdf, ts::TsUdf};
 
     let schema = Arc::new(Schema::new(vec![
         Field::new("id", DataType::Int32, false),
         Field::new(RESERVED_BLOCK_NUM_COLUMN_NAME, DataType::UInt64, false),
+        Field::new(RESERVED_TS_COLUMN_NAME, ts_type(), true),
         Field::new("value", DataType::Int64, false),
     ]));
     let batch = datafusion::arrow::record_batch::RecordBatch::try_new(
@@ -99,6 +107,10 @@ async fn execute_propagated(sql: &str) -> Vec<array::RecordBatch> {
         vec![
             Arc::new(array::Int32Array::from(vec![1, 2])),
             Arc::new(array::UInt64Array::from(vec![5u64, 10u64])),
+            Arc::new(
+                array::TimestampNanosecondArray::from(vec![5_000_000_000i64, 10_000_000_000i64])
+                    .with_timezone("+00:00"),
+            ),
             Arc::new(array::Int64Array::from(vec![100i64, 200i64])),
         ],
     )
@@ -109,6 +121,7 @@ async fn execute_propagated(sql: &str) -> Vec<array::RecordBatch> {
 
     let ctx = SessionContext::new();
     ctx.register_udf(ScalarUDF::from(BlockNumUdf::new()));
+    ctx.register_udf(ScalarUDF::from(TsUdf::new()));
     ctx.register_table("t", table)
         .expect("should register table");
 
@@ -118,7 +131,9 @@ async fn execute_propagated(sql: &str) -> Vec<array::RecordBatch> {
         .expect("should parse SQL")
         .logical_plan()
         .clone();
-    let propagated = propagate_block_num(plan).expect("propagation should succeed");
+    let propagated =
+        propagate_watermark_columns(plan, &[WatermarkColumn::BlockNum, WatermarkColumn::Ts])
+            .expect("propagation should succeed");
     ctx.execute_logical_plan(propagated)
         .await
         .expect("should execute plan")
@@ -173,13 +188,15 @@ mod projection {
             .expect("should build plan");
 
         //* When
-        let result = propagate_block_num(plan).expect("propagation should succeed");
+        let result =
+            propagate_watermark_columns(plan, &[WatermarkColumn::BlockNum, WatermarkColumn::Ts])
+                .expect("propagation should succeed");
 
         //* Then
         let LogicalPlan::Projection(p) = &result else {
             panic!("expected Projection")
         };
-        assert_eq!(p.expr.len(), 3, "_block_num + id + value");
+        assert_eq!(p.expr.len(), 4, "_block_num + _ts + id + value");
         assert!(expr_outputs_block_num(&p.expr[0]));
     }
 
@@ -196,7 +213,9 @@ mod projection {
             .expect("should build plan");
 
         //* When
-        let result = propagate_block_num(plan).expect("propagation should succeed");
+        let result =
+            propagate_watermark_columns(plan, &[WatermarkColumn::BlockNum, WatermarkColumn::Ts])
+                .expect("propagation should succeed");
 
         //* Then
         let LogicalPlan::Projection(p) = &result else {
@@ -206,7 +225,7 @@ mod projection {
             p.expr.iter().filter(|e| expr_outputs_block_num(e)).count(),
             1
         );
-        assert_eq!(p.expr.len(), 2);
+        assert_eq!(p.expr.len(), 3);
     }
 
     #[test]
@@ -223,7 +242,9 @@ mod projection {
             .expect("should build plan");
 
         //* When
-        let result = propagate_block_num(plan).expect("propagation should succeed");
+        let result =
+            propagate_watermark_columns(plan, &[WatermarkColumn::BlockNum, WatermarkColumn::Ts])
+                .expect("propagation should succeed");
 
         //* Then
         let LogicalPlan::Projection(p) = &result else {
@@ -231,18 +252,18 @@ mod projection {
         };
         assert_eq!(
             p.expr.len(),
-            3,
-            "_block_num prepended + block_num() preserved + id"
+            4,
+            "_block_num + _ts + block_num() preserved + id"
         );
         assert!(
             expr_outputs_block_num(&p.expr[0]),
             "_block_num system column at position 0"
         );
         assert!(
-            matches!(&p.expr[1], Expr::Alias(a) if a.name == BLOCK_NUM_UDF_SCHEMA_NAME),
-            "block_num() preserved at position 1"
+            matches!(&p.expr[2], Expr::Alias(a) if a.name == BLOCK_NUM_UDF_SCHEMA_NAME),
+            "block_num() preserved at position 2"
         );
-        assert!(!is_block_num_udf(&p.expr[1]), "UDF must be replaced");
+        assert!(!is_block_num_udf(&p.expr[2]), "UDF must be replaced");
     }
 
     #[test]
@@ -261,17 +282,15 @@ mod projection {
             .expect("should build plan");
 
         //* When
-        let result = propagate_block_num(plan).expect("propagation should succeed");
+        let result =
+            propagate_watermark_columns(plan, &[WatermarkColumn::BlockNum, WatermarkColumn::Ts])
+                .expect("propagation should succeed");
 
         //* Then
         let LogicalPlan::Projection(p) = &result else {
             panic!("expected Projection")
         };
-        assert_eq!(
-            p.expr.len(),
-            3,
-            "_block_num prepended alongside offset + id"
-        );
+        assert_eq!(p.expr.len(), 4, "_block_num + _ts + offset + id");
         assert!(expr_outputs_block_num(&p.expr[0]));
         // No block_num() UDF survives in any expression
         assert!(p.expr.iter().all(|e| !is_block_num_udf(e)));
@@ -294,13 +313,15 @@ mod projection {
             .expect("should build plan");
 
         //* When
-        let result = propagate_block_num(plan).expect("propagation should succeed");
+        let result =
+            propagate_watermark_columns(plan, &[WatermarkColumn::BlockNum, WatermarkColumn::Ts])
+                .expect("propagation should succeed");
 
         //* Then
         let LogicalPlan::Projection(p) = &result else {
             panic!("expected Projection")
         };
-        assert_nested_block_num_is_bare_col(&p.expr[1]);
+        assert_nested_block_num_is_bare_col(&p.expr[2]);
     }
 
     #[tokio::test]
@@ -318,7 +339,9 @@ mod projection {
         eprintln!("plan before propagation:\n{}", plan.display_indent());
 
         //* When
-        let result = propagate_block_num(plan).expect("propagation should succeed");
+        let result =
+            propagate_watermark_columns(plan, &[WatermarkColumn::BlockNum, WatermarkColumn::Ts])
+                .expect("propagation should succeed");
         eprintln!("plan after propagation:\n{}", result.display_indent());
 
         //* Then
@@ -327,18 +350,18 @@ mod projection {
         };
         assert_eq!(
             p.expr.len(),
-            3,
-            "_block_num prepended + block_num() preserved + id"
+            4,
+            "_block_num + _ts + block_num() preserved + id"
         );
         assert!(
             expr_outputs_block_num(&p.expr[0]),
             "_block_num at position 0"
         );
         assert!(
-            matches!(&p.expr[1], Expr::Alias(a) if a.name == BLOCK_NUM_UDF_SCHEMA_NAME),
-            "block_num() preserved at position 1"
+            matches!(&p.expr[2], Expr::Alias(a) if a.name == BLOCK_NUM_UDF_SCHEMA_NAME),
+            "block_num() preserved at position 2"
         );
-        assert!(!is_block_num_udf(&p.expr[1]), "UDF must be replaced");
+        assert!(!is_block_num_udf(&p.expr[2]), "UDF must be replaced");
     }
 }
 
@@ -364,13 +387,15 @@ mod aggregate {
             .expect("should build plan");
 
         //* When
-        let result = propagate_block_num(plan).expect("propagation should succeed");
+        let result =
+            propagate_watermark_columns(plan, &[WatermarkColumn::BlockNum, WatermarkColumn::Ts])
+                .expect("propagation should succeed");
 
         //* Then
         let LogicalPlan::Projection(p) = &result else {
             panic!("expected Projection")
         };
-        assert_eq!(p.expr.len(), 2, "_block_num + cnt");
+        assert_eq!(p.expr.len(), 3, "_block_num + _ts + cnt");
         assert!(expr_outputs_block_num(&p.expr[0]));
     }
 
@@ -391,7 +416,9 @@ mod aggregate {
             .expect("should build plan");
 
         //* When
-        let result = propagate_block_num(plan).expect("propagation should succeed");
+        let result =
+            propagate_watermark_columns(plan, &[WatermarkColumn::BlockNum, WatermarkColumn::Ts])
+                .expect("propagation should succeed");
 
         //* Then
         let LogicalPlan::Projection(p) = &result else {
@@ -399,16 +426,16 @@ mod aggregate {
         };
         assert_eq!(
             p.expr.len(),
-            3,
-            "_block_num prepended + block_num() preserved + cnt"
+            4,
+            "_block_num + _ts + block_num() preserved + cnt"
         );
         assert!(
             expr_outputs_block_num(&p.expr[0]),
             "_block_num at position 0"
         );
         assert!(
-            matches!(&p.expr[1], Expr::Alias(a) if a.name == BLOCK_NUM_UDF_SCHEMA_NAME),
-            "block_num() preserved at position 1"
+            matches!(&p.expr[2], Expr::Alias(a) if a.name == BLOCK_NUM_UDF_SCHEMA_NAME),
+            "block_num() preserved at position 2"
         );
     }
 
@@ -432,7 +459,9 @@ mod aggregate {
             .expect("should build plan");
 
         //* When
-        let result = propagate_block_num(plan).expect("propagation should succeed");
+        let result =
+            propagate_watermark_columns(plan, &[WatermarkColumn::BlockNum, WatermarkColumn::Ts])
+                .expect("propagation should succeed");
 
         //* Then
         // Aggregate is the top-level node; verify its group key was replaced
@@ -470,13 +499,15 @@ mod aggregate {
             .expect("should build plan");
 
         //* When
-        let result = propagate_block_num(plan).expect("propagation should succeed");
+        let result =
+            propagate_watermark_columns(plan, &[WatermarkColumn::BlockNum, WatermarkColumn::Ts])
+                .expect("propagation should succeed");
 
         //* Then
         let LogicalPlan::Projection(p) = &result else {
             panic!("expected Projection")
         };
-        assert_eq!(p.expr.len(), 2, "_block_num + cnt");
+        assert_eq!(p.expr.len(), 3, "_block_num + _ts + cnt");
         assert!(expr_outputs_block_num(&p.expr[0]));
 
         // Aggregate's group key should also be replaced
@@ -502,7 +533,9 @@ mod aggregate {
             .expect("should build plan");
 
         //* When
-        let result = propagate_block_num(plan).expect("propagation should succeed");
+        let result =
+            propagate_watermark_columns(plan, &[WatermarkColumn::BlockNum, WatermarkColumn::Ts])
+                .expect("propagation should succeed");
 
         //* Then
         assert!(
@@ -534,7 +567,9 @@ mod aggregate {
             sql_plan("SELECT block_num(), COUNT(id) AS cnt FROM t GROUP BY block_num()").await;
 
         //* When
-        let result = propagate_block_num(plan).expect("propagation should succeed");
+        let result =
+            propagate_watermark_columns(plan, &[WatermarkColumn::BlockNum, WatermarkColumn::Ts])
+                .expect("propagation should succeed");
 
         //* Then
         let LogicalPlan::Projection(p) = &result else {
@@ -542,16 +577,16 @@ mod aggregate {
         };
         assert_eq!(
             p.expr.len(),
-            3,
-            "_block_num prepended + block_num() preserved + cnt"
+            4,
+            "_block_num + _ts + block_num() preserved + cnt"
         );
         assert!(
             expr_outputs_block_num(&p.expr[0]),
             "_block_num at position 0"
         );
         assert!(
-            matches!(&p.expr[1], Expr::Alias(a) if a.name == BLOCK_NUM_UDF_SCHEMA_NAME),
-            "block_num() preserved at position 1"
+            matches!(&p.expr[2], Expr::Alias(a) if a.name == BLOCK_NUM_UDF_SCHEMA_NAME),
+            "block_num() preserved at position 2"
         );
 
         let LogicalPlan::Aggregate(agg) = p.input.as_ref() else {
@@ -584,13 +619,15 @@ mod distinct_on {
             .expect("should build plan");
 
         //* When
-        let result = propagate_block_num(plan).expect("propagation should succeed");
+        let result =
+            propagate_watermark_columns(plan, &[WatermarkColumn::BlockNum, WatermarkColumn::Ts])
+                .expect("propagation should succeed");
 
         //* Then
         let LogicalPlan::Distinct(datafusion::logical_expr::Distinct::On(on)) = &result else {
             panic!("expected DistinctOn")
         };
-        assert_eq!(on.select_expr.len(), 2);
+        assert_eq!(on.select_expr.len(), 3);
         assert_eq!(
             on.select_expr
                 .iter()
@@ -613,13 +650,15 @@ mod distinct_on {
             .expect("should build plan");
 
         //* When
-        let result = propagate_block_num(plan).expect("propagation should succeed");
+        let result =
+            propagate_watermark_columns(plan, &[WatermarkColumn::BlockNum, WatermarkColumn::Ts])
+                .expect("propagation should succeed");
 
         //* Then
         let LogicalPlan::Distinct(datafusion::logical_expr::Distinct::On(on)) = &result else {
             panic!("expected DistinctOn")
         };
-        assert_eq!(on.select_expr.len(), 3, "_block_num + id + value");
+        assert_eq!(on.select_expr.len(), 4, "_block_num + _ts + id + value");
         assert!(expr_outputs_block_num(&on.select_expr[0]));
         assert!(
             result
@@ -644,7 +683,9 @@ mod distinct_on {
             .expect("should build plan");
 
         //* When
-        let result = propagate_block_num(plan).expect("propagation should succeed");
+        let result =
+            propagate_watermark_columns(plan, &[WatermarkColumn::BlockNum, WatermarkColumn::Ts])
+                .expect("propagation should succeed");
 
         //* Then
         let LogicalPlan::Distinct(datafusion::logical_expr::Distinct::On(on)) = &result else {
@@ -658,11 +699,7 @@ mod distinct_on {
             expr_outputs_block_num(&on.on_expr[0]),
             "on_expr references _block_num"
         );
-        assert_eq!(
-            on.select_expr.len(),
-            3,
-            "_block_num prepended: _block_num + id + value"
-        );
+        assert_eq!(on.select_expr.len(), 4, "_block_num + _ts + id + value");
         assert!(expr_outputs_block_num(&on.select_expr[0]));
     }
 
@@ -685,7 +722,9 @@ mod distinct_on {
             .expect("should build plan");
 
         //* When
-        let result = propagate_block_num(plan).expect("propagation should succeed");
+        let result =
+            propagate_watermark_columns(plan, &[WatermarkColumn::BlockNum, WatermarkColumn::Ts])
+                .expect("propagation should succeed");
 
         //* Then
         let LogicalPlan::Distinct(datafusion::logical_expr::Distinct::On(on)) = &result else {
@@ -693,16 +732,16 @@ mod distinct_on {
         };
         assert_eq!(
             on.select_expr.len(),
-            3,
-            "_block_num prepended + block_num() preserved + id"
+            4,
+            "_block_num + _ts + block_num() preserved + id"
         );
         assert!(
             expr_outputs_block_num(&on.select_expr[0]),
             "_block_num at position 0"
         );
         assert!(
-            matches!(&on.select_expr[1], Expr::Alias(a) if a.name == BLOCK_NUM_UDF_SCHEMA_NAME),
-            "block_num() preserved at position 1"
+            matches!(&on.select_expr[2], Expr::Alias(a) if a.name == BLOCK_NUM_UDF_SCHEMA_NAME),
+            "block_num() preserved at position 2"
         );
         assert!(!is_block_num_udf(&on.on_expr[0]));
         assert!(!is_block_num_udf(&on.select_expr[0]));
@@ -727,7 +766,9 @@ mod distinct_on {
             .expect("should build plan");
 
         //* When
-        let result = propagate_block_num(plan).expect("propagation should succeed");
+        let result =
+            propagate_watermark_columns(plan, &[WatermarkColumn::BlockNum, WatermarkColumn::Ts])
+                .expect("propagation should succeed");
 
         //* Then
         let LogicalPlan::Distinct(datafusion::logical_expr::Distinct::On(on)) = &result else {
@@ -736,8 +777,8 @@ mod distinct_on {
         // on_expr[0] is the sort key — also unaliased
         assert!(expr_outputs_block_num(&on.on_expr[0]));
         // select_expr[0] is _block_num prepended; select_expr[1] is the nested expression
-        assert_eq!(on.select_expr.len(), 3, "_block_num + offset + id");
-        assert_nested_block_num_is_bare_col(&on.select_expr[1]);
+        assert_eq!(on.select_expr.len(), 4, "_block_num + _ts + offset + id");
+        assert_nested_block_num_is_bare_col(&on.select_expr[2]);
     }
 }
 
@@ -770,7 +811,9 @@ mod join {
             .expect("should build plan");
 
         //* When
-        let result = propagate_block_num(plan).expect("propagation should succeed");
+        let result =
+            propagate_watermark_columns(plan, &[WatermarkColumn::BlockNum, WatermarkColumn::Ts])
+                .expect("propagation should succeed");
 
         //* Then
         let LogicalPlan::Projection(p) = &result else {
@@ -778,21 +821,21 @@ mod join {
         };
         assert_eq!(
             p.expr.len(),
-            3,
-            "_block_num prepended + block_num() preserved + foo.id"
+            4,
+            "_block_num + _ts + block_num() preserved + foo.id"
         );
         assert!(
             expr_outputs_block_num(&p.expr[0]),
             "_block_num system column at position 0"
         );
         assert!(
-            !is_block_num_udf(&p.expr[1]),
+            !is_block_num_udf(&p.expr[2]),
             "UDF replaced with greatest(...)"
         );
         assert!(
-            matches!(&p.expr[1], Expr::Alias(a) if a.name == BLOCK_NUM_UDF_SCHEMA_NAME),
-            "expected greatest(...) AS block_num() at position 1, got {:?}",
-            p.expr[1]
+            matches!(&p.expr[2], Expr::Alias(a) if a.name == BLOCK_NUM_UDF_SCHEMA_NAME),
+            "expected greatest(...) AS block_num() at position 2, got {:?}",
+            p.expr[2]
         );
     }
 
@@ -826,7 +869,9 @@ mod join {
             .expect("should build plan");
 
         //* When
-        let result = propagate_block_num(plan).expect("propagation should succeed");
+        let result =
+            propagate_watermark_columns(plan, &[WatermarkColumn::BlockNum, WatermarkColumn::Ts])
+                .expect("propagation should succeed");
 
         //* Then
         let LogicalPlan::Distinct(datafusion::logical_expr::Distinct::On(on)) = &result else {
@@ -839,16 +884,16 @@ mod join {
         );
         assert_eq!(
             on.select_expr.len(),
-            3,
-            "_block_num prepended + block_num() preserved + foo.id"
+            4,
+            "_block_num + _ts + block_num() preserved + foo.id"
         );
         assert!(
             expr_outputs_block_num(&on.select_expr[0]),
             "_block_num at position 0"
         );
         assert!(
-            matches!(&on.select_expr[1], Expr::Alias(a) if a.name == BLOCK_NUM_UDF_SCHEMA_NAME),
-            "block_num() preserved at position 1"
+            matches!(&on.select_expr[2], Expr::Alias(a) if a.name == BLOCK_NUM_UDF_SCHEMA_NAME),
+            "block_num() preserved at position 2"
         );
     }
 
@@ -861,12 +906,14 @@ mod join {
         let foo_schema = Arc::new(Schema::new(vec![
             Field::new("id", DataType::Int32, false),
             Field::new(RESERVED_BLOCK_NUM_COLUMN_NAME, DataType::UInt64, false),
+            Field::new(RESERVED_TS_COLUMN_NAME, ts_type(), true),
             Field::new("foo_value", DataType::Utf8, false),
         ]));
 
         let bar_schema = Arc::new(Schema::new(vec![
             Field::new("id", DataType::Int32, false),
             Field::new(RESERVED_BLOCK_NUM_COLUMN_NAME, DataType::UInt64, false),
+            Field::new(RESERVED_TS_COLUMN_NAME, ts_type(), true),
             Field::new("bar_value", DataType::Utf8, false),
         ]));
 
@@ -874,18 +921,30 @@ mod join {
         let foo_values = array::StringArray::from(vec!["foo1", "foo2", "foo3"]);
         let bar_values = array::StringArray::from(vec!["bar1", "bar2", "bar3"]);
         let block_nums = array::UInt64Array::from(vec![10, 20, 30]);
+        let timestamps = array::TimestampNanosecondArray::from(vec![
+            10_000_000_000i64,
+            20_000_000_000,
+            30_000_000_000,
+        ])
+        .with_timezone("+00:00");
         let foo_batch = datafusion::arrow::record_batch::RecordBatch::try_new(
             foo_schema.clone(),
             vec![
                 Arc::new(ids.clone()),
                 Arc::new(block_nums.clone()),
+                Arc::new(timestamps.clone()),
                 Arc::new(foo_values),
             ],
         )
         .expect("should create foo batch");
         let bar_batch = datafusion::arrow::record_batch::RecordBatch::try_new(
             bar_schema.clone(),
-            vec![Arc::new(ids), Arc::new(block_nums), Arc::new(bar_values)],
+            vec![
+                Arc::new(ids),
+                Arc::new(block_nums),
+                Arc::new(timestamps),
+                Arc::new(bar_values),
+            ],
         )
         .expect("should create bar batch");
 
@@ -938,7 +997,10 @@ mod join {
         // Selecting a qualified `_block_num` column (e.g. `foo._block_num`) in a multi-table
         // context (join) is forbidden by `forbid_underscore_prefixed_aliases`. Users should
         // use the `block_num()` sentinel UDF instead to get the correct propagated value.
-        let result = propagate_block_num(invalid_projection_plan);
+        let result = propagate_watermark_columns(
+            invalid_projection_plan,
+            &[WatermarkColumn::BlockNum, WatermarkColumn::Ts],
+        );
 
         //* Then
         assert!(
@@ -964,17 +1026,20 @@ mod join {
             .build()
             .expect("should build plan");
 
-        let transformed_plan = propagate_block_num(projection_plan)
-            .expect("propagation with aliased _block_num should succeed");
+        let transformed_plan = propagate_watermark_columns(
+            projection_plan,
+            &[WatermarkColumn::BlockNum, WatermarkColumn::Ts],
+        )
+        .expect("propagation with aliased _block_num should succeed");
 
         // Check that the plan was transformed (should be a Projection)
         match &transformed_plan {
             LogicalPlan::Projection(projection) => {
                 // The first expression should be the RESERVED_BLOCK_NUM_COLUMN_NAME
-                assert_eq!(projection.expr.len(), 4);
+                assert_eq!(projection.expr.len(), 5);
 
                 // Check if the qualified column was properly aliased
-                if let Expr::Alias(alias) = &projection.expr[2] {
+                if let Expr::Alias(alias) = &projection.expr[3] {
                     assert_eq!(alias.name, "block_num", "Should alias to block_num");
                     if let Expr::Column(c) = alias.expr.as_ref() {
                         assert_eq!(
@@ -1017,7 +1082,9 @@ mod join {
         eprintln!("plan before propagation:\n{}", plan.display_indent());
 
         //* When
-        let result = propagate_block_num(plan).expect("propagation should succeed");
+        let result =
+            propagate_watermark_columns(plan, &[WatermarkColumn::BlockNum, WatermarkColumn::Ts])
+                .expect("propagation should succeed");
         eprintln!("plan after propagation:\n{}", result.display_indent());
 
         //* Then
@@ -1026,20 +1093,20 @@ mod join {
         };
         assert_eq!(
             p.expr.len(),
-            3,
-            "_block_num prepended + block_num() preserved + a.id"
+            4,
+            "_block_num + _ts + block_num() preserved + a.id"
         );
         assert!(
             expr_outputs_block_num(&p.expr[0]),
             "_block_num at position 0"
         );
         assert!(
-            !is_block_num_udf(&p.expr[1]),
+            !is_block_num_udf(&p.expr[2]),
             "UDF must be replaced with greatest(...)"
         );
         assert!(
-            matches!(&p.expr[1], Expr::Alias(a) if a.name == BLOCK_NUM_UDF_SCHEMA_NAME),
-            "block_num() preserved at position 1"
+            matches!(&p.expr[2], Expr::Alias(a) if a.name == BLOCK_NUM_UDF_SCHEMA_NAME),
+            "block_num() preserved at position 2"
         );
     }
 
@@ -1056,6 +1123,7 @@ mod join {
         let schema = Arc::new(Schema::new(vec![
             Field::new("id", DataType::Int32, false),
             Field::new(RESERVED_BLOCK_NUM_COLUMN_NAME, DataType::UInt64, false),
+            Field::new(RESERVED_TS_COLUMN_NAME, ts_type(), true),
             Field::new("value", DataType::Utf8, false),
         ]));
         let batch = array::RecordBatch::new_empty(schema.clone());
@@ -1102,7 +1170,10 @@ mod join {
 
         //* When
         // This should succeed now that SubqueryAlias properly propagates _block_num
-        let result = propagate_block_num(join_plan);
+        let result = propagate_watermark_columns(
+            join_plan,
+            &[WatermarkColumn::BlockNum, WatermarkColumn::Ts],
+        );
 
         //* Then
         assert!(
@@ -1145,7 +1216,7 @@ mod prepend_block_num_field {
         .expect("should create schema");
 
         //* When
-        let result = prepend_special_block_num_field(&schema);
+        let result = prepend_watermark_field(&schema, &WatermarkColumn::BlockNum);
 
         //* Then
         assert_eq!(result.fields().len(), 3, "Should add _block_num field");
@@ -1173,10 +1244,10 @@ mod prepend_block_num_field {
             Default::default(),
         )
         .expect("should create schema");
-        let first_result = prepend_special_block_num_field(&schema);
+        let first_result = prepend_watermark_field(&schema, &WatermarkColumn::BlockNum);
 
         //* When
-        let result = prepend_special_block_num_field(&first_result);
+        let result = prepend_watermark_field(&first_result, &WatermarkColumn::BlockNum);
 
         //* Then
         assert_eq!(
@@ -1209,7 +1280,7 @@ mod prepend_block_num_field {
         .expect("should create schema");
 
         //* When
-        let result = prepend_special_block_num_field(&schema_with_block_num);
+        let result = prepend_watermark_field(&schema_with_block_num, &WatermarkColumn::BlockNum);
 
         //* Then
         assert_eq!(
@@ -1243,7 +1314,7 @@ mod prepend_block_num_field {
             .expect("should create qualified schema");
 
         //* When
-        let result = prepend_special_block_num_field(&qualified_schema);
+        let result = prepend_watermark_field(&qualified_schema, &WatermarkColumn::BlockNum);
 
         //* Then
         assert_eq!(
@@ -1416,7 +1487,8 @@ mod udf_mode_rejection {
             .expect("should build plan");
 
         //* When / Then
-        propagate_block_num(plan).expect("should accept raw _block_num in GROUP BY");
+        propagate_watermark_columns(plan, &[WatermarkColumn::BlockNum, WatermarkColumn::Ts])
+            .expect("should accept raw _block_num in GROUP BY");
     }
 
     #[test]
@@ -1436,7 +1508,8 @@ mod udf_mode_rejection {
             .expect("should build plan");
 
         //* When / Then
-        propagate_block_num(plan).expect("should accept raw _block_num in DISTINCT ON");
+        propagate_watermark_columns(plan, &[WatermarkColumn::BlockNum, WatermarkColumn::Ts])
+            .expect("should accept raw _block_num in DISTINCT ON");
     }
 }
 
@@ -1456,7 +1529,11 @@ mod output {
         let before = sql_plan("SELECT block_num(), id FROM t").await;
 
         //* When
-        let after = propagate_block_num(before.clone()).expect("propagation should succeed");
+        let after = propagate_watermark_columns(
+            before.clone(),
+            &[WatermarkColumn::BlockNum, WatermarkColumn::Ts],
+        )
+        .expect("propagation should succeed");
 
         //* Then
         let before_fields = before.schema().field_names();
@@ -1478,7 +1555,10 @@ mod output {
 
         //* Then
         let csv = to_csv(&batches);
-        assert_eq!(csv, "_block_num,block_num(),id\n5,5,1\n10,10,2\n");
+        assert_eq!(
+            csv,
+            "_block_num,_ts,block_num(),id\n5,1970-01-01T00:00:05Z,5,1\n10,1970-01-01T00:00:10Z,10,2\n"
+        );
     }
 
     #[tokio::test]
@@ -1492,7 +1572,10 @@ mod output {
 
         //* Then
         let csv = to_csv(&batches);
-        assert_eq!(csv, "_block_num,block_num(),id\n5,5,1\n10,10,2\n");
+        assert_eq!(
+            csv,
+            "_block_num,_ts,block_num(),id\n5,1970-01-01T00:00:05Z,5,1\n10,1970-01-01T00:00:10Z,10,2\n"
+        );
     }
 }
 

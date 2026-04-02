@@ -45,7 +45,7 @@ async fn gen_manifest_produces_expected_eth_rpc_json() {
     let expected_manifest_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
-        .join("tests/config/manifests/eth_rpc.json");
+        .join("tests/config/manifests/eth_rpc_generated.json");
     let expected_json = std::fs::read_to_string(&expected_manifest_path)
         .expect("should read expected manifest file");
 
@@ -332,7 +332,7 @@ async fn gen_manifest_produces_expected_tempo_json() {
     let expected_manifest_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
-        .join("tests/config/manifests/tempo.json");
+        .join("tests/config/manifests/tempo_generated.json");
     let expected_json = std::fs::read_to_string(&expected_manifest_path)
         .expect("should read expected manifest file");
 

@@ -31,6 +31,7 @@ mod it_sql_dataset_batch_size;
 mod it_streaming;
 mod it_streaming_distinct;
 mod it_streaming_join;
+mod it_ts;
 mod it_typescript;
 mod it_verification;
 mod it_worker_events;

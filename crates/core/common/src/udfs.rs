@@ -27,6 +27,7 @@ pub mod evm_topic;
 pub mod exec;
 pub mod plan;
 pub mod shift_units;
+pub mod ts;
 
 use self::{
     block_num::BlockNumUdf,
@@ -38,6 +39,7 @@ use self::{
     evm_function_params::{EvmDecodeParams, EvmEncodeParams},
     evm_topic::EvmTopic,
     shift_units::ShiftUnits,
+    ts::TsUdf,
 };
 
 /// Returns the built-in scalar UDFs registered in every session state.
@@ -49,6 +51,7 @@ use self::{
 pub fn builtin_udfs() -> Vec<Arc<ScalarUDF>> {
     vec![
         Arc::new(BlockNumUdf::new().into()),
+        Arc::new(TsUdf::new().into()),
         Arc::new(EvmDecodeLog::new().into()),
         Arc::new(EvmDecodeLog::new().with_deprecated_name().into()),
         Arc::new(EvmTopic::new().into()),

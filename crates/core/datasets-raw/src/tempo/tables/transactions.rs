@@ -2,6 +2,7 @@ use std::sync::{Arc, LazyLock};
 
 use datasets_common::{
     block_num::RESERVED_BLOCK_NUM_COLUMN_NAME, block_range::BlockRange, network_id::NetworkId,
+    watermark_columns::RESERVED_TS_COLUMN_NAME,
 };
 
 use crate::{
@@ -38,6 +39,7 @@ pub const TABLE_NAME: &str = "transactions";
 /// Prefer using the pre-computed SCHEMA
 fn schema() -> Schema {
     let special_block_num = Field::new(RESERVED_BLOCK_NUM_COLUMN_NAME, DataType::UInt64, false);
+    let special_ts = Field::new(RESERVED_TS_COLUMN_NAME, timestamp_type(), false);
     let block_hash = Field::new("block_hash", BYTES32_TYPE, false);
     let block_num = Field::new("block_num", DataType::UInt64, false);
     let timestamp = Field::new("timestamp", timestamp_type(), false);
@@ -160,6 +162,7 @@ fn schema() -> Schema {
 
     let fields = vec![
         special_block_num,
+        special_ts,
         block_hash,
         block_num,
         timestamp,
@@ -410,6 +413,7 @@ pub struct AAAuthorizationRow {
 
 pub struct TransactionRowsBuilder {
     special_block_num: UInt64Builder,
+    special_ts: TimestampArrayBuilder,
     block_hash: Bytes32ArrayBuilder,
     block_num: UInt64Builder,
     timestamp: TimestampArrayBuilder,
@@ -463,6 +467,7 @@ impl TransactionRowsBuilder {
         ]);
         Self {
             special_block_num: UInt64Builder::with_capacity(count),
+            special_ts: TimestampArrayBuilder::with_capacity(count),
             block_hash: Bytes32ArrayBuilder::with_capacity(count),
             block_num: UInt64Builder::with_capacity(count),
             timestamp: TimestampArrayBuilder::with_capacity(count),
@@ -659,6 +664,7 @@ impl TransactionRowsBuilder {
         } = tx;
 
         self.special_block_num.append_value(*block_num);
+        self.special_ts.append_value(*timestamp);
         self.block_hash.append_value(*block_hash);
         self.block_num.append_value(*block_num);
         self.timestamp.append_value(*timestamp);
@@ -922,6 +928,7 @@ impl TransactionRowsBuilder {
     pub fn build(self, range: BlockRange) -> Result<TableRows, TableRowError> {
         let Self {
             mut special_block_num,
+            mut special_ts,
             block_hash,
             mut block_num,
             mut timestamp,
@@ -960,6 +967,7 @@ impl TransactionRowsBuilder {
 
         let columns = vec![
             Arc::new(special_block_num.finish()) as ArrayRef,
+            Arc::new(special_ts.finish()),
             Arc::new(block_hash.finish()),
             Arc::new(block_num.finish()),
             Arc::new(timestamp.finish()),
@@ -1088,8 +1096,8 @@ mod tests {
         //* Then
         assert_eq!(
             rows.rows.num_columns(),
-            35,
-            "transaction schema should have 34 columns"
+            36,
+            "transaction schema should have 36 columns"
         );
         assert_eq!(rows.rows.num_rows(), 1, "should contain exactly one row");
     }

@@ -20,3 +20,4 @@ pub mod reference;
 pub mod revision;
 pub mod table_name;
 pub mod version;
+pub mod watermark_columns;

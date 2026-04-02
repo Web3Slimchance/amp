@@ -13,6 +13,7 @@ use datasets_common::{
     hash_reference::HashReference,
     network_id::NetworkId,
     table_name::TableName,
+    watermark_columns::RESERVED_TS_COLUMN_NAME,
 };
 
 /// A [`Dataset`](datasets_common::dataset::Dataset) backed by a raw blockchain data source.
@@ -126,6 +127,7 @@ impl Table {
     ) -> Self {
         let mut sorted_by: BTreeSet<String> = sorted_by.into_iter().collect();
         sorted_by.insert(RESERVED_BLOCK_NUM_COLUMN_NAME.to_string());
+        sorted_by.insert(RESERVED_TS_COLUMN_NAME.to_string());
         Self {
             name,
             schema,

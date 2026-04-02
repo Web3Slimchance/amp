@@ -6,6 +6,7 @@ use arrow::{
 };
 use datasets_common::{
     block_num::RESERVED_BLOCK_NUM_COLUMN_NAME, block_range::BlockRange, network_id::NetworkId,
+    watermark_columns::RESERVED_TS_COLUMN_NAME,
 };
 
 use crate::{
@@ -39,6 +40,7 @@ pub const TABLE_NAME: &str = "blocks";
 fn schema() -> Schema {
     Schema::new(vec![
         Field::new(RESERVED_BLOCK_NUM_COLUMN_NAME, DataType::UInt64, false),
+        Field::new(RESERVED_TS_COLUMN_NAME, timestamp_type(), false),
         Field::new("block_num", DataType::UInt64, false),
         Field::new("timestamp", timestamp_type(), false),
         Field::new("hash", BYTES32_TYPE, false),
@@ -106,6 +108,7 @@ pub struct Block {
 
 pub struct BlockRowsBuilder {
     special_block_num: UInt64Builder,
+    special_ts: TimestampArrayBuilder,
     block_num: UInt64Builder,
     timestamp: TimestampArrayBuilder,
     hash: Bytes32ArrayBuilder,
@@ -139,6 +142,7 @@ impl BlockRowsBuilder {
     pub fn with_capacity_for(header: &Block) -> Self {
         Self {
             special_block_num: UInt64Builder::with_capacity(1),
+            special_ts: TimestampArrayBuilder::with_capacity(1),
             block_num: UInt64Builder::with_capacity(1),
             timestamp: TimestampArrayBuilder::with_capacity(1),
             hash: Bytes32ArrayBuilder::with_capacity(1),
@@ -199,6 +203,7 @@ impl BlockRowsBuilder {
         } = row;
 
         self.special_block_num.append_value(*block_num);
+        self.special_ts.append_value(*timestamp);
         self.block_num.append_value(*block_num);
         self.timestamp.append_value(*timestamp);
         self.hash.append_value(*hash);
@@ -231,6 +236,7 @@ impl BlockRowsBuilder {
     pub fn build(self, range: BlockRange) -> Result<TableRows, TableRowError> {
         let Self {
             mut special_block_num,
+            mut special_ts,
             mut block_num,
             mut timestamp,
             hash,
@@ -261,6 +267,7 @@ impl BlockRowsBuilder {
 
         let columns = vec![
             Arc::new(special_block_num.finish()) as ArrayRef,
+            Arc::new(special_ts.finish()),
             Arc::new(block_num.finish()),
             Arc::new(timestamp.finish()),
             Arc::new(hash.finish()),
@@ -309,7 +316,7 @@ fn default_to_arrow() {
             })
             .unwrap()
     };
-    // 23 inner header + 3 tempo-specific + _block_num = 27
-    assert_eq!(rows.rows.num_columns(), 27);
+    // 23 inner header + 3 tempo-specific + _block_num + _ts = 28
+    assert_eq!(rows.rows.num_columns(), 28);
     assert_eq!(rows.rows.num_rows(), 1);
 }

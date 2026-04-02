@@ -1,0 +1,1035 @@
+{
+  "kind": "tempo",
+  "network": "mainnet",
+  "start_block": 10839888,
+  "finalized_blocks_only": false,
+  "tables": {
+    "blocks": {
+      "schema": {
+        "arrow": {
+          "fields": [
+            {
+              "name": "_block_num",
+              "type": "UInt64",
+              "nullable": false
+            },
+            {
+              "name": "_ts",
+              "type": {
+                "Timestamp": [
+                  "Nanosecond",
+                  "+00:00"
+                ]
+              },
+              "nullable": false
+            },
+            {
+              "name": "block_num",
+              "type": "UInt64",
+              "nullable": false
+            },
+            {
+              "name": "timestamp",
+              "type": {
+                "Timestamp": [
+                  "Nanosecond",
+                  "+00:00"
+                ]
+              },
+              "nullable": false
+            },
+            {
+              "name": "hash",
+              "type": {
+                "FixedSizeBinary": 32
+              },
+              "nullable": false
+            },
+            {
+              "name": "parent_hash",
+              "type": {
+                "FixedSizeBinary": 32
+              },
+              "nullable": false
+            },
+            {
+              "name": "ommers_hash",
+              "type": {
+                "FixedSizeBinary": 32
+              },
+              "nullable": false
+            },
+            {
+              "name": "miner",
+              "type": {
+                "FixedSizeBinary": 20
+              },
+              "nullable": false
+            },
+            {
+              "name": "state_root",
+              "type": {
+                "FixedSizeBinary": 32
+              },
+              "nullable": false
+            },
+            {
+              "name": "transactions_root",
+              "type": {
+                "FixedSizeBinary": 32
+              },
+              "nullable": false
+            },
+            {
+              "name": "receipt_root",
+              "type": {
+                "FixedSizeBinary": 32
+              },
+              "nullable": false
+            },
+            {
+              "name": "logs_bloom",
+              "type": "Binary",
+              "nullable": false
+            },
+            {
+              "name": "difficulty",
+              "type": {
+                "Decimal128": [
+                  38,
+                  0
+                ]
+              },
+              "nullable": false
+            },
+            {
+              "name": "total_difficulty",
+              "type": {
+                "Decimal128": [
+                  38,
+                  0
+                ]
+              },
+              "nullable": true
+            },
+            {
+              "name": "gas_limit",
+              "type": "UInt64",
+              "nullable": false
+            },
+            {
+              "name": "gas_used",
+              "type": "UInt64",
+              "nullable": false
+            },
+            {
+              "name": "extra_data",
+              "type": "Binary",
+              "nullable": false
+            },
+            {
+              "name": "mix_hash",
+              "type": {
+                "FixedSizeBinary": 32
+              },
+              "nullable": false
+            },
+            {
+              "name": "nonce",
+              "type": "UInt64",
+              "nullable": false
+            },
+            {
+              "name": "base_fee_per_gas",
+              "type": {
+                "Decimal128": [
+                  38,
+                  0
+                ]
+              },
+              "nullable": true
+            },
+            {
+              "name": "withdrawals_root",
+              "type": {
+                "FixedSizeBinary": 32
+              },
+              "nullable": true
+            },
+            {
+              "name": "blob_gas_used",
+              "type": "UInt64",
+              "nullable": true
+            },
+            {
+              "name": "excess_blob_gas",
+              "type": "UInt64",
+              "nullable": true
+            },
+            {
+              "name": "parent_beacon_root",
+              "type": {
+                "FixedSizeBinary": 32
+              },
+              "nullable": true
+            },
+            {
+              "name": "requests_hash",
+              "type": {
+                "FixedSizeBinary": 32
+              },
+              "nullable": true
+            },
+            {
+              "name": "general_gas_limit",
+              "type": "UInt64",
+              "nullable": false
+            },
+            {
+              "name": "shared_gas_limit",
+              "type": "UInt64",
+              "nullable": false
+            },
+            {
+              "name": "timestamp_millis_part",
+              "type": "UInt64",
+              "nullable": false
+            }
+          ]
+        }
+      },
+      "network": "mainnet"
+    },
+    "logs": {
+      "schema": {
+        "arrow": {
+          "fields": [
+            {
+              "name": "_block_num",
+              "type": "UInt64",
+              "nullable": false
+            },
+            {
+              "name": "_ts",
+              "type": {
+                "Timestamp": [
+                  "Nanosecond",
+                  "+00:00"
+                ]
+              },
+              "nullable": false
+            },
+            {
+              "name": "block_hash",
+              "type": {
+                "FixedSizeBinary": 32
+              },
+              "nullable": false
+            },
+            {
+              "name": "block_num",
+              "type": "UInt64",
+              "nullable": false
+            },
+            {
+              "name": "timestamp",
+              "type": {
+                "Timestamp": [
+                  "Nanosecond",
+                  "+00:00"
+                ]
+              },
+              "nullable": false
+            },
+            {
+              "name": "tx_hash",
+              "type": {
+                "FixedSizeBinary": 32
+              },
+              "nullable": false
+            },
+            {
+              "name": "tx_index",
+              "type": "UInt32",
+              "nullable": false
+            },
+            {
+              "name": "log_index",
+              "type": "UInt32",
+              "nullable": false
+            },
+            {
+              "name": "address",
+              "type": {
+                "FixedSizeBinary": 20
+              },
+              "nullable": false
+            },
+            {
+              "name": "topic0",
+              "type": {
+                "FixedSizeBinary": 32
+              },
+              "nullable": true
+            },
+            {
+              "name": "topic1",
+              "type": {
+                "FixedSizeBinary": 32
+              },
+              "nullable": true
+            },
+            {
+              "name": "topic2",
+              "type": {
+                "FixedSizeBinary": 32
+              },
+              "nullable": true
+            },
+            {
+              "name": "topic3",
+              "type": {
+                "FixedSizeBinary": 32
+              },
+              "nullable": true
+            },
+            {
+              "name": "data",
+              "type": "Binary",
+              "nullable": false
+            }
+          ]
+        }
+      },
+      "network": "mainnet"
+    },
+    "transactions": {
+      "schema": {
+        "arrow": {
+          "fields": [
+            {
+              "name": "_block_num",
+              "type": "UInt64",
+              "nullable": false
+            },
+            {
+              "name": "_ts",
+              "type": {
+                "Timestamp": [
+                  "Nanosecond",
+                  "+00:00"
+                ]
+              },
+              "nullable": false
+            },
+            {
+              "name": "block_hash",
+              "type": {
+                "FixedSizeBinary": 32
+              },
+              "nullable": false
+            },
+            {
+              "name": "block_num",
+              "type": "UInt64",
+              "nullable": false
+            },
+            {
+              "name": "timestamp",
+              "type": {
+                "Timestamp": [
+                  "Nanosecond",
+                  "+00:00"
+                ]
+              },
+              "nullable": false
+            },
+            {
+              "name": "tx_index",
+              "type": "UInt32",
+              "nullable": false
+            },
+            {
+              "name": "tx_hash",
+              "type": {
+                "FixedSizeBinary": 32
+              },
+              "nullable": false
+            },
+            {
+              "name": "to",
+              "type": {
+                "FixedSizeBinary": 20
+              },
+              "nullable": true
+            },
+            {
+              "name": "from",
+              "type": {
+                "FixedSizeBinary": 20
+              },
+              "nullable": false
+            },
+            {
+              "name": "nonce",
+              "type": "UInt64",
+              "nullable": false
+            },
+            {
+              "name": "chain_id",
+              "type": "UInt64",
+              "nullable": true
+            },
+            {
+              "name": "gas_limit",
+              "type": "UInt64",
+              "nullable": false
+            },
+            {
+              "name": "gas_used",
+              "type": "UInt64",
+              "nullable": false
+            },
+            {
+              "name": "receipt_cumulative_gas_used",
+              "type": "UInt64",
+              "nullable": false
+            },
+            {
+              "name": "type",
+              "type": "Int32",
+              "nullable": false
+            },
+            {
+              "name": "max_fee_per_gas",
+              "type": {
+                "Decimal128": [
+                  38,
+                  0
+                ]
+              },
+              "nullable": false
+            },
+            {
+              "name": "max_priority_fee_per_gas",
+              "type": {
+                "Decimal128": [
+                  38,
+                  0
+                ]
+              },
+              "nullable": true
+            },
+            {
+              "name": "gas_price",
+              "type": {
+                "Decimal128": [
+                  38,
+                  0
+                ]
+              },
+              "nullable": true
+            },
+            {
+              "name": "status",
+              "type": "Boolean",
+              "nullable": false
+            },
+            {
+              "name": "state_root",
+              "type": {
+                "FixedSizeBinary": 32
+              },
+              "nullable": true
+            },
+            {
+              "name": "value",
+              "type": "Utf8",
+              "nullable": true
+            },
+            {
+              "name": "input",
+              "type": "Binary",
+              "nullable": true
+            },
+            {
+              "name": "r",
+              "type": {
+                "FixedSizeBinary": 32
+              },
+              "nullable": true
+            },
+            {
+              "name": "s",
+              "type": {
+                "FixedSizeBinary": 32
+              },
+              "nullable": true
+            },
+            {
+              "name": "v_parity",
+              "type": "Boolean",
+              "nullable": true
+            },
+            {
+              "name": "signature",
+              "type": {
+                "Struct": [
+                  {
+                    "name": "type",
+                    "data_type": "Utf8",
+                    "nullable": false,
+                    "dict_id": 0,
+                    "dict_is_ordered": false,
+                    "metadata": {}
+                  },
+                  {
+                    "name": "r",
+                    "data_type": {
+                      "FixedSizeBinary": 32
+                    },
+                    "nullable": false,
+                    "dict_id": 0,
+                    "dict_is_ordered": false,
+                    "metadata": {}
+                  },
+                  {
+                    "name": "s",
+                    "data_type": {
+                      "FixedSizeBinary": 32
+                    },
+                    "nullable": false,
+                    "dict_id": 0,
+                    "dict_is_ordered": false,
+                    "metadata": {}
+                  },
+                  {
+                    "name": "y_parity",
+                    "data_type": "Boolean",
+                    "nullable": true,
+                    "dict_id": 0,
+                    "dict_is_ordered": false,
+                    "metadata": {}
+                  },
+                  {
+                    "name": "pub_key_x",
+                    "data_type": {
+                      "FixedSizeBinary": 32
+                    },
+                    "nullable": true,
+                    "dict_id": 0,
+                    "dict_is_ordered": false,
+                    "metadata": {}
+                  },
+                  {
+                    "name": "pub_key_y",
+                    "data_type": {
+                      "FixedSizeBinary": 32
+                    },
+                    "nullable": true,
+                    "dict_id": 0,
+                    "dict_is_ordered": false,
+                    "metadata": {}
+                  },
+                  {
+                    "name": "pre_hash",
+                    "data_type": "Boolean",
+                    "nullable": true,
+                    "dict_id": 0,
+                    "dict_is_ordered": false,
+                    "metadata": {}
+                  },
+                  {
+                    "name": "webauthn_data",
+                    "data_type": "Binary",
+                    "nullable": true,
+                    "dict_id": 0,
+                    "dict_is_ordered": false,
+                    "metadata": {}
+                  },
+                  {
+                    "name": "key_id",
+                    "data_type": {
+                      "FixedSizeBinary": 20
+                    },
+                    "nullable": true,
+                    "dict_id": 0,
+                    "dict_is_ordered": false,
+                    "metadata": {}
+                  }
+                ]
+              },
+              "nullable": true
+            },
+            {
+              "name": "fee_token",
+              "type": {
+                "FixedSizeBinary": 20
+              },
+              "nullable": true
+            },
+            {
+              "name": "fee_payer",
+              "type": {
+                "FixedSizeBinary": 20
+              },
+              "nullable": true
+            },
+            {
+              "name": "nonce_key",
+              "type": {
+                "FixedSizeBinary": 32
+              },
+              "nullable": true
+            },
+            {
+              "name": "calls",
+              "type": {
+                "List": {
+                  "name": "element",
+                  "data_type": {
+                    "Struct": [
+                      {
+                        "name": "to",
+                        "data_type": {
+                          "FixedSizeBinary": 20
+                        },
+                        "nullable": true,
+                        "dict_id": 0,
+                        "dict_is_ordered": false,
+                        "metadata": {}
+                      },
+                      {
+                        "name": "value",
+                        "data_type": "Utf8",
+                        "nullable": false,
+                        "dict_id": 0,
+                        "dict_is_ordered": false,
+                        "metadata": {}
+                      },
+                      {
+                        "name": "input",
+                        "data_type": "Binary",
+                        "nullable": false,
+                        "dict_id": 0,
+                        "dict_is_ordered": false,
+                        "metadata": {}
+                      }
+                    ]
+                  },
+                  "nullable": false,
+                  "dict_id": 0,
+                  "dict_is_ordered": false,
+                  "metadata": {}
+                }
+              },
+              "nullable": true
+            },
+            {
+              "name": "fee_payer_signature",
+              "type": {
+                "Struct": [
+                  {
+                    "name": "r",
+                    "data_type": {
+                      "FixedSizeBinary": 32
+                    },
+                    "nullable": false,
+                    "dict_id": 0,
+                    "dict_is_ordered": false,
+                    "metadata": {}
+                  },
+                  {
+                    "name": "s",
+                    "data_type": {
+                      "FixedSizeBinary": 32
+                    },
+                    "nullable": false,
+                    "dict_id": 0,
+                    "dict_is_ordered": false,
+                    "metadata": {}
+                  },
+                  {
+                    "name": "y_parity",
+                    "data_type": "Boolean",
+                    "nullable": false,
+                    "dict_id": 0,
+                    "dict_is_ordered": false,
+                    "metadata": {}
+                  }
+                ]
+              },
+              "nullable": true
+            },
+            {
+              "name": "key_authorization",
+              "type": {
+                "Struct": [
+                  {
+                    "name": "chain_id",
+                    "data_type": "UInt64",
+                    "nullable": false,
+                    "dict_id": 0,
+                    "dict_is_ordered": false,
+                    "metadata": {}
+                  },
+                  {
+                    "name": "key_type",
+                    "data_type": "Utf8",
+                    "nullable": false,
+                    "dict_id": 0,
+                    "dict_is_ordered": false,
+                    "metadata": {}
+                  },
+                  {
+                    "name": "key_id",
+                    "data_type": {
+                      "FixedSizeBinary": 20
+                    },
+                    "nullable": false,
+                    "dict_id": 0,
+                    "dict_is_ordered": false,
+                    "metadata": {}
+                  },
+                  {
+                    "name": "expiry",
+                    "data_type": "UInt64",
+                    "nullable": true,
+                    "dict_id": 0,
+                    "dict_is_ordered": false,
+                    "metadata": {}
+                  },
+                  {
+                    "name": "limits",
+                    "data_type": {
+                      "List": {
+                        "name": "element",
+                        "data_type": {
+                          "Struct": [
+                            {
+                              "name": "token",
+                              "data_type": {
+                                "FixedSizeBinary": 20
+                              },
+                              "nullable": false,
+                              "dict_id": 0,
+                              "dict_is_ordered": false,
+                              "metadata": {}
+                            },
+                            {
+                              "name": "limit",
+                              "data_type": "Utf8",
+                              "nullable": false,
+                              "dict_id": 0,
+                              "dict_is_ordered": false,
+                              "metadata": {}
+                            }
+                          ]
+                        },
+                        "nullable": false,
+                        "dict_id": 0,
+                        "dict_is_ordered": false,
+                        "metadata": {}
+                      }
+                    },
+                    "nullable": true,
+                    "dict_id": 0,
+                    "dict_is_ordered": false,
+                    "metadata": {}
+                  },
+                  {
+                    "name": "signature",
+                    "data_type": {
+                      "Struct": [
+                        {
+                          "name": "type",
+                          "data_type": "Utf8",
+                          "nullable": false,
+                          "dict_id": 0,
+                          "dict_is_ordered": false,
+                          "metadata": {}
+                        },
+                        {
+                          "name": "r",
+                          "data_type": {
+                            "FixedSizeBinary": 32
+                          },
+                          "nullable": false,
+                          "dict_id": 0,
+                          "dict_is_ordered": false,
+                          "metadata": {}
+                        },
+                        {
+                          "name": "s",
+                          "data_type": {
+                            "FixedSizeBinary": 32
+                          },
+                          "nullable": false,
+                          "dict_id": 0,
+                          "dict_is_ordered": false,
+                          "metadata": {}
+                        },
+                        {
+                          "name": "y_parity",
+                          "data_type": "Boolean",
+                          "nullable": true,
+                          "dict_id": 0,
+                          "dict_is_ordered": false,
+                          "metadata": {}
+                        },
+                        {
+                          "name": "pub_key_x",
+                          "data_type": {
+                            "FixedSizeBinary": 32
+                          },
+                          "nullable": true,
+                          "dict_id": 0,
+                          "dict_is_ordered": false,
+                          "metadata": {}
+                        },
+                        {
+                          "name": "pub_key_y",
+                          "data_type": {
+                            "FixedSizeBinary": 32
+                          },
+                          "nullable": true,
+                          "dict_id": 0,
+                          "dict_is_ordered": false,
+                          "metadata": {}
+                        },
+                        {
+                          "name": "pre_hash",
+                          "data_type": "Boolean",
+                          "nullable": true,
+                          "dict_id": 0,
+                          "dict_is_ordered": false,
+                          "metadata": {}
+                        },
+                        {
+                          "name": "webauthn_data",
+                          "data_type": "Binary",
+                          "nullable": true,
+                          "dict_id": 0,
+                          "dict_is_ordered": false,
+                          "metadata": {}
+                        },
+                        {
+                          "name": "key_id",
+                          "data_type": {
+                            "FixedSizeBinary": 20
+                          },
+                          "nullable": true,
+                          "dict_id": 0,
+                          "dict_is_ordered": false,
+                          "metadata": {}
+                        }
+                      ]
+                    },
+                    "nullable": false,
+                    "dict_id": 0,
+                    "dict_is_ordered": false,
+                    "metadata": {}
+                  }
+                ]
+              },
+              "nullable": true
+            },
+            {
+              "name": "aa_authorization_list",
+              "type": {
+                "List": {
+                  "name": "element",
+                  "data_type": {
+                    "Struct": [
+                      {
+                        "name": "chain_id",
+                        "data_type": "UInt64",
+                        "nullable": false,
+                        "dict_id": 0,
+                        "dict_is_ordered": false,
+                        "metadata": {}
+                      },
+                      {
+                        "name": "address",
+                        "data_type": {
+                          "FixedSizeBinary": 20
+                        },
+                        "nullable": false,
+                        "dict_id": 0,
+                        "dict_is_ordered": false,
+                        "metadata": {}
+                      },
+                      {
+                        "name": "nonce",
+                        "data_type": "UInt64",
+                        "nullable": false,
+                        "dict_id": 0,
+                        "dict_is_ordered": false,
+                        "metadata": {}
+                      },
+                      {
+                        "name": "signature",
+                        "data_type": {
+                          "Struct": [
+                            {
+                              "name": "type",
+                              "data_type": "Utf8",
+                              "nullable": false,
+                              "dict_id": 0,
+                              "dict_is_ordered": false,
+                              "metadata": {}
+                            },
+                            {
+                              "name": "r",
+                              "data_type": {
+                                "FixedSizeBinary": 32
+                              },
+                              "nullable": false,
+                              "dict_id": 0,
+                              "dict_is_ordered": false,
+                              "metadata": {}
+                            },
+                            {
+                              "name": "s",
+                              "data_type": {
+                                "FixedSizeBinary": 32
+                              },
+                              "nullable": false,
+                              "dict_id": 0,
+                              "dict_is_ordered": false,
+                              "metadata": {}
+                            },
+                            {
+                              "name": "y_parity",
+                              "data_type": "Boolean",
+                              "nullable": true,
+                              "dict_id": 0,
+                              "dict_is_ordered": false,
+                              "metadata": {}
+                            },
+                            {
+                              "name": "pub_key_x",
+                              "data_type": {
+                                "FixedSizeBinary": 32
+                              },
+                              "nullable": true,
+                              "dict_id": 0,
+                              "dict_is_ordered": false,
+                              "metadata": {}
+                            },
+                            {
+                              "name": "pub_key_y",
+                              "data_type": {
+                                "FixedSizeBinary": 32
+                              },
+                              "nullable": true,
+                              "dict_id": 0,
+                              "dict_is_ordered": false,
+                              "metadata": {}
+                            },
+                            {
+                              "name": "pre_hash",
+                              "data_type": "Boolean",
+                              "nullable": true,
+                              "dict_id": 0,
+                              "dict_is_ordered": false,
+                              "metadata": {}
+                            },
+                            {
+                              "name": "webauthn_data",
+                              "data_type": "Binary",
+                              "nullable": true,
+                              "dict_id": 0,
+                              "dict_is_ordered": false,
+                              "metadata": {}
+                            },
+                            {
+                              "name": "key_id",
+                              "data_type": {
+                                "FixedSizeBinary": 20
+                              },
+                              "nullable": true,
+                              "dict_id": 0,
+                              "dict_is_ordered": false,
+                              "metadata": {}
+                            }
+                          ]
+                        },
+                        "nullable": false,
+                        "dict_id": 0,
+                        "dict_is_ordered": false,
+                        "metadata": {}
+                      }
+                    ]
+                  },
+                  "nullable": false,
+                  "dict_id": 0,
+                  "dict_is_ordered": false,
+                  "metadata": {}
+                }
+              },
+              "nullable": true
+            },
+            {
+              "name": "valid_before",
+              "type": "UInt64",
+              "nullable": true
+            },
+            {
+              "name": "valid_after",
+              "type": "UInt64",
+              "nullable": true
+            },
+            {
+              "name": "access_list",
+              "type": {
+                "List": {
+                  "name": "element",
+                  "data_type": {
+                    "Struct": [
+                      {
+                        "name": "address",
+                        "data_type": {
+                          "FixedSizeBinary": 20
+                        },
+                        "nullable": false,
+                        "dict_id": 0,
+                        "dict_is_ordered": false,
+                        "metadata": {}
+                      },
+                      {
+                        "name": "storage_keys",
+                        "data_type": {
+                          "List": {
+                            "name": "element",
+                            "data_type": {
+                              "FixedSizeBinary": 32
+                            },
+                            "nullable": false,
+                            "dict_id": 0,
+                            "dict_is_ordered": false,
+                            "metadata": {}
+                          }
+                        },
+                        "nullable": false,
+                        "dict_id": 0,
+                        "dict_is_ordered": false,
+                        "metadata": {}
+                      }
+                    ]
+                  },
+                  "nullable": false,
+                  "dict_id": 0,
+                  "dict_is_ordered": false,
+                  "metadata": {}
+                }
+              },
+              "nullable": true
+            }
+          ]
+        }
+      },
+      "network": "mainnet"
+    }
+  }
+}

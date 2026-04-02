@@ -3,7 +3,7 @@ use datafusion::{common::DFSchemaRef, error::DataFusionError, logical_expr::Logi
 use crate::{
     context::exec::ExecContext,
     incrementalizer::NonIncrementalQueryError,
-    plan_visitors::{is_incremental, propagate_block_num},
+    plan_visitors::{WatermarkColumn, is_incremental, propagate_watermark_columns},
 };
 
 /// A plan that has `PlanTable` for its `TableProvider`s. It cannot be executed before being
@@ -27,9 +27,12 @@ impl DetachedLogicalPlan {
         self.0.schema().clone()
     }
 
-    /// Rewrites the plan to propagate `_block_num` through all nodes.
-    pub fn propagate_block_num(self) -> Result<Self, DataFusionError> {
-        Ok(Self(propagate_block_num(self.0)?))
+    /// Rewrites the plan to propagate the given watermark columns through all nodes.
+    pub fn propagate_watermark_columns(
+        self,
+        columns: &[WatermarkColumn],
+    ) -> Result<Self, DataFusionError> {
+        Ok(Self(propagate_watermark_columns(self.0, columns)?))
     }
 
     /// Attaches this plan to a query context, replacing `PlanTable` table

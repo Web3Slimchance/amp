@@ -10,6 +10,7 @@ use datasets_common::{
     dataset_kind_str::DatasetKindStr,
     hash_reference::HashReference,
     table_name::TableName,
+    watermark_columns::RESERVED_TS_COLUMN_NAME,
 };
 
 use crate::{
@@ -177,6 +178,7 @@ impl Table {
     pub fn new(name: TableName, schema: SchemaRef, sorted_by: Vec<String>) -> Self {
         let mut sorted_by: BTreeSet<String> = sorted_by.into_iter().collect();
         sorted_by.insert(RESERVED_BLOCK_NUM_COLUMN_NAME.to_string());
+        sorted_by.insert(RESERVED_TS_COLUMN_NAME.to_string());
         Self {
             name,
             schema,

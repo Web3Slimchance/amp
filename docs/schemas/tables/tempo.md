@@ -7,6 +7,7 @@ Auto-generated file. See `to_markdown` in `crates/core/datasets-raw/src/schema.r
 | column_name           | data_type                     | is_nullable |
 +-----------------------+-------------------------------+-------------+
 | _block_num            | UInt64                        | NO          |
+| _ts                   | Timestamp(Nanosecond, +00:00) | NO          |
 | block_num             | UInt64                        | NO          |
 | timestamp             | Timestamp(Nanosecond, +00:00) | NO          |
 | hash                  | FixedSizeBinary(32)           | NO          |
@@ -41,6 +42,7 @@ Auto-generated file. See `to_markdown` in `crates/core/datasets-raw/src/schema.r
 | column_name                 | data_type                                                                                                                                                                                                                                                                                                                                                                                     | is_nullable |
 +-----------------------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-------------+
 | _block_num                  | UInt64                                                                                                                                                                                                                                                                                                                                                                                        | NO          |
+| _ts                         | Timestamp(Nanosecond, +00:00)                                                                                                                                                                                                                                                                                                                                                                 | NO          |
 | block_hash                  | FixedSizeBinary(32)                                                                                                                                                                                                                                                                                                                                                                           | NO          |
 | block_num                   | UInt64                                                                                                                                                                                                                                                                                                                                                                                        | NO          |
 | timestamp                   | Timestamp(Nanosecond, +00:00)                                                                                                                                                                                                                                                                                                                                                                 | NO          |
@@ -83,6 +85,7 @@ Auto-generated file. See `to_markdown` in `crates/core/datasets-raw/src/schema.r
 | column_name | data_type                     | is_nullable |
 +-------------+-------------------------------+-------------+
 | _block_num  | UInt64                        | NO          |
+| _ts         | Timestamp(Nanosecond, +00:00) | NO          |
 | block_hash  | FixedSizeBinary(32)           | NO          |
 | block_num   | UInt64                        | NO          |
 | timestamp   | Timestamp(Nanosecond, +00:00) | NO          |

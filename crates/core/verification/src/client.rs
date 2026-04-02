@@ -452,6 +452,7 @@ pub async fn fetch_blocks(
 
     while let Some(batch) = logs_response_stream.next().await {
         let batch = batch.context("decode log record batch")?;
+        let batch = drop_ts_column(&batch);
 
         for view in batch.iter_views::<LogRecordView>()? {
             let view: LogRecordView = view?.try_into()?;
@@ -490,6 +491,7 @@ pub async fn fetch_blocks(
 
     while let Some(batch) = tx_response_stream.next().await {
         let batch = batch.context("decode transaction record batch")?;
+        let batch = drop_ts_column(&batch);
 
         for view in batch.iter_views::<TransactionRecordView>()? {
             let view: TransactionRecordView = view?.try_into()?;
@@ -587,6 +589,7 @@ pub async fn fetch_blocks(
 
     while let Some(batch) = block_response_stream.next().await {
         let batch = batch.context("decode block record batch")?;
+        let batch = drop_ts_column(&batch);
 
         for view in batch.iter_views::<BlockRecordView>()? {
             let view: BlockRecordView = view?.try_into()?;
@@ -648,6 +651,22 @@ pub async fn fetch_blocks(
     Ok(block_data)
 }
 
+/// Drop the `_ts` column from a RecordBatch if present, so that verification
+/// view structs (which predate `_ts`) can parse both old and new data.
+fn drop_ts_column(batch: &RecordBatch) -> RecordBatch {
+    let schema = batch.schema();
+    match schema.index_of("_ts") {
+        Ok(idx) => batch
+            .project(
+                &(0..schema.fields().len())
+                    .filter(|i| *i != idx)
+                    .collect::<Vec<_>>(),
+            )
+            .expect("projection of existing columns should not fail"),
+        Err(_) => batch.clone(),
+    }
+}
+
 /// Convert Arrow RecordBatches (block, transactions, logs) to a verification Block.
 ///
 /// This is used for inline verification during extraction, where data is already
@@ -668,6 +687,7 @@ pub fn block_from_record_batches(
     logs_batch: &RecordBatch,
 ) -> Result<Block, ConversionError> {
     // Parse logs
+    let logs_batch = drop_ts_column(logs_batch);
     let mut logs = Vec::new();
     for view in logs_batch
         .iter_views::<LogRecordView>()
@@ -701,6 +721,7 @@ pub fn block_from_record_batches(
     logs.sort_unstable_by_key(|log| (log.tx_index, log.log_index));
 
     // Parse transactions
+    let transactions_batch = drop_ts_column(transactions_batch);
     let mut transactions = Vec::new();
     for view in transactions_batch
         .iter_views::<TransactionRecordView>()
@@ -797,6 +818,7 @@ pub fn block_from_record_batches(
         ));
     }
 
+    let block_batch = drop_ts_column(block_batch);
     let mut block_iter = block_batch
         .iter_views::<BlockRecordView>()
         .map_err(|e| ConversionError::SchemaMismatch(Box::new(e)))?;

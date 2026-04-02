@@ -2,12 +2,13 @@
 
 use arrow::{
     array::{ArrayRef, AsArray as _, RecordBatch},
-    datatypes::{Schema, UInt64Type},
+    datatypes::{DataType, Schema, TimeUnit, UInt64Type},
 };
 use datasets_common::{
     block_num::{BlockNum, RESERVED_BLOCK_NUM_COLUMN_NAME},
     block_range::BlockRange,
     dataset::Table as _,
+    watermark_columns::RESERVED_TS_COLUMN_NAME,
 };
 
 use crate::dataset::Table;
@@ -154,6 +155,16 @@ impl TableRows {
             return Err(CheckInvariantsError::UnexpectedBlockNum(end));
         };
 
+        // Validate _ts column has the correct type, if present.
+        if let Some(ts_col) = rows.column_by_name(RESERVED_TS_COLUMN_NAME)
+            && !matches!(
+                ts_col.data_type(),
+                DataType::Timestamp(TimeUnit::Nanosecond, Some(tz)) if tz.as_ref() == "+00:00"
+            )
+        {
+            return Err(CheckInvariantsError::InvalidTsColumnType);
+        }
+
         Ok(())
     }
 }
@@ -191,6 +202,10 @@ pub enum CheckInvariantsError {
     /// The `_block_num` column must be UInt64 to properly represent blockchain block numbers.
     #[error("_block_num column is not uint64")]
     InvalidBlockNumColumnType,
+
+    /// The `_ts` column has incorrect data type
+    #[error("_ts column is not Timestamp(Nanosecond, UTC)")]
+    InvalidTsColumnType,
 
     /// Row contains block number that doesn't match the expected range
     ///

@@ -32,6 +32,7 @@ arrow-flight.workspace = true
 async-stream.workspace = true
 async-trait.workspace = true
 backon.workspace = true
+chrono.workspace = true
 clap.workspace = true
 color-backtrace = { version = "0.7.1", default-features = false, features = [
     "use-btparse-crate",

@@ -5,32 +5,112 @@ use std::{
 };
 
 use datafusion::{
+    arrow::datatypes::{DataType, SchemaRef, TimeUnit},
     common::{
-        Column, JoinType, plan_err,
+        Column, JoinType, ScalarValue, plan_err,
         tree_node::{Transformed, TreeNode as _, TreeNodeRecursion, TreeNodeRewriter},
     },
     error::DataFusionError,
     functions::core::expr_fn::greatest,
+    functions_aggregate::first_last::first_value,
     logical_expr::{
-        Join as JoinStruct, LogicalPlan, LogicalPlanBuilder, Sort,
+        Aggregate as AggregateStruct, Join as JoinStruct, LogicalPlan, LogicalPlanBuilder, Sort,
         SubqueryAlias as SubqueryAliasStruct, Union as UnionStruct,
     },
     physical_plan::ExecutionPlan,
     prelude::{Expr, col, lit},
     sql::{TableReference, utils::UNNEST_PLACEHOLDER},
 };
-use datasets_common::{block_num::RESERVED_BLOCK_NUM_COLUMN_NAME, network_id::NetworkId};
+use datasets_common::{
+    block_num::RESERVED_BLOCK_NUM_COLUMN_NAME, network_id::NetworkId,
+    watermark_columns::RESERVED_TS_COLUMN_NAME,
+};
 
 use crate::{
     incrementalizer::{
         BlockNumForm, IncrementalOpKind, NonIncrementalQueryError, incremental_op_kind,
     },
-    udfs::block_num::{BLOCK_NUM_UDF_SCHEMA_NAME, is_block_num_udf},
+    udfs::{
+        block_num::{BLOCK_NUM_UDF_SCHEMA_NAME, is_block_num_udf},
+        ts::{TS_UDF_SCHEMA_NAME, is_ts_udf},
+    },
 };
 
-/// Helper function to create a column reference to `_block_num`
-fn block_num_col() -> Expr {
-    col(RESERVED_BLOCK_NUM_COLUMN_NAME)
+// ── Watermark column definition ──────────────────────────────────────────
+
+/// A watermark column that gets propagated through the query plan.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum WatermarkColumn {
+    BlockNum,
+    Ts,
+}
+
+impl WatermarkColumn {
+    /// All watermark column variants.
+    pub const ALL: &[Self] = &[Self::BlockNum, Self::Ts];
+
+    /// Returns the watermark columns present in every one of the given schemas.
+    pub fn supported_by_all(source_schemas: impl IntoIterator<Item = SchemaRef>) -> Vec<Self> {
+        let schemas: Vec<_> = source_schemas.into_iter().collect();
+        Self::ALL
+            .iter()
+            .filter(|wm| {
+                let name = wm.column_name();
+                schemas
+                    .iter()
+                    .all(|s| s.fields().iter().any(|f| f.name() == name))
+            })
+            .copied()
+            .collect()
+    }
+
+    /// Reserved column name, e.g. `"_block_num"` or `"_ts"`.
+    pub fn column_name(&self) -> &'static str {
+        match self {
+            Self::BlockNum => RESERVED_BLOCK_NUM_COLUMN_NAME,
+            Self::Ts => RESERVED_TS_COLUMN_NAME,
+        }
+    }
+
+    /// Arrow data type of the column.
+    fn data_type(&self) -> DataType {
+        match self {
+            Self::BlockNum => DataType::UInt64,
+            Self::Ts => DataType::Timestamp(TimeUnit::Nanosecond, Some("+00:00".into())),
+        }
+    }
+
+    /// Default literal for `EmptyRelation` / `Values` nodes.
+    fn default_literal(&self) -> Expr {
+        match self {
+            Self::BlockNum => lit(0u64),
+            Self::Ts => lit(ScalarValue::TimestampNanosecond(
+                Some(0),
+                Some("+00:00".into()),
+            )),
+        }
+    }
+
+    /// The schema name DataFusion assigns to a bare UDF call, e.g. `"block_num()"`.
+    fn udf_schema_name(&self) -> &'static str {
+        match self {
+            Self::BlockNum => BLOCK_NUM_UDF_SCHEMA_NAME,
+            Self::Ts => TS_UDF_SCHEMA_NAME,
+        }
+    }
+
+    /// Construct an Arrow [`Field`](datafusion::arrow::datatypes::Field) for this column.
+    fn field(&self) -> datafusion::arrow::datatypes::Field {
+        datafusion::arrow::datatypes::Field::new(self.column_name(), self.data_type(), false)
+    }
+
+    /// Returns `true` if `expr` is the sentinel UDF for this watermark column.
+    fn is_udf(&self, expr: &Expr) -> bool {
+        match self {
+            Self::BlockNum => is_block_num_udf(expr),
+            Self::Ts => is_ts_udf(expr),
+        }
+    }
 }
 
 /// Aliases with a name starting with `_` are always forbidden, since underscore-prefixed
@@ -96,102 +176,91 @@ pub fn forbid_duplicate_field_names(
     Ok(())
 }
 
-/// The expression `greatest(left._block_num, right._block_num)`
-fn block_num_for_join(join: &JoinStruct) -> Result<Expr, DataFusionError> {
-    // Get the schema field names from left and right inputs
+/// Computes `greatest(left.<column>, right.<column>)` for a join.
+fn greatest_col_for_join(join: &JoinStruct, column_name: &str) -> Result<Expr, DataFusionError> {
     let left_schema = join.left.schema();
     let right_schema = join.right.schema();
 
-    // Find the qualified _block_num columns from each side
-    let left_block_num = left_schema
+    let left_col = left_schema
         .iter()
-        .find(|(_, field)| field.name() == RESERVED_BLOCK_NUM_COLUMN_NAME)
-        .map(|(qualifier, _)| {
-            col(Column::new(
-                qualifier.cloned(),
-                RESERVED_BLOCK_NUM_COLUMN_NAME,
-            ))
-        })
-        .ok_or_else(|| {
-            df_err(format!(
-                "Left side of join missing {RESERVED_BLOCK_NUM_COLUMN_NAME}"
-            ))
-        })?;
+        .find(|(_, field)| field.name() == column_name)
+        .map(|(qualifier, _)| col(Column::new(qualifier.cloned(), column_name)))
+        .ok_or_else(|| df_err(format!("Left side of join missing {column_name}")))?;
 
-    let right_block_num = right_schema
+    let right_col = right_schema
         .iter()
-        .find(|(_, field)| field.name() == RESERVED_BLOCK_NUM_COLUMN_NAME)
-        .map(|(qualifier, _)| {
-            col(Column::new(
-                qualifier.cloned(),
-                RESERVED_BLOCK_NUM_COLUMN_NAME,
-            ))
-        })
-        .ok_or_else(|| {
-            df_err(format!(
-                "Right side of join missing {RESERVED_BLOCK_NUM_COLUMN_NAME}"
-            ))
-        })?;
+        .find(|(_, field)| field.name() == column_name)
+        .map(|(qualifier, _)| col(Column::new(qualifier.cloned(), column_name)))
+        .ok_or_else(|| df_err(format!("Right side of join missing {column_name}")))?;
 
-    Ok(greatest(vec![left_block_num, right_block_num]))
+    Ok(greatest(vec![left_col, right_col]))
 }
 
-/// Rewriter that propagates the `RESERVED_BLOCK_NUM_COLUMN_NAME` column through the logical plan.
-struct BlockNumPropagator {
-    // State variable of the transformation.
-    // This is the block num value being bubbled up to be applied in the next projection as:
-    // `<block_num_expr> as _block_num`
-    next_block_num_expr: Option<Expr>,
+// ── Watermark column propagator ──────────────────────────────────────────
+
+/// Rewriter that propagates a single watermark column through the logical plan.
+///
+/// Parameterized by [`WatermarkColumn`] so the same logic handles both
+/// `_block_num` and `_ts` without duplication.
+struct WatermarkColumnPropagator {
+    column: WatermarkColumn,
+    /// The expression being bubbled up to be applied in the next projection as:
+    /// `<expr> as <column_name>`.
+    next_expr: Option<Expr>,
 }
 
-impl BlockNumPropagator {
-    fn new() -> Self {
+impl WatermarkColumnPropagator {
+    fn new(column: WatermarkColumn) -> Self {
         Self {
-            next_block_num_expr: None,
+            column,
+            next_expr: None,
         }
+    }
+
+    fn col(&self) -> Expr {
+        col(self.column.column_name())
     }
 }
 
-impl TreeNodeRewriter for BlockNumPropagator {
+impl TreeNodeRewriter for WatermarkColumnPropagator {
     type Node = LogicalPlan;
 
     fn f_up(&mut self, node: Self::Node) -> Result<Transformed<Self::Node>, DataFusionError> {
         use LogicalPlan::*;
 
-        // Step 1: Replace block_num() UDF in all expressions of this node using
-        // the currently accumulated _block_num expression.
+        let column_name = self.column.column_name();
+        let is_udf = |e: &Expr| self.column.is_udf(e);
+
+        // Step 1: Replace the sentinel UDF in all expressions of this node using
+        // the currently accumulated expression.
         //
-        // Unwrap: `next_block_num_expr` is only `None` at initialization; any
-        // leaf node (TableScan, EmptyRelation, Values) unconditionally sets it.
-        // The unwrap_or fallback is only reached for the leaf nodes themselves,
-        // where block_num() cannot appear, so the replacement is always a no-op.
-        let block_num_expr = {
-            let raw = self
-                .next_block_num_expr
-                .clone()
-                .unwrap_or_else(block_num_col);
-            if raw != block_num_col() {
-                raw.alias(RESERVED_BLOCK_NUM_COLUMN_NAME)
+        // `next_expr` is `None` at initialization, leaf nodes set it unconditionally.
+        // The unwrap_or fallback is only reached for leaf nodes themselves (where
+        // the UDF cannot appear, so replacement is a no-op) and post-Aggregate
+        // nodes where we skip propagation.
+        let col_expr = {
+            let raw = self.next_expr.clone().unwrap_or_else(|| self.col());
+            if raw != self.col() {
+                raw.alias(column_name)
             } else {
                 raw
             }
         };
-        // Step 1 replaces block_num() UDF in expressions.
-        //
         // Output-column positions (Projection.expr, DistinctOn.select_expr) use
-        // `replace_udf_select`: when block_num() IS the entire expression it gets
-        // aliased as BLOCK_NUM_UDF_SCHEMA_NAME (preserving the user's output column
-        // name); when block_num() is nested inside a larger expression (e.g.
-        // `block_num() + 1`) the alias would be swallowed by the outer expression
-        // anyway, so the plain unaliased replacement is used there.
+        // `replace_udf_select`: when the UDF IS the entire expression it gets
+        // aliased as udf_schema_name (preserving the user's output column
+        // name); when the UDF is nested inside a larger expression the alias
+        // would be swallowed by the outer expression anyway, so the plain
+        // unaliased replacement is used there.
         //
-        // All other positions (sort keys, Aggregate group keys, Filter …) always use
-        // the unaliased replacement via `replace_udf`.
+        // All other positions (sort keys, Aggregate group keys, Filter …) always
+        // use the unaliased replacement via `replace_udf`.
         use datafusion::logical_expr::Distinct as DistinctKind;
-        let select_replacement = block_num_expr.clone().alias(BLOCK_NUM_UDF_SCHEMA_NAME);
+        let udf_schema_name = self.column.udf_schema_name();
+        let select_replacement = col_expr.clone().alias(udf_schema_name);
         let replace_udf = |e: Expr, repl: &Expr| {
             e.transform(|e| {
-                if is_block_num_udf(&e) {
+                if is_udf(&e) {
                     Ok(Transformed::yes(repl.clone()))
                 } else {
                     Ok(Transformed::no(e))
@@ -199,10 +268,10 @@ impl TreeNodeRewriter for BlockNumPropagator {
             })
         };
         let replace_udf_select = |e: Expr| -> Result<Transformed<Expr>, DataFusionError> {
-            if is_block_num_udf(&e) {
+            if is_udf(&e) {
                 Ok(Transformed::yes(select_replacement.clone()))
             } else {
-                replace_udf(e, &block_num_expr)
+                replace_udf(e, &col_expr)
             }
         };
         let (was_replaced, node) = match node {
@@ -211,7 +280,7 @@ impl TreeNodeRewriter for BlockNumPropagator {
                 // select_expr is named output — top-level-aware alias.
                 let mut changed = false;
                 for e in std::mem::take(&mut on.on_expr) {
-                    let t = replace_udf(e, &block_num_expr)?;
+                    let t = replace_udf(e, &col_expr)?;
                     changed |= t.transformed;
                     on.on_expr.push(t.data);
                 }
@@ -223,7 +292,7 @@ impl TreeNodeRewriter for BlockNumPropagator {
                 if let Some(sort_exprs) = on.sort_expr.take() {
                     let mut new_sort = Vec::with_capacity(sort_exprs.len());
                     for mut s in sort_exprs {
-                        let t = replace_udf(s.expr, &block_num_expr)?;
+                        let t = replace_udf(s.expr, &col_expr)?;
                         changed |= t.transformed;
                         s.expr = t.data;
                         new_sort.push(s);
@@ -243,7 +312,7 @@ impl TreeNodeRewriter for BlockNumPropagator {
                     if is_projection {
                         replace_udf_select(e)
                     } else {
-                        replace_udf(e, &block_num_expr)
+                        replace_udf(e, &col_expr)
                     }
                 })?;
                 let was = r.transformed;
@@ -256,13 +325,13 @@ impl TreeNodeRewriter for BlockNumPropagator {
             }
         };
 
-        // Step 2: Handle actual propagation of _block_num value.
+        // Step 2: Handle actual propagation of the watermark column value.
         match node {
             Projection(mut projection) => {
-                // Over a join, each input table contributes its own `_block_num`; a bare
+                // Over a join, each input table contributes its own watermark column; a bare
                 // column reference (e.g. from `SELECT *` or `SELECT t.*`) picks one
-                // arbitrarily.  Users must write `block_num()` instead so the propagator
-                // can replace it with `greatest(left._block_num, right._block_num)`.
+                // arbitrarily.  Users must write the UDF function instead so the propagator
+                // can replace it with `greatest(left.<col>, right.<col>)`.
                 //
                 // This check gives this case a nicer error message.
                 let input_qualifiers: BTreeSet<&TableReference> = projection
@@ -273,32 +342,33 @@ impl TreeNodeRewriter for BlockNumPropagator {
                     .collect();
                 if input_qualifiers.len() > 1 {
                     for expr in projection.expr.iter() {
-                        if matches!(expr, Expr::Column(c) if c.name == RESERVED_BLOCK_NUM_COLUMN_NAME)
-                        {
+                        if matches!(expr, Expr::Column(c) if c.name == column_name) {
                             return plan_err!(
                                 "selecting `{}` from a multi-table context (e.g. a join) is ambiguous. \
-                                 Use the `block_num()` function instead to get the correct value, \
+                                 Use the `{}` function instead to get the correct value, \
                                  or use explicit column names instead of `*` to omit `{}`",
-                                RESERVED_BLOCK_NUM_COLUMN_NAME,
-                                RESERVED_BLOCK_NUM_COLUMN_NAME
+                                column_name,
+                                udf_schema_name,
+                                column_name
                             );
                         }
                     }
                 }
 
-                // Consume next_block_num_expr: reset to block_num_col() so parent nodes
-                // see a simple _block_num column reference from this projection's output.
-                self.next_block_num_expr = Some(block_num_col());
+                // Consume next_expr: reset to col() so parent nodes see a simple
+                // column reference from this projection's output.
+                self.next_expr = Some(self.col());
 
-                // In the trivial single-table case (`block_num_expr` is just
-                // `col("_block_num")`), skip auto-prepend when the projection already
-                // contains `_block_num`.  For joins the expr is non-trivial (e.g.
-                // `greatest(...)`) so we always prepend and let DF report any ambiguity.
-                if block_num_expr == block_num_col()
+                // In the trivial single-table case (`col_expr` is just
+                // `col("<column_name>")`), skip auto-prepend when the projection
+                // already contains the column.  For joins the expr is non-trivial
+                // (e.g. `greatest(...)`) so we always prepend and let DF report
+                // any ambiguity.
+                if col_expr == self.col()
                     && projection
                         .expr
                         .iter()
-                        .any(|e| matches!(e, Expr::Column(c) if c.name == RESERVED_BLOCK_NUM_COLUMN_NAME))
+                        .any(|e| matches!(e, Expr::Column(c) if c.name == column_name))
                 {
                     return Ok(Transformed::new_transformed(
                         LogicalPlan::Projection(projection),
@@ -306,19 +376,19 @@ impl TreeNodeRewriter for BlockNumPropagator {
                     ));
                 }
 
-                // Auto-prepend the _block_num expression.
-                projection.expr.insert(0, block_num_expr);
-                projection.schema = prepend_special_block_num_field(&projection.schema);
+                // Auto-prepend the watermark column expression.
+                projection.expr.insert(0, col_expr);
+                projection.schema = prepend_watermark_field(&projection.schema, &self.column);
                 Ok(Transformed::yes(LogicalPlan::Projection(projection)))
             }
 
             // Rebuild union schemas to match their child projections
             Union(union) => {
                 // Sanity check
-                if self.next_block_num_expr != Some(block_num_col()) {
+                if self.next_expr != Some(self.col()) {
                     return Err(df_err(format!(
-                        "unexpected `next_block_num_expr`: {:?}",
-                        self.next_block_num_expr
+                        "unexpected `next_expr` for {}: {:?}",
+                        column_name, self.next_expr
                     )));
                 }
 
@@ -326,7 +396,7 @@ impl TreeNodeRewriter for BlockNumPropagator {
             }
 
             Join(ref join) => {
-                self.next_block_num_expr = Some(block_num_for_join(join)?);
+                self.next_expr = Some(greatest_col_for_join(join, column_name)?);
                 Ok(Transformed::new_transformed(node, was_replaced))
             }
 
@@ -335,45 +405,45 @@ impl TreeNodeRewriter for BlockNumPropagator {
                 if scan.projection.is_some() {
                     return Err(df_err(format!("Scan should not have projection: {scan:?}")));
                 }
-                self.next_block_num_expr = Some(block_num_col());
+                self.next_expr = Some(self.col());
                 Ok(Transformed::new_transformed(node, was_replaced))
             }
 
-            // Constants are formally produced "before block 0" but hopefully it's correct enough to assign them 0.
+            // Constants are formally produced "before block 0" / at epoch.
             EmptyRelation(_) | Values(_) => {
-                self.next_block_num_expr = Some(lit(0));
+                self.next_expr = Some(self.column.default_literal());
                 Ok(Transformed::new_transformed(node, was_replaced))
             }
 
-            // SubqueryAlias caches its schema - we need to rebuild it to reflect schema changes in its input.
-            // When the child projection gets _block_num prepended, the SubqueryAlias must be rebuilt
-            // so its cached schema includes _block_num. Otherwise, JOINs will fail to find _block_num.
+            // SubqueryAlias caches its schema — we need to rebuild it to reflect
+            // schema changes in its input.
             SubqueryAlias(subquery_alias) => {
                 let rebuilt =
                     SubqueryAliasStruct::try_new(subquery_alias.input, subquery_alias.alias)?;
                 Ok(Transformed::yes(LogicalPlan::SubqueryAlias(rebuilt)))
             }
 
-            // These nodes do not cache schema and are not leaves. block_num() UDF in their
-            // expressions (e.g. `WHERE block_num() > 100`) is handled by the replacement above.
+            // These nodes do not cache schema and are not leaves. UDF calls in their
+            // expressions (e.g. `WHERE block_num() > 100`) are handled by the
+            // replacement above.
             Filter(_) | Repartition(_) | Subquery(_) | Explain(_) | Analyze(_)
             | DescribeTable(_) | Unnest(_) => Ok(Transformed::new_transformed(node, was_replaced)),
 
-            // DISTINCT ON (_block_num) is incrementally valid: the DistinctOn node has a
-            // cached schema field that must be rebuilt to include _block_num after propagation.
+            // DISTINCT ON has a cached schema field that must be rebuilt to include
+            // the watermark column after propagation.
             Distinct(distinct) => {
                 match distinct {
                     DistinctKind::On(mut on) => {
-                        // Consume next_block_num_expr.
-                        self.next_block_num_expr = Some(block_num_col());
+                        // Consume next_expr.
+                        self.next_expr = Some(self.col());
 
                         // In the trivial single-table case, skip auto-prepend when
-                        // _block_num is already in the select list.
-                        if block_num_expr == block_num_col()
+                        // the column is already in the select list.
+                        if col_expr == self.col()
                             && on
                                 .select_expr
                                 .iter()
-                                .any(|e| matches!(e, Expr::Column(c) if c.name == RESERVED_BLOCK_NUM_COLUMN_NAME))
+                                .any(|e| matches!(e, Expr::Column(c) if c.name == column_name))
                         {
                             return Ok(Transformed::new_transformed(
                                 LogicalPlan::Distinct(DistinctKind::On(on)),
@@ -381,14 +451,14 @@ impl TreeNodeRewriter for BlockNumPropagator {
                             ));
                         }
 
-                        // Prepend _block_num to select_expr and rebuild the cached schema.
-                        on.select_expr.insert(0, block_num_expr);
-                        on.schema = prepend_special_block_num_field(&on.schema);
+                        // Prepend watermark column to select_expr and rebuild the cached schema.
+                        on.select_expr.insert(0, col_expr);
+                        on.schema = prepend_watermark_field(&on.schema, &self.column);
                         Ok(Transformed::yes(LogicalPlan::Distinct(DistinctKind::On(
                             on,
                         ))))
                     }
-                    // Distinct All is transparent: _block_num passes through.
+                    // Distinct All is transparent.
                     all @ DistinctKind::All(_) => Ok(Transformed::new_transformed(
                         LogicalPlan::Distinct(all),
                         was_replaced,
@@ -396,68 +466,102 @@ impl TreeNodeRewriter for BlockNumPropagator {
                 }
             }
 
-            // GROUP BY _block_num, ... — _block_num is already the first group key so it
-            // appears naturally in the aggregate's output schema. Just update
-            // next_block_num_expr for the parent and leave the node unchanged.
-            Aggregate(_) => {
-                self.next_block_num_expr = Some(block_num_col());
-                Ok(Transformed::new_transformed(node, was_replaced))
+            // GROUP BY <system_col>, ... — if the column is already a group key it
+            // appears naturally in the aggregate's output schema.
+            // If it is NOT a group key (e.g. `_ts` when the user only grouped by
+            // `_block_num`), add `first_value(<col>)` as an aggregate expression
+            // so the column survives past the aggregate.
+            Aggregate(agg) => {
+                let in_output = agg.schema.fields().iter().any(|f| f.name() == column_name);
+                if in_output {
+                    self.next_expr = Some(self.col());
+                    Ok(Transformed::new_transformed(Aggregate(agg), was_replaced))
+                } else {
+                    // The column is not a group key. Add first_value(<col>) AS <col>
+                    // to the aggregate so it appears in the output.
+                    let first_val = first_value(col_expr.clone(), vec![]).alias(column_name);
+                    let mut aggr_expr = agg.aggr_expr.to_vec();
+                    aggr_expr.push(first_val);
+                    let new_agg =
+                        AggregateStruct::try_new(agg.input, agg.group_expr.to_vec(), aggr_expr)?;
+                    self.next_expr = Some(self.col());
+                    Ok(Transformed::yes(Aggregate(new_agg)))
+                }
             }
 
-            // These nodes are transparent: _block_num passes through unchanged.
+            // These nodes are transparent: the watermark column passes through unchanged.
             Sort(_) | Limit(_) => Ok(Transformed::new_transformed(node, was_replaced)),
 
-            // Unsupported for block_num() propagation.
+            // Unsupported for watermark column propagation.
             Window(_) | RecursiveQuery(_) | Statement(_) | Dml(_) | Ddl(_) | Copy(_)
             | Extension(_) => {
-                plan_err!("block_num() is not supported in this query")
+                plan_err!(
+                    "{}() is not supported in this query",
+                    self.column.udf_schema_name().trim_end_matches("()")
+                )
             }
         }
     }
 }
 
-/// Propagate the `RESERVED_BLOCK_NUM_COLUMN_NAME` column through the logical plan.
-pub fn propagate_block_num(plan: LogicalPlan) -> Result<LogicalPlan, DataFusionError> {
-    // The transformation relies on the invariants of `forbid_underscore_prefixed_aliases`
-    // to prevent conflicts between user-selected columns and the propagated `_block_num` column.
+// ── Public propagation API ───────────────────────────────────────────────
+
+/// Propagate the given watermark columns through the logical plan.
+pub fn propagate_watermark_columns(
+    plan: LogicalPlan,
+    columns: &[WatermarkColumn],
+) -> Result<LogicalPlan, DataFusionError> {
+    // The transformation relies on `forbid_underscore_prefixed_aliases` to prevent
+    // conflicts between user-selected columns and the propagated watermark columns.
     forbid_underscore_prefixed_aliases(&plan)?;
-    let mut propagator = BlockNumPropagator::new();
-    plan.rewrite(&mut propagator).map(|t| t.data)
+    // Propagate in reverse order so the first column in the slice ends up at position 0.
+    let mut plan = plan;
+    for wm in columns.iter().rev() {
+        let mut propagator = WatermarkColumnPropagator::new(*wm);
+        plan = plan.rewrite(&mut propagator).map(|t| t.data)?;
+    }
+    Ok(plan)
 }
 
-/// This will project the `RESERVED_BLOCK_NUM_COLUMN_NAME` out of the plan by adding a projection on top of the
-/// query which selects all columns except `RESERVED_BLOCK_NUM_COLUMN_NAME`.
-pub fn unproject_special_block_num_column(
+/// Remove the given columns from the plan's output by adding a projection that
+/// selects all columns except those named in `columns_to_remove`.
+pub fn unproject_columns(
     plan: LogicalPlan,
+    columns_to_remove: &[&str],
 ) -> Result<LogicalPlan, DataFusionError> {
     let fields = plan.schema().fields();
     if !fields
         .iter()
-        .any(|f| f.name() == RESERVED_BLOCK_NUM_COLUMN_NAME)
+        .any(|f| columns_to_remove.contains(&f.name().as_str()))
     {
-        // Nothing to do.
         return Ok(plan);
     }
     let expr = plan
         .schema()
         .iter()
-        .filter(|(_, field)| field.name() != RESERVED_BLOCK_NUM_COLUMN_NAME)
+        .filter(|(_, field)| !columns_to_remove.contains(&field.name().as_str()))
         .map(Expr::from)
         .collect::<Vec<_>>();
 
-    let builder = LogicalPlanBuilder::from(plan);
-
-    builder.project(expr)?.build()
+    LogicalPlanBuilder::from(plan).project(expr)?.build()
 }
 
 /// Returns `true` if the plan contains any `block_num()` UDF calls.
 pub fn plan_has_block_num_udf(plan: &LogicalPlan) -> bool {
-    use crate::udfs::block_num::is_block_num_udf;
+    plan_has_udf(plan, is_block_num_udf)
+}
+
+/// Returns `true` if the plan contains any `ts()` UDF calls.
+pub fn plan_has_ts_udf(plan: &LogicalPlan) -> bool {
+    plan_has_udf(plan, is_ts_udf)
+}
+
+fn plan_has_udf(plan: &LogicalPlan, is_udf: fn(&Expr) -> bool) -> bool {
     let mut found = false;
     let _ = plan.apply(|node| {
         node.apply_expressions(|expr| {
             expr.apply(|e| {
-                if is_block_num_udf(e) {
+                if is_udf(e) {
                     found = true;
                     return Ok(TreeNodeRecursion::Stop);
                 }
@@ -472,6 +576,8 @@ pub fn plan_has_block_num_udf(plan: &LogicalPlan) -> bool {
     });
     found
 }
+
+// ── Incrementality checking ──────────────────────────────────────────────
 
 /// Reasons why a logical plan cannot be materialized incrementally
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -566,6 +672,8 @@ pub fn is_incremental(plan: &LogicalPlan) -> Result<(), NonIncrementalQueryError
     Ok(())
 }
 
+// ── Table reference extraction ───────────────────────────────────────────
+
 pub fn extract_table_references_from_plan(
     plan: &LogicalPlan,
 ) -> Result<Vec<TableReference>, DataFusionError> {
@@ -655,42 +763,59 @@ pub fn find_cross_network_join(
     Ok(cross_network_join)
 }
 
+/// Collects the schemas of all TableScan sources in the plan.
+pub fn source_schemas(plan: &LogicalPlan) -> Vec<SchemaRef> {
+    let mut schemas = Vec::new();
+    let _ = plan.apply(|node| {
+        if let LogicalPlan::TableScan(scan) = node {
+            schemas.push(scan.source.schema());
+        }
+        Ok(TreeNodeRecursion::Continue)
+    });
+    schemas
+}
+
 pub fn order_by_block_num(plan: LogicalPlan) -> LogicalPlan {
     let sort = Sort {
-        expr: vec![block_num_col().sort(true, false)],
+        expr: vec![col(RESERVED_BLOCK_NUM_COLUMN_NAME).sort(true, false)],
         input: Arc::new(plan),
         fetch: None,
     };
     LogicalPlan::Sort(sort)
 }
 
-pub fn prepend_special_block_num_field(
+/// Prepend a watermark column field to a DFSchema (idempotent).
+pub fn prepend_watermark_field(
     schema: &datafusion::common::DFSchema,
+    wm: &WatermarkColumn,
 ) -> Arc<datafusion::common::DFSchema> {
-    use datafusion::arrow::datatypes::{DataType, Field, Fields};
+    use datafusion::arrow::datatypes::Fields;
 
     // Do nothing if a field with the same name is already present. Note that this
     // is not redundant with `DFSchema::merge`, because that will consider
     // different qualifiers as different fields even if the name is the same.
-    if schema
-        .fields()
-        .iter()
-        .any(|f| f.name() == RESERVED_BLOCK_NUM_COLUMN_NAME)
-    {
+    if schema.fields().iter().any(|f| f.name() == wm.column_name()) {
         return Arc::new(schema.clone());
     }
 
     let mut new_schema = datafusion::common::DFSchema::from_unqualified_fields(
-        Fields::from(vec![Field::new(
-            RESERVED_BLOCK_NUM_COLUMN_NAME,
-            DataType::UInt64,
-            false,
-        )]),
+        Fields::from(vec![wm.field()]),
         Default::default(),
     )
     .unwrap();
     new_schema.merge(schema);
     new_schema.into()
+}
+
+/// Prepend both watermark column fields (`_block_num`, `_ts`) to a DFSchema.
+///
+/// The result has column order `[_block_num, _ts, ...existing_fields]`.
+pub fn prepend_watermark_column_fields(
+    schema: &datafusion::common::DFSchema,
+) -> Arc<datafusion::common::DFSchema> {
+    // Prepend in reverse order so the final result is [_block_num, _ts, ...]
+    let schema = prepend_watermark_field(schema, &WatermarkColumn::Ts);
+    prepend_watermark_field(&schema, &WatermarkColumn::BlockNum)
 }
 
 fn df_err(msg: String) -> DataFusionError {

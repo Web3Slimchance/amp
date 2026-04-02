@@ -13,7 +13,7 @@ use common::{
     context::plan::{PlanContextBuilder, is_user_input_error},
     exec_env::default_session_config,
     incrementalizer::NonIncrementalQueryError,
-    plan_visitors::prepend_special_block_num_field,
+    plan_visitors::{WatermarkColumn, prepend_watermark_field, source_schemas},
     rpc_catalog_provider::{RPC_CATALOG_NAME, RpcCatalogProvider},
     self_schema_provider::SelfSchemaProvider,
     sql::{self, ResolveTableReferencesError},
@@ -301,8 +301,18 @@ pub async fn handler(
         // Infer schema using the planning context
         let schema = plan.schema();
 
-        // Prepend the special block number field
-        let schema = prepend_special_block_num_field(&schema);
+        // Prepend watermark column fields supported by all source tables.
+        let watermark_columns = WatermarkColumn::supported_by_all(source_schemas(&plan));
+        if !watermark_columns.contains(&WatermarkColumn::BlockNum) {
+            return Err(Error::MissingBlockNum {
+                table_name: table_name.clone(),
+            }
+            .into());
+        }
+        let mut schema = schema;
+        for wm in watermark_columns.iter().rev() {
+            schema = prepend_watermark_field(&schema, wm);
+        }
 
         // Register the inferred schema so subsequent tables can reference this table
         let arrow_schema: Arc<arrow::datatypes::Schema> = Arc::new(schema.as_arrow().clone());
@@ -533,6 +543,10 @@ enum Error {
         #[source]
         source: datafusion::error::DataFusionError,
     },
+
+    /// Source tables are missing the required `_block_num` watermark column.
+    #[error("Source tables for '{table_name}' are missing the _block_num column")]
+    MissingBlockNum { table_name: TableName },
 }
 
 impl IntoErrorResponse for Error {
@@ -555,6 +569,7 @@ impl IntoErrorResponse for Error {
                 "INVALID_PLAN"
             }
             Error::SchemaPlanInference { .. } => "SCHEMA_INFERENCE",
+            Error::MissingBlockNum { .. } => "MISSING_BLOCK_NUM",
         }
     }
 
@@ -577,6 +592,7 @@ impl IntoErrorResponse for Error {
                 StatusCode::BAD_REQUEST
             }
             Error::SchemaPlanInference { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Error::MissingBlockNum { .. } => StatusCode::BAD_REQUEST,
         }
     }
 }

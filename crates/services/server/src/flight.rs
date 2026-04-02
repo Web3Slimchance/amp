@@ -48,7 +48,7 @@ use common::{
     detached_logical_plan::{AttachPlanError, DetachedLogicalPlan},
     exec_env::ExecEnv,
     memory_pool::TieredMemoryPool,
-    plan_visitors::{plan_has_block_num_udf, unproject_special_block_num_column},
+    plan_visitors::{WatermarkColumn, plan_has_block_num_udf, plan_has_ts_udf, unproject_columns},
     rpc_catalog_provider::{RPC_CATALOG_NAME, RpcCatalogProvider},
     sql::{ResolveFunctionReferencesError, ResolveTableReferencesError, resolve_table_references},
     sql_str::SqlStr,
@@ -193,19 +193,32 @@ impl Service {
 
         // If not streaming or metadata db is not available, execute once
         if !is_streaming {
-            // Try to propagate block_num() if present; error if propagation fails.
+            // Try to propagate watermark columns if any sentinel UDF is present.
             let had_block_num_udf = plan_has_block_num_udf(&plan);
+            let had_ts_udf = plan_has_ts_udf(&plan);
+            let had_system_udf = had_block_num_udf || had_ts_udf;
             let had_block_num_col =
                 plan.schema().fields().iter().any(|f| {
                     f.name() == datasets_common::block_num::RESERVED_BLOCK_NUM_COLUMN_NAME
                 });
+            let had_ts_col =
+                plan.schema().fields().iter().any(|f| {
+                    f.name() == datasets_common::watermark_columns::RESERVED_TS_COLUMN_NAME
+                });
             let mut plan = plan;
-            if had_block_num_udf {
-                plan = plan.propagate_block_num().map_err(|_| {
+            if had_system_udf {
+                let mut columns = Vec::new();
+                if had_block_num_udf {
+                    columns.push(WatermarkColumn::BlockNum);
+                }
+                if had_ts_udf {
+                    columns.push(WatermarkColumn::Ts);
+                }
+                plan = plan.propagate_watermark_columns(&columns).map_err(|_| {
                     Error::PlanSql(
                         DataFusionError::Plan(
-                            "block_num() is not supported in this query. \
-                             Try selecting the _block_num column directly instead."
+                            "block_num()/ts() is not supported in this query. \
+                             Try selecting the _block_num/_ts column directly instead."
                                 .to_string(),
                         )
                         .context("amp::invalid_input"),
@@ -221,11 +234,20 @@ impl Service {
 
             let mut plan = plan.attach_to(&ctx).map_err(Error::AttachPlan)?;
 
-            // Remove _block_num system column added by propagation, but only if the
-            // user didn't explicitly select _block_num in their query.
-            if had_block_num_udf && !had_block_num_col {
-                plan = unproject_special_block_num_column(plan)
-                    .map_err(|e| Error::PlanSql(e.context("amp::internal_error")))?;
+            // Remove watermark columns added by propagation, but only those the
+            // user didn't explicitly select in their query.
+            if had_system_udf {
+                let mut to_remove = Vec::new();
+                if !had_block_num_col {
+                    to_remove.push(datasets_common::block_num::RESERVED_BLOCK_NUM_COLUMN_NAME);
+                }
+                if !had_ts_col {
+                    to_remove.push(datasets_common::watermark_columns::RESERVED_TS_COLUMN_NAME);
+                }
+                if !to_remove.is_empty() {
+                    plan = unproject_columns(plan, &to_remove)
+                        .map_err(|e| Error::PlanSql(e.context("amp::internal_error")))?;
+                }
             }
             let schema = {
                 let schema = plan.schema();

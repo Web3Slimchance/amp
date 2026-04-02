@@ -13,7 +13,6 @@ use datafusion::{
     error::DataFusionError,
 };
 use datasets_common::{
-    block_num::RESERVED_BLOCK_NUM_COLUMN_NAME,
     dataset::{Dataset, Table},
     dataset_kind_str::DatasetKindStr,
     hash_reference::HashReference,
@@ -55,7 +54,7 @@ use crate::{
     incrementalizer::incrementalize_plan,
     physical_table::{CanonicalChainError, PhysicalTable, segments::Segment},
     plan_visitors::{
-        find_cross_network_join, order_by_block_num, unproject_special_block_num_column,
+        WatermarkColumn, find_cross_network_join, order_by_block_num, unproject_columns,
     },
     retryable::RetryableErrorExt,
     rpc_catalog_provider::{RPC_CATALOG_NAME, RpcCatalogProvider},
@@ -84,8 +83,8 @@ pub enum SpawnError {
     /// - DataFusion internal errors during plan transformation
     ///
     /// This prevents the streaming query from being initialized as incremental
-    /// processing requires the block number column.
-    #[error("failed to propagate _block_num column in query plan")]
+    /// processing requires watermark columns.
+    #[error("failed to propagate watermark columns in query plan")]
     PropagateBlockNum(#[source] DataFusionError),
 
     /// Failed to optimize query plan
@@ -121,6 +120,10 @@ pub enum SpawnError {
     CrossNetworkJoin {
         info: crate::plan_visitors::CrossNetworkJoinInfo,
     },
+
+    /// Source tables are missing the required `_block_num` watermark column.
+    #[error("all source tables must have the _block_num column")]
+    MissingBlockNum,
 
     /// Failed to resolve raw dataset from dependencies
     ///
@@ -327,7 +330,8 @@ pub struct StreamingQuery {
     microbatch_max_interval: u64,
     keep_alive_interval: u64,
     destination: Option<Arc<PhysicalTable>>,
-    preserve_block_num: bool,
+    /// Watermark columns to remove from the output (those not explicitly selected).
+    watermark_columns_to_unproject: Vec<&'static str>,
     network: NetworkId,
     /// `blocks` table for the network associated with the catalog.
     blocks_table: Arc<ResolvedBlocksTable>,
@@ -362,13 +366,19 @@ impl StreamingQuery {
     ) -> Result<StreamingQueryHandle, SpawnError> {
         let (tx, rx) = mpsc::channel(10);
 
-        // Preserve `_block_num` for SQL materialization or if explicitly selected in the schema.
-        let preserve_block_num = destination.is_some()
-            || plan
-                .schema()
-                .fields()
+        // Determine which watermark columns to remove from the output.
+        // Keep all if materializing to a destination table; otherwise only keep
+        // those the user explicitly selected.
+        let watermark_columns_to_unproject = if destination.is_some() {
+            vec![]
+        } else {
+            let schema = plan.schema();
+            datasets_common::watermark_columns::WATERMARK_COLUMN_NAMES
                 .iter()
-                .any(|f| f.name() == RESERVED_BLOCK_NUM_COLUMN_NAME);
+                .copied()
+                .filter(|name| !schema.fields().iter().any(|f| f.name() == *name))
+                .collect()
+        };
 
         // Prevent streaming cross-network joins (check runs before plan optimization).
         if let Some(info) =
@@ -377,12 +387,19 @@ impl StreamingQuery {
             return Err(SpawnError::CrossNetworkJoin { info });
         }
 
-        // This plan is the starting point of each microbatch execution. Transformations applied to it:œ
-        // - Propagate the `_block_num` column.
+        // Only propagate watermark columns that all source tables support.
+        let watermark_columns_to_propagate =
+            WatermarkColumn::supported_by_all(catalog.entries().iter().map(|(pt, _)| pt.schema()));
+        if !watermark_columns_to_propagate.contains(&WatermarkColumn::BlockNum) {
+            return Err(SpawnError::MissingBlockNum);
+        }
+
+        // This plan is the starting point of each microbatch execution. Transformations applied to it:
+        // - Propagate watermark columns.
         // - Run logical optimizations ahead of execution.
         let plan = {
             let plan = plan
-                .propagate_block_num()
+                .propagate_watermark_columns(&watermark_columns_to_propagate)
                 .map_err(SpawnError::PropagateBlockNum)?;
 
             // Use dep alias map from the catalog so AmpCatalogProvider
@@ -448,7 +465,7 @@ impl StreamingQuery {
             microbatch_max_interval,
             keep_alive_interval,
             destination,
-            preserve_block_num,
+            watermark_columns_to_unproject,
             network,
             blocks_table,
             job_id,
@@ -518,9 +535,9 @@ impl StreamingQuery {
             // Enforce `order by _block_num`.
             plan = order_by_block_num(plan);
 
-            // Remove `_block_num` if not needed in the output.
-            if !self.preserve_block_num {
-                plan = unproject_special_block_num_column(plan)
+            // Remove watermark columns the user didn't explicitly select.
+            if !self.watermark_columns_to_unproject.is_empty() {
+                plan = unproject_columns(plan, &self.watermark_columns_to_unproject)
                     .map_err(StreamingQueryExecutionError::UnprojectSpecialBlockNumColumn)?
             }
             plan
