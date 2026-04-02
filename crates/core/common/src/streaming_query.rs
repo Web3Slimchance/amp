@@ -8,10 +8,14 @@ use std::{
 
 use alloy::{hex::ToHexExt as _, primitives::BlockHash};
 use amp_data_store::DataStore;
-use datafusion::{common::cast::as_fixed_size_binary_array, error::DataFusionError};
+use datafusion::{
+    common::cast::{as_fixed_size_binary_array, as_string_array},
+    error::DataFusionError,
+};
 use datasets_common::{
     block_num::RESERVED_BLOCK_NUM_COLUMN_NAME,
     dataset::{Dataset, Table},
+    dataset_kind_str::DatasetKindStr,
     hash_reference::HashReference,
     network_id::NetworkId,
     table_name::TableName,
@@ -36,7 +40,7 @@ use crate::{
     BlockNum, BlockRange,
     amp_catalog_provider::{AMP_CATALOG_NAME, AmpCatalogProvider, AsyncSchemaProvider},
     arrow::{
-        array::{RecordBatch, TimestampNanosecondArray},
+        array::{Array, Int64Array, RecordBatch, TimestampNanosecondArray},
         datatypes::SchemaRef,
     },
     catalog::{logical::LogicalTable, physical::Catalog},
@@ -326,7 +330,7 @@ pub struct StreamingQuery {
     preserve_block_num: bool,
     network: NetworkId,
     /// `blocks` table for the network associated with the catalog.
-    blocks_table: (Arc<PhysicalTable>, Arc<str>),
+    blocks_table: Arc<ResolvedBlocksTable>,
     /// The single-network cursor for the previously processed range. This may be provided by the
     /// consumer (as a multi-network cursor) and converted to this single-network cursor.
     prev_cursor: Option<NetworkCursor>,
@@ -419,11 +423,11 @@ impl StreamingQuery {
                     .map_err(SpawnError::ResolveRawDataset)?;
 
             let network = raw_dataset.network().clone();
-            let blocks_table = resolve_blocks_table(raw_dataset, exec_env.store.clone())
+            let blocks_table = ResolvedBlocksTable::new(raw_dataset, exec_env.store.clone())
                 .await
                 .map_err(SpawnError::ResolveBlocksTable)?;
 
-            (network, blocks_table)
+            (network, Arc::new(blocks_table))
         };
 
         let table_updates = TableUpdates::new(&catalog, multiplexer_handle).await;
@@ -575,16 +579,18 @@ impl StreamingQuery {
         let blocks_ctx = {
             // Construct a catalog for the single `blocks_table`.
             let catalog = {
-                let (physical_table, sql_schema_name) = &self.blocks_table;
+                let physical_table = self.blocks_table.physical_table.clone();
+                let sql_schema_name = self.blocks_table.sql_schema_name.clone();
+                let sql_schema_name_arc = Arc::from(sql_schema_name.as_str());
                 let resolved_table = LogicalTable::new(
-                    sql_schema_name.to_string(),
+                    sql_schema_name,
                     physical_table.dataset_reference().clone(),
                     physical_table.table().clone(),
                 );
                 Catalog::new(
                     vec![resolved_table],
                     vec![],
-                    vec![self.blocks_table.clone()],
+                    vec![(Arc::new(physical_table), sql_schema_name_arc)],
                     Default::default(),
                 )
             };
@@ -861,15 +867,21 @@ impl StreamingQuery {
         number: BlockNum,
         hash: Option<&BlockHash>,
     ) -> Result<Option<BlockRow>, BlocksTableFetchError> {
-        let hash_constraint = hash
-            .map(|h| format!("AND hash = x'{}'", h.encode_hex()))
-            .unwrap_or_default();
-        let (blocks_physical_table, blocks_sql_schema_name) = &self.blocks_table;
+        let hash_column = self.blocks_table.hash_column;
+        let parent_hash_column = self.blocks_table.parent_hash_column;
+        let timestamp_column = self.blocks_table.timestamp_column;
+        let blocks_sql_schema_name = self.blocks_table.sql_schema_name.clone();
+        let blocks_physical_table_name = self.blocks_table.physical_table.table_name().clone();
+        let hash_constraint = self.blocks_table.hash_constraint_sql(hash);
+
         let sql = format!(
-            "SELECT hash, parent_hash, timestamp FROM {} WHERE _block_num = {} {} LIMIT 1",
+            "SELECT {}, {}, {} FROM {} WHERE _block_num = {} {} LIMIT 1",
+            hash_column,
+            parent_hash_column,
+            timestamp_column,
             TableReference::Partial {
                 schema: Arc::new(blocks_sql_schema_name.to_string()),
-                table: Arc::new(blocks_physical_table.table_name().clone()),
+                table: Arc::new(blocks_physical_table_name),
             }
             .to_quoted_string(),
             number,
@@ -892,27 +904,20 @@ impl StreamingQuery {
             tracing::debug!("blocks table missing block {} {:?}", number, hash);
             return Ok(None);
         }
-        let get_hash_value = |column_name: &str| -> Result<BlockHash, GetHashValueError> {
-            let column = results
-                .column_by_name(column_name)
-                .ok_or_else(|| GetHashValueError::MissingColumn(column_name.to_string()))?;
-            let column = as_fixed_size_binary_array(column).map_err(GetHashValueError::Downcast)?;
-            column
-                .iter()
-                .flatten()
-                .next()
-                .and_then(|b| BlockHash::try_from(b).ok())
-                .ok_or_else(|| GetHashValueError::MissingBlockHashValue(column_name.to_string()))
-        };
-        let timestamp = results
-            .column_by_name("timestamp")
-            .and_then(|col| col.as_any().downcast_ref::<TimestampNanosecondArray>())
-            .and_then(|arr| arr.value_as_datetime(0))
-            .map(|dt| dt.and_utc().timestamp() as u64);
+
+        let hash = self
+            .blocks_table
+            .get_hash_value(&results)
+            .map_err(BlocksTableFetchError::ExtractHash)?;
+        let prev_hash = self
+            .blocks_table
+            .get_parent_hash_value(&results)
+            .map_err(BlocksTableFetchError::ExtractHash)?;
+        let timestamp = self.blocks_table.get_timestamp_value(&results);
         Ok(Some(BlockRow {
             number,
-            hash: get_hash_value("hash").map_err(BlocksTableFetchError::ExtractHash)?,
-            prev_hash: get_hash_value("parent_hash").map_err(BlocksTableFetchError::ExtractHash)?,
+            hash,
+            prev_hash,
             timestamp,
         }))
     }
@@ -1162,6 +1167,19 @@ pub enum GetHashValueError {
     /// a valid block hash value (either null or not convertible to BlockHash).
     #[error("blocks table missing block hash value for column {0}")]
     MissingBlockHashValue(String),
+
+    /// Failed to parse the block hash value
+    ///
+    /// This occurs when the block hash value cannot be parsed into a BlockHash (e.g., due to invalid length).
+    #[error("failed to parse block hash value for column {0}")]
+    BlockHashParsing(String),
+
+    /// Invalid Base58 hash value
+    ///
+    /// This occurs when a hash value in the blocks table is expected to be Base58-encoded
+    /// (e.g., for Solana) but fails to decode properly.
+    #[error("invalid Base58 hash value: {0}")]
+    InvalidBase58HashValue(#[source] bs58::decode::Error),
 }
 
 struct BlockRow {
@@ -1231,41 +1249,174 @@ pub fn keep_alive_stream<'a>(
     })
 }
 
-/// Return a table identifier, in the form `{dataset}.blocks`, for the given network.
-async fn resolve_blocks_table(
-    dataset: Arc<RawDataset>,
-    data_store: DataStore,
-) -> Result<(Arc<PhysicalTable>, Arc<str>), ResolveBlocksTableError> {
-    let blocks_name: TableName = "blocks".parse().expect("valid table name");
-    let table = dataset.get_table(&blocks_name).ok_or_else(|| {
-        ResolveBlocksTableError::BlocksTableNotFound(dataset.reference().to_string())
-    })?;
+/// Resolved blocks table information for a given network.
+struct ResolvedBlocksTable {
+    dataset_kind: DatasetKindStr,
+    physical_table: PhysicalTable,
+    sql_schema_name: String,
+    hash_column: &'static str,
+    parent_hash_column: &'static str,
+    timestamp_column: &'static str,
+}
 
-    let revision = data_store
-        .get_table_active_revision(dataset.reference(), table.name())
-        .await
-        .map_err(ResolveBlocksTableError::GetActiveRevision)?
-        .ok_or_else(|| {
-            ResolveBlocksTableError::TableNotSynced(
-                dataset.reference().to_string(),
-                table.name().to_string(),
-            )
+impl ResolvedBlocksTable {
+    /// Resolves the blocks table for the given dataset, selecting the correct
+    /// table name and column names based on the dataset kind.
+    async fn new(
+        dataset: Arc<RawDataset>,
+        data_store: DataStore,
+    ) -> Result<Self, ResolveBlocksTableError> {
+        let dataset_kind = dataset.kind();
+        let table_info = BlocksTableInfo::new(&dataset_kind);
+        let table = dataset.get_table(&table_info.table_name).ok_or_else(|| {
+            ResolveBlocksTableError::BlocksTableNotFound(table_info.table_name.to_string())
         })?;
 
-    let sql_schema_name = dataset.reference().to_reference().to_string();
-    let networks = table.network().into_iter().cloned().collect();
-    let physical_table = PhysicalTable::from_revision(
-        data_store,
-        dataset.reference().clone(),
-        dataset.start_block(),
-        Arc::clone(table) as Arc<dyn Table>,
-        networks,
-        revision,
-    );
-    Ok((
-        Arc::new(physical_table),
-        Arc::from(sql_schema_name.as_str()),
-    ))
+        let revision = data_store
+            .get_table_active_revision(dataset.reference(), table.name())
+            .await
+            .map_err(ResolveBlocksTableError::GetActiveRevision)?
+            .ok_or_else(|| {
+                ResolveBlocksTableError::TableNotSynced(
+                    dataset.reference().to_string(),
+                    table.name().to_string(),
+                )
+            })?;
+
+        let sql_schema_name = dataset.reference().to_reference().to_string();
+        let networks = table.network().into_iter().cloned().collect();
+        let physical_table = PhysicalTable::from_revision(
+            data_store,
+            dataset.reference().clone(),
+            dataset.start_block(),
+            Arc::clone(table) as Arc<dyn Table>,
+            networks,
+            revision,
+        );
+
+        Ok(Self {
+            dataset_kind,
+            physical_table,
+            sql_schema_name,
+            hash_column: table_info.hash_column,
+            parent_hash_column: table_info.parent_hash_column,
+            timestamp_column: table_info.timestamp_column,
+        })
+    }
+
+    /// Returns the SQL fragment for constraining a query to a specific block hash,
+    /// or an empty string if no hash is provided.
+    ///
+    /// Solana stores hashes as base58 strings (`Utf8`), so the constraint uses a
+    /// string literal. All other chains store hashes as binary, so the constraint
+    /// uses a hex literal (`x'...'`).
+    fn hash_constraint_sql(&self, hash: Option<&BlockHash>) -> String {
+        let Some(h) = hash else {
+            return String::new();
+        };
+        let hash_column = self.hash_column;
+        if self.dataset_kind.as_str() == "solana" {
+            let base58_value = bs58::encode(h.as_slice()).into_string();
+            format!("AND {hash_column} = '{base58_value}'")
+        } else {
+            let hex_value = h.encode_hex();
+            format!("AND {hash_column} = x'{hex_value}'")
+        }
+    }
+
+    fn get_timestamp_value(&self, results: &RecordBatch) -> Option<u64> {
+        let col = results.column_by_name(self.timestamp_column)?;
+        if self.dataset_kind.as_str() == "solana" {
+            // Solana's `block_time` is (nullable) DataType::Int64 (Unix timestamp in seconds).
+            col.as_any().downcast_ref::<Int64Array>().and_then(|arr| {
+                if arr.is_null(0) {
+                    None
+                } else {
+                    arr.value(0).try_into().ok()
+                }
+            })
+        } else {
+            col.as_any()
+                .downcast_ref::<TimestampNanosecondArray>()
+                .and_then(|arr| arr.value_as_datetime(0))
+                .map(|dt| dt.and_utc().timestamp() as u64)
+        }
+    }
+
+    fn get_hash_value(&self, results: &RecordBatch) -> Result<BlockHash, GetHashValueError> {
+        self.get_hash_inner(self.hash_column, results)
+    }
+
+    fn get_parent_hash_value(&self, results: &RecordBatch) -> Result<BlockHash, GetHashValueError> {
+        self.get_hash_inner(self.parent_hash_column, results)
+    }
+
+    fn get_hash_inner(
+        &self,
+        column_name: &str,
+        results: &RecordBatch,
+    ) -> Result<BlockHash, GetHashValueError> {
+        let column = results
+            .column_by_name(column_name)
+            .ok_or_else(|| GetHashValueError::MissingColumn(column_name.to_string()))?;
+
+        if self.dataset_kind.as_str() == "solana" {
+            let column = as_string_array(column).map_err(GetHashValueError::Downcast)?;
+            column
+                .iter()
+                .flatten()
+                .next()
+                .map(|bs58_hash| {
+                    bs58::decode(bs58_hash)
+                        .into_vec()
+                        .map_err(GetHashValueError::InvalidBase58HashValue)
+                        .and_then(|decoded| {
+                            BlockHash::try_from(decoded.as_slice()).map_err(|_| {
+                                GetHashValueError::BlockHashParsing(column_name.to_string())
+                            })
+                        })
+                })
+                .ok_or_else(|| GetHashValueError::MissingBlockHashValue(column_name.to_string()))?
+        } else {
+            let column = as_fixed_size_binary_array(column).map_err(GetHashValueError::Downcast)?;
+            column
+                .iter()
+                .flatten()
+                .next()
+                .map(|b| {
+                    BlockHash::try_from(b)
+                        .map_err(|_| GetHashValueError::BlockHashParsing(column_name.to_string()))
+                })
+                .ok_or_else(|| GetHashValueError::MissingBlockHashValue(column_name.to_string()))?
+        }
+    }
+}
+
+struct BlocksTableInfo {
+    table_name: TableName,
+    hash_column: &'static str,
+    parent_hash_column: &'static str,
+    timestamp_column: &'static str,
+}
+
+impl BlocksTableInfo {
+    fn new(dataset_kind: &DatasetKindStr) -> Self {
+        if dataset_kind.as_str() == "solana" {
+            Self {
+                table_name: "block_headers".parse().expect("valid table name"),
+                hash_column: "block_hash",
+                parent_hash_column: "previous_block_hash",
+                timestamp_column: "block_time",
+            }
+        } else {
+            Self {
+                table_name: "blocks".parse().expect("valid table name"),
+                hash_column: "hash",
+                parent_hash_column: "parent_hash",
+                timestamp_column: "timestamp",
+            }
+        }
+    }
 }
 
 /// Errors that occur when resolving the blocks table for a network

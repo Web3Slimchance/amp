@@ -15,6 +15,7 @@ arrow.workspace = true
 async-stream.workspace = true
 async-trait.workspace = true
 bigdecimal = "0.4"
+bs58.workspace = true
 chrono.workspace = true
 datafusion.workspace = true
 datafusion-datasource.workspace = true

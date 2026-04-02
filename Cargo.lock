@@ -3488,6 +3488,7 @@ dependencies = [
  "async-stream",
  "async-trait",
  "bigdecimal",
+ "bs58",
  "chrono",
  "criterion",
  "datafusion",
