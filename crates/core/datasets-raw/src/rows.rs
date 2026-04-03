@@ -82,7 +82,8 @@ impl TableRows {
                 .iter()
                 .zip(schema.fields())
                 .all(|(left, right)| {
-                    left.name() == right.name() && left.data_type() == right.data_type()
+                    left.name() == right.name()
+                        && data_types_compatible(left.data_type(), right.data_type())
                 });
 
         if schemas_match {
@@ -108,14 +109,11 @@ impl TableRows {
             };
 
             let candidate = rows_schema.field(index);
-            if candidate.data_type() != target_field.data_type() {
-                return Err(TableRowError::SchemaProjection {
-                    expected: schema.fields().iter().map(|f| f.name().clone()).collect(),
-                    actual: rows_schema
-                        .fields()
-                        .iter()
-                        .map(|f| f.name().clone())
-                        .collect(),
+            if !data_types_compatible(candidate.data_type(), target_field.data_type()) {
+                return Err(TableRowError::SchemaTypeMismatch {
+                    field: target_field.name().clone(),
+                    expected_type: target_field.data_type().clone(),
+                    actual_type: candidate.data_type().clone(),
                 });
             }
 
@@ -238,13 +236,23 @@ pub enum TableRowError {
     #[error(transparent)]
     Arrow(#[from] arrow::error::ArrowError),
 
-    /// Record batch schema cannot be projected onto target schema
+    /// Record batch schema cannot be projected onto target schema due to missing fields
     #[error(
         "cannot project table rows onto target schema; expected fields {expected:?}, actual {actual:?}"
     )]
     SchemaProjection {
         expected: Vec<String>,
         actual: Vec<String>,
+    },
+
+    /// A field exists in both schemas but has incompatible data types
+    #[error(
+        "cannot project table rows onto target schema; field {field:?} has type {actual_type} but expected {expected_type}"
+    )]
+    SchemaTypeMismatch {
+        field: String,
+        expected_type: DataType,
+        actual_type: DataType,
     },
 
     /// Table rows violate structural invariants
@@ -260,4 +268,115 @@ pub enum TableRowError {
         #[source]
         source: CheckInvariantsError,
     },
+}
+
+/// Compares two Arrow data types for structural compatibility, ignoring the inner
+/// field name of List/LargeList types. This allows schemas using different
+/// conventional names (e.g., "item" vs "element") for list elements to be treated
+/// as compatible.
+///
+/// TODO: Consider replacing with `DFSchema::datatype_is_logically_equal` when
+/// upgrading to DataFusion v53+. Note that method has broader semantics (e.g.,
+/// treats Dictionary<K,V> as equal to V) so evaluate whether that's acceptable.
+fn data_types_compatible(a: &DataType, b: &DataType) -> bool {
+    match (a, b) {
+        (DataType::List(a_field), DataType::List(b_field))
+        | (DataType::LargeList(a_field), DataType::LargeList(b_field)) => {
+            a_field.is_nullable() == b_field.is_nullable()
+                && data_types_compatible(a_field.data_type(), b_field.data_type())
+        }
+        (DataType::Struct(a_fields), DataType::Struct(b_fields)) => {
+            a_fields.len() == b_fields.len()
+                && a_fields.iter().zip(b_fields.iter()).all(|(af, bf)| {
+                    af.name() == bf.name()
+                        && af.is_nullable() == bf.is_nullable()
+                        && data_types_compatible(af.data_type(), bf.data_type())
+                })
+        }
+        _ => a == b,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use arrow::{
+        array::{ArrayRef, Int64Array, ListArray, RecordBatch, UInt64Array},
+        buffer::OffsetBuffer,
+        datatypes::{DataType, Field, Schema},
+    };
+    use datasets_common::{
+        block_num::RESERVED_BLOCK_NUM_COLUMN_NAME, block_range::BlockRange,
+        watermark_columns::RESERVED_TS_COLUMN_NAME,
+    };
+
+    use super::TableRows;
+    use crate::{TimestampArrayType, dataset::Table, timestamp_type};
+
+    #[test]
+    fn project_tolerates_list_inner_field_name() {
+        let block_num: u64 = 1;
+        let network: datasets_common::network_id::NetworkId =
+            "test".parse().expect("valid network id");
+
+        // Schema with list inner field named "item"
+        let item_schema = Arc::new(Schema::new(vec![
+            Field::new(RESERVED_BLOCK_NUM_COLUMN_NAME, DataType::UInt64, false),
+            Field::new(RESERVED_TS_COLUMN_NAME, timestamp_type(), false),
+            Field::new(
+                "values",
+                DataType::List(Arc::new(Field::new("item", DataType::Int64, false))),
+                false,
+            ),
+        ]));
+
+        // Target schema with list inner field named "element"
+        let element_schema = Schema::new(vec![
+            Field::new(RESERVED_BLOCK_NUM_COLUMN_NAME, DataType::UInt64, false),
+            Field::new(RESERVED_TS_COLUMN_NAME, timestamp_type(), false),
+            Field::new(
+                "values",
+                DataType::List(Arc::new(Field::new("element", DataType::Int64, false))),
+                false,
+            ),
+        ]);
+
+        let block_nums: ArrayRef = Arc::new(UInt64Array::from(vec![block_num]));
+        let timestamps: ArrayRef = Arc::new(
+            TimestampArrayType::from(vec![Some(1_000_000_000)]).with_data_type(timestamp_type()),
+        );
+        let list_values = Int64Array::from(vec![42]);
+        let list_col: ArrayRef = Arc::new(ListArray::new(
+            Arc::new(Field::new("item", DataType::Int64, false)),
+            OffsetBuffer::from_lengths([1]),
+            Arc::new(list_values),
+            None,
+        ));
+
+        let rows =
+            RecordBatch::try_new(item_schema.clone(), vec![block_nums, timestamps, list_col])
+                .expect("valid record batch");
+
+        let table = Table::new(
+            "test_table".parse().expect("valid table name"),
+            item_schema,
+            network.clone(),
+            vec![],
+        );
+
+        let range = BlockRange {
+            numbers: block_num..=block_num,
+            network,
+            hash: Default::default(),
+            prev_hash: Default::default(),
+            timestamp: None,
+        };
+
+        let mut table_rows = TableRows { table, rows, range };
+
+        table_rows
+            .project(&element_schema)
+            .expect("projection should succeed with different list inner field names");
+    }
 }
