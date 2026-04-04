@@ -175,8 +175,14 @@ impl TestCtx {
         opts_mut.partition = SegmentSizeLimit::new(100, 0, 0, 0, Generation::default(), 10);
         let metadata_db = self.ctx.daemon_worker().metadata_db().clone();
         let data_store = self.ctx.daemon_server().data_store().clone();
-        let mut task =
-            AmpCompactor::start(metadata_db, data_store, opts.clone(), table.clone(), None);
+        let mut task = AmpCompactor::start(
+            metadata_db,
+            data_store,
+            opts.clone(),
+            table.clone(),
+            None,
+            None,
+        );
         task.join_current_then_spawn_new().await.unwrap();
         while !task.is_finished() {
             tokio::task::yield_now().await;
@@ -204,8 +210,14 @@ impl TestCtx {
         opts_mut.partition = SegmentSizeLimit::new(1, 1, 1, 0, Generation::default(), 1.5);
         let metadata_db = self.ctx.daemon_worker().metadata_db().clone();
         let data_store = self.ctx.daemon_server().data_store().clone();
-        let mut task =
-            AmpCompactor::start(metadata_db, data_store, opts.clone(), table.clone(), None);
+        let mut task = AmpCompactor::start(
+            metadata_db,
+            data_store,
+            opts.clone(),
+            table.clone(),
+            None,
+            None,
+        );
         task.join_current_then_spawn_new().await.unwrap();
         while !task.is_finished() {
             tokio::task::yield_now().await;

@@ -1,7 +1,7 @@
 pub mod block_ranges;
 pub mod check;
-pub(crate) mod compaction;
-pub mod metrics;
+pub mod collector;
+pub mod compaction;
 pub mod progress;
 pub mod tasks;
 pub mod writer;
@@ -9,7 +9,6 @@ pub mod writer;
 pub use self::{
     compaction::{
         algorithm::{CompactionAlgorithm, Overflow, SegmentSizeLimit},
-        collector::CollectorProperties,
         compactor::{AmpCompactor, AmpCompactorTaskError, CompactorProperties, TaskResult},
         config,
     },

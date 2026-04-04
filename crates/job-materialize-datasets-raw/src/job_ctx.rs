@@ -1,12 +1,11 @@
 use std::{sync::Arc, time::Duration};
 
 use amp_data_store::DataStore;
-use amp_job_core::materialize::{
-    config::ParquetConfig, metrics::MetricsRegistry, progress::ProgressReporter,
-};
+use amp_job_core::materialize::{config::ParquetConfig, progress::ProgressReporter};
 use amp_providers_registry::ProvidersRegistry;
 use common::{datasets_cache::DatasetsCache, udfs::eth_call::EthCallUdfsCache};
 use metadata_db::{MetadataDb, NotificationMultiplexerHandle, jobs::JobId};
+use monitoring::telemetry::metrics::Meter;
 
 /// Job context for raw dataset materialization.
 ///
@@ -33,8 +32,8 @@ pub struct Context {
     pub data_store: DataStore,
     /// Shared notification multiplexer for streaming queries.
     pub notification_multiplexer: Arc<NotificationMultiplexerHandle>,
-    /// Optional job-specific metrics registry.
-    pub metrics: Option<Arc<MetricsRegistry>>,
+    /// Optional meter for creating job-specific metrics registries.
+    pub meter: Option<Meter>,
     /// Optional progress reporter for external event streaming.
     pub progress_reporter: Option<Arc<dyn ProgressReporter>>,
 }

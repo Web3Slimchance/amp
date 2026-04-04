@@ -5,7 +5,7 @@ use std::sync::Arc;
 use amp_job_core::{
     error::{ErrorDetailsProvider, JobErrorExt, RetryableErrorExt},
     job_id::JobId,
-    materialize::{metrics::MetricsRegistry, progress::ProgressReporter},
+    materialize::progress::ProgressReporter,
 };
 use datasets_common::hash_reference::HashReference;
 use tracing::{Instrument, info_span};
@@ -43,10 +43,6 @@ pub(super) async fn new(
                 desc.dataset_name.clone(),
                 desc.manifest_hash.clone(),
             );
-            let metrics = job_ctx
-                .meter
-                .as_ref()
-                .map(|m| Arc::new(MetricsRegistry::new(m, reference.clone(), *job_id)));
             let progress_reporter: Option<Arc<dyn ProgressReporter>> = {
                 let dataset_info = proto::DatasetInfo {
                     namespace: reference.namespace().to_string(),
@@ -79,7 +75,7 @@ pub(super) async fn new(
                 providers_registry: job_ctx.ethcall_udfs_cache.providers_registry().clone(),
                 data_store: job_ctx.data_store.clone(),
                 notification_multiplexer: job_ctx.notification_multiplexer.clone(),
-                metrics,
+                meter: job_ctx.meter.clone(),
                 progress_reporter,
             };
 
@@ -96,10 +92,6 @@ pub(super) async fn new(
                 desc.dataset_name.clone(),
                 desc.manifest_hash.clone(),
             );
-            let metrics = job_ctx
-                .meter
-                .as_ref()
-                .map(|m| Arc::new(MetricsRegistry::new(m, reference.clone(), *job_id)));
             let progress_reporter: Option<Arc<dyn ProgressReporter>> = {
                 let dataset_info = proto::DatasetInfo {
                     namespace: reference.namespace().to_string(),
@@ -137,7 +129,7 @@ pub(super) async fn new(
                 data_store: job_ctx.data_store.clone(),
                 isolate_pool: job_ctx.isolate_pool.clone(),
                 notification_multiplexer: job_ctx.notification_multiplexer.clone(),
-                metrics,
+                meter: job_ctx.meter.clone(),
                 progress_reporter,
             };
 

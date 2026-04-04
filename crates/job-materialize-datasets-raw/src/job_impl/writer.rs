@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, ops::RangeInclusive, sync::Arc, time::Instant};
 use amp_data_store::{DataStore, file_name::FileName};
 use amp_job_core::{
     error::RetryableErrorExt,
-    materialize::{AmpCompactor, AmpCompactorTaskError, WriterProperties, metrics},
+    materialize::{AmpCompactor, AmpCompactorTaskError, WriterProperties},
 };
 use amp_parquet::{
     commit::{CommitMetadataError, commit_metadata},
@@ -35,7 +35,7 @@ impl RawDatasetWriter {
         opts: Arc<WriterProperties>,
         missing_ranges_by_table: BTreeMap<TableName, Vec<RangeInclusive<BlockNum>>>,
         compactors_by_table: BTreeMap<TableName, Arc<AmpCompactor>>,
-        metrics: Option<Arc<metrics::MetricsRegistry>>,
+        metrics: Option<Arc<crate::metrics::MetricsRegistry>>,
     ) -> Result<Self, ParquetError> {
         let mut writers = BTreeMap::new();
         for table in catalog.physical_tables() {
@@ -213,7 +213,7 @@ struct RawTableWriter {
 
     segment_opened_at: Instant,
 
-    metrics: Option<Arc<metrics::MetricsRegistry>>,
+    metrics: Option<Arc<crate::metrics::MetricsRegistry>>,
 
     compactor: Arc<AmpCompactor>,
 }
@@ -225,7 +225,7 @@ impl RawTableWriter {
         compactor: Arc<AmpCompactor>,
         opts: Arc<WriterProperties>,
         missing_ranges: Vec<RangeInclusive<BlockNum>>,
-        metrics: Option<Arc<metrics::MetricsRegistry>>,
+        metrics: Option<Arc<crate::metrics::MetricsRegistry>>,
     ) -> Result<Self, ParquetError> {
         let mut ranges_to_write = limit_ranges(missing_ranges, MAX_PARTITION_BLOCK_RANGE);
         ranges_to_write.reverse();

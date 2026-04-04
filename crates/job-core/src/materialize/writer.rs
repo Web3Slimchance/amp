@@ -2,9 +2,11 @@ use std::{sync::Arc, time::Duration};
 
 use datafusion::parquet::file::properties::WriterProperties as ParquetWriterProperties;
 
-use super::compaction::{
-    algorithm::SegmentSizeLimit, collector::CollectorProperties, compactor::CompactorProperties,
-    config::ParquetConfig,
+use super::{
+    collector::CollectorProperties,
+    compaction::{
+        algorithm::SegmentSizeLimit, compactor::CompactorProperties, config::ParquetConfig,
+    },
 };
 
 /// Parquet writing and compaction configuration resolved from [`ParquetConfig`].

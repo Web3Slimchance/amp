@@ -1,12 +1,11 @@
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use amp_data_store::DataStore;
-use amp_job_core::materialize::{
-    config::ParquetConfig, metrics::MetricsRegistry, progress::ProgressReporter,
-};
+use amp_job_core::materialize::{config::ParquetConfig, progress::ProgressReporter};
 use common::{datasets_cache::DatasetsCache, udfs::eth_call::EthCallUdfsCache};
 use js_runtime::isolate_pool::IsolatePool;
 use metadata_db::{MetadataDb, NotificationMultiplexerHandle, jobs::JobId};
+use monitoring::telemetry::metrics::Meter;
 
 /// Job context for derived dataset materialization.
 ///
@@ -32,8 +31,8 @@ pub struct Context {
     pub isolate_pool: IsolatePool,
     /// Shared notification multiplexer for streaming queries.
     pub notification_multiplexer: Arc<NotificationMultiplexerHandle>,
-    /// Optional job-specific metrics registry.
-    pub metrics: Option<Arc<MetricsRegistry>>,
+    /// Optional OpenTelemetry meter for recording job-specific metrics.
+    pub meter: Option<Meter>,
     /// Optional progress reporter for external event streaming.
     pub progress_reporter: Option<Arc<dyn ProgressReporter>>,
 }

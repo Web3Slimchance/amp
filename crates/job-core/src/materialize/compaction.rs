@@ -5,14 +5,15 @@ use common::physical_table::PhysicalTable;
 use metadata_db::MetadataDb;
 use tokio::task::JoinHandle;
 
-use self::{collector::AmpCollectorInnerTask, compactor::TaskResult};
-use crate::materialize::{WriterProperties, metrics::MetricsRegistry};
+use self::{compactor::TaskResult, metrics::CompactionMetrics};
+use super::collector::metrics::CollectorMetrics;
+use crate::materialize::{WriterProperties, collector::AmpCollectorInnerTask};
 
 pub mod algorithm;
-pub mod collector;
 pub mod compactor;
 pub mod config;
 pub mod error;
+pub mod metrics;
 pub mod plan;
 
 pub struct AmpCompactorTask {
@@ -29,9 +30,17 @@ impl AmpCompactorTask {
         store: DataStore,
         props: Arc<WriterProperties>,
         table: Arc<PhysicalTable>,
-        metrics: Option<Arc<MetricsRegistry>>,
+        compaction_metrics: Option<Arc<CompactionMetrics>>,
+        collector_metrics: Option<Arc<CollectorMetrics>>,
     ) -> Self {
-        let inner = AmpCollectorInnerTask::start(metadata_db, store, props, table, metrics);
+        let inner = AmpCollectorInnerTask::start(
+            metadata_db,
+            store,
+            props,
+            table,
+            compaction_metrics,
+            collector_metrics,
+        );
         Self::new(inner)
     }
 

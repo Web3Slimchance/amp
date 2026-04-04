@@ -106,7 +106,10 @@ use std::{
 use amp_data_store::retryable::RetryableErrorExt as _;
 use amp_job_core::{
     error::{ErrorDetailsProvider, RetryableErrorExt},
-    materialize::{AmpCompactor, check::consistency_check, tasks::TryWaitAllError},
+    materialize::{
+        AmpCompactor, check::consistency_check, collector::metrics::CollectorMetrics,
+        compaction::metrics::CompactionMetrics, tasks::TryWaitAllError,
+    },
 };
 use common::{physical_table::PhysicalTable, retryable::RetryableErrorExt as _};
 use datasets_common::{hash_reference::HashReference, table_name::TableName};
@@ -130,6 +133,16 @@ pub async fn execute(
     let end = desc.end_block;
 
     let writer = writer.into();
+
+    let job_id = writer.map(|w| *w).unwrap_or(0);
+    let compaction_metrics = ctx
+        .meter
+        .as_ref()
+        .map(|m| Arc::new(CompactionMetrics::new(m, dataset_ref.clone(), job_id)));
+    let collector_metrics = ctx
+        .meter
+        .as_ref()
+        .map(|m| Arc::new(CollectorMetrics::new(m, dataset_ref.clone(), job_id)));
 
     // Resolve manifest once using the provided hash reference
     let manifest = ctx
@@ -194,7 +207,8 @@ pub async fn execute(
             ctx.data_store.clone(),
             parquet_opts.clone(),
             physical_table.clone(),
-            ctx.metrics.clone(),
+            compaction_metrics.clone(),
+            collector_metrics.clone(),
         )
         .into();
 

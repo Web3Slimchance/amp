@@ -1,6 +1,5 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fmt::{Debug, Display, Formatter},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering::SeqCst},
@@ -16,12 +15,22 @@ use metadata_db::{MetadataDb, files::FileId, gc::GcManifestRow};
 use object_store::{Error as ObjectStoreError, path::Path};
 use tokio::task::JoinHandle;
 
-use super::{
-    compactor::{AmpCompactorTaskError, Compactor, TaskResult},
-    config::ParquetConfig,
-    error::{CollectionResult, CollectorError, CompactionResult, CompactorError},
+pub mod error;
+pub mod metrics;
+
+use self::{
+    error::{CollectionResult, CollectorError},
+    metrics::CollectorMetrics,
 };
-use crate::materialize::{metrics::MetricsRegistry, writer::WriterProperties};
+use crate::materialize::{
+    compaction::{
+        compactor::{AmpCompactorTaskError, Compactor, TaskResult},
+        config::ParquetConfig,
+        error::{CompactionResult, CompactorError},
+        metrics::CompactionMetrics,
+    },
+    writer::WriterProperties,
+};
 
 #[derive(Debug, Clone)]
 pub struct CollectorProperties {
@@ -55,21 +64,22 @@ impl AmpCollectorInnerTask {
         store: DataStore,
         props: Arc<WriterProperties>,
         table: Arc<PhysicalTable>,
-        metrics: Option<Arc<MetricsRegistry>>,
+        compaction_metrics: Option<Arc<CompactionMetrics>>,
+        collector_metrics: Option<Arc<CollectorMetrics>>,
     ) -> Self {
         let compactor = Compactor::new(
             metadata_db.clone(),
             store.clone(),
             props.clone(),
             table.clone(),
-            metrics.clone(),
+            compaction_metrics,
         );
         let collector = Collector::new(
             metadata_db,
             store,
             props.clone(),
             table.clone(),
-            metrics.clone(),
+            collector_metrics,
         );
         let previous_collection = Timestamp::now();
         let previous_compaction = Timestamp::now();
@@ -88,9 +98,17 @@ impl AmpCollectorInnerTask {
         store: DataStore,
         props: Arc<WriterProperties>,
         table: Arc<PhysicalTable>,
-        metrics: Option<Arc<MetricsRegistry>>,
+        compaction_metrics: Option<Arc<CompactionMetrics>>,
+        collector_metrics: Option<Arc<CollectorMetrics>>,
     ) -> JoinHandle<Result<Self, AmpCompactorTaskError>> {
-        let task = AmpCollectorInnerTask::new(metadata_db, store, props, table, metrics);
+        let task = AmpCollectorInnerTask::new(
+            metadata_db,
+            store,
+            props,
+            table,
+            compaction_metrics,
+            collector_metrics,
+        );
         tokio::spawn(futures::future::ok(task))
     }
 
@@ -189,11 +207,11 @@ pub struct Collector {
     store: DataStore,
     table: Arc<PhysicalTable>,
     props: Arc<WriterProperties>,
-    metrics: Option<Arc<MetricsRegistry>>,
+    metrics: Option<Arc<CollectorMetrics>>,
 }
 
-impl Debug for Collector {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+impl std::fmt::Debug for Collector {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "Garbage Collector {{ table: {} }}",
@@ -202,8 +220,8 @@ impl Debug for Collector {
     }
 }
 
-impl Display for Collector {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+impl std::fmt::Display for Collector {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "Garbage Collector {{ table: {}, opts: {:?} }}",
@@ -219,9 +237,9 @@ impl Collector {
         store: DataStore,
         props: Arc<WriterProperties>,
         table: Arc<PhysicalTable>,
-        metrics: Option<Arc<MetricsRegistry>>,
+        metrics: Option<Arc<CollectorMetrics>>,
     ) -> Self {
-        Collector {
+        Self {
             metadata_db,
             store,
             table,
@@ -239,7 +257,7 @@ impl Collector {
         let found_file_ids_to_paths: BTreeMap<FileId, Path> = self
             .store
             .get_expired_gc_files(location_id)
-            .map_err(CollectorError::file_stream_error)
+            .map_err(CollectorError::FileStream)
             .map(|manifest_row| {
                 let GcManifestRow {
                     file_id,
@@ -332,6 +350,6 @@ impl Collector {
             metrics.inc_successful_collections(table_name.to_string());
         }
 
-        return Ok(self);
+        Ok(self)
     }
 }

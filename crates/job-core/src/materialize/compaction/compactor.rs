@@ -25,12 +25,16 @@ use super::{
     AmpCompactorTask,
     algorithm::CompactionAlgorithm,
     config::ParquetConfig,
-    error::{CollectorError, CompactionResult, CompactorError},
+    error::{CompactionResult, CompactorError},
+    metrics::CompactionMetrics,
     plan::{CompactionFile, CompactionPlan},
 };
 use crate::{
     error::RetryableErrorExt,
-    materialize::{metrics::MetricsRegistry, writer::WriterProperties},
+    materialize::{
+        collector::{error::CollectorError, metrics::CollectorMetrics},
+        writer::WriterProperties,
+    },
 };
 
 pub type TaskResult<T> = Result<T, AmpCompactorTaskError>;
@@ -117,9 +121,18 @@ impl AmpCompactor {
         store: DataStore,
         props: Arc<WriterProperties>,
         table: Arc<PhysicalTable>,
-        metrics: Option<Arc<MetricsRegistry>>,
+        compaction_metrics: Option<Arc<CompactionMetrics>>,
+        collector_metrics: Option<Arc<CollectorMetrics>>,
     ) -> Self {
-        let task = AmpCompactorTask::start(metadata_db, store, props, table, metrics).into();
+        let task = AmpCompactorTask::start(
+            metadata_db,
+            store,
+            props,
+            table,
+            compaction_metrics,
+            collector_metrics,
+        )
+        .into();
         Self { task }
     }
 
@@ -157,7 +170,7 @@ pub struct Compactor {
     store: DataStore,
     table: Arc<PhysicalTable>,
     props: Arc<WriterProperties>,
-    metrics: Option<Arc<MetricsRegistry>>,
+    metrics: Option<Arc<CompactionMetrics>>,
 }
 
 impl Debug for Compactor {
@@ -188,7 +201,7 @@ impl Compactor {
         store: DataStore,
         props: Arc<WriterProperties>,
         table: Arc<PhysicalTable>,
-        metrics: Option<Arc<MetricsRegistry>>,
+        metrics: Option<Arc<CompactionMetrics>>,
     ) -> Self {
         Compactor {
             metadata_db,
@@ -275,7 +288,7 @@ pub struct CompactionGroup {
     metadata_db: MetadataDb,
     store: DataStore,
     props: Arc<WriterProperties>,
-    metrics: Option<Arc<MetricsRegistry>>,
+    metrics: Option<Arc<CompactionMetrics>>,
     pub(super) size: SegmentSize,
     streams: Vec<CompactionFile>,
     table: Arc<PhysicalTable>,
@@ -298,7 +311,7 @@ impl CompactionGroup {
         store: DataStore,
         props: Arc<WriterProperties>,
         table: Arc<PhysicalTable>,
-        metrics: Option<Arc<MetricsRegistry>>,
+        metrics: Option<Arc<CompactionMetrics>>,
     ) -> Self {
         CompactionGroup {
             metadata_db,

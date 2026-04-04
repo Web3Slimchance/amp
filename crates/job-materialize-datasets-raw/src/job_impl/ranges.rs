@@ -16,7 +16,7 @@ use amp_data_store::DataStore;
 use amp_job_core::{
     error::{ErrorDetailsProvider, RetryableErrorExt},
     materialize::{
-        AmpCompactor, WriterProperties, metrics,
+        AmpCompactor, WriterProperties,
         progress::{ProgressReporter, ProgressUpdate},
         tasks::{FailFastJoinSet, TryWaitAllError},
     },
@@ -49,6 +49,7 @@ pub(super) async fn materialize_ranges<S: BlockStreamer + Send + Sync>(
     max_writers: u16,
     client: &S,
     ctx: &Context,
+    metrics: &Option<Arc<crate::metrics::MetricsRegistry>>,
     catalog: &Catalog,
     parquet_opts: Arc<WriterProperties>,
     missing_ranges_by_table: BTreeMap<TableName, Vec<RangeInclusive<BlockNum>>>,
@@ -116,7 +117,7 @@ pub(super) async fn materialize_ranges<S: BlockStreamer + Send + Sync>(
             missing_ranges_by_table: missing_ranges_by_table.clone(),
             compactors_by_table: compactors_by_table.clone(),
             id: i as u32,
-            metrics: ctx.metrics.clone(),
+            metrics: metrics.clone(),
             job_id: ctx.job_id,
             progress_tracker: progress_tracker.clone(),
             verify,
@@ -147,7 +148,7 @@ pub(super) async fn materialize_ranges<S: BlockStreamer + Send + Sync>(
         }
 
         // Record error metrics
-        if let Some(ref metrics) = ctx.metrics {
+        if let Some(metrics) = metrics {
             for (table, _) in tables {
                 let table_name = table.table_name().to_string();
                 metrics.record_dump_error(table_name);
@@ -426,7 +427,7 @@ struct MaterializePartition<S: BlockStreamer> {
     /// The partition ID
     id: u32,
     /// Metrics registry
-    metrics: Option<Arc<metrics::MetricsRegistry>>,
+    metrics: Option<Arc<crate::metrics::MetricsRegistry>>,
     /// Job ID for tracing
     job_id: Option<metadata_db::jobs::JobId>,
     /// A progress tracker which logs the overall progress of all partitions.
@@ -822,7 +823,7 @@ impl RetryableErrorExt for RunRangeErrorKind {
 pub(super) fn spawn_freshness_tracker(
     catalog: Catalog,
     multiplexer: Arc<NotificationMultiplexerHandle>,
-    metrics: Arc<metrics::MetricsRegistry>,
+    metrics: Arc<crate::metrics::MetricsRegistry>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         // Subscribe to all table locations

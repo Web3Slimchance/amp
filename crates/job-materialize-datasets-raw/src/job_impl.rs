@@ -87,6 +87,8 @@ use amp_job_core::{
         AmpCompactor,
         block_ranges::{ResolvedEndBlock, resolve_end_block},
         check::consistency_check,
+        collector::metrics::CollectorMetrics,
+        compaction::metrics::CompactionMetrics,
         progress::{SyncCompletedInfo, SyncFailedInfo, SyncStartedInfo},
         tasks::TryWaitAllError,
     },
@@ -139,6 +141,24 @@ pub async fn execute(
         .map_err(|_| Error::NotARawDataset(dataset_ref.clone()))?;
 
     let writer = writer.into();
+
+    let job_id = writer.map(|w| *w).unwrap_or(0);
+    let metrics = ctx.meter.as_ref().map(|m| {
+        Arc::new(crate::metrics::MetricsRegistry::new(
+            m,
+            dataset_ref.clone(),
+            job_id,
+        ))
+    });
+    let compaction_metrics = ctx
+        .meter
+        .as_ref()
+        .map(|m| Arc::new(CompactionMetrics::new(m, dataset_ref.clone(), job_id)));
+    let collector_metrics = ctx
+        .meter
+        .as_ref()
+        .map(|m| Arc::new(CollectorMetrics::new(m, dataset_ref.clone(), job_id)));
+
     let dataset_reference = dataset.reference();
 
     let materialize_start_time = Instant::now();
@@ -178,7 +198,8 @@ pub async fn execute(
             ctx.data_store.clone(),
             parquet_opts.clone(),
             physical_table.clone(),
-            ctx.metrics.clone(),
+            compaction_metrics.clone(),
+            collector_metrics.clone(),
         )
         .into();
 
@@ -230,15 +251,13 @@ pub async fn execute(
     }
 
     // Spawn freshness tracker if metrics are available
-    ctx.metrics.as_ref().map(|metrics| {
+    metrics.as_ref().map(|metrics| {
         spawn_freshness_tracker(
             catalog.clone(),
             ctx.notification_multiplexer.clone(),
             metrics.clone(),
         )
     });
-
-    let metrics = ctx.metrics.clone();
     let finalized_blocks_only = dataset.finalized_blocks_only();
 
     let kind = dataset.kind();
@@ -262,7 +281,7 @@ pub async fn execute(
     let mut client = amp_providers_registry::create_block_stream_client(
         provider_name,
         config,
-        metrics.as_ref().map(|m| m.meter()),
+        ctx.meter.as_ref(),
     )
     .await
     .map_err(Error::CreateBlockStreamClient)?
@@ -383,6 +402,7 @@ pub async fn execute(
                 max_writers,
                 &client,
                 &ctx,
+                &metrics,
                 &catalog,
                 parquet_opts.clone(),
                 missing_ranges_by_table,

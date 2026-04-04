@@ -56,9 +56,16 @@ pub async fn materialize_table(
 
     let table_name = table.table_name().to_string();
 
+    // Create crate-local metrics from the meter on the context
+    let metrics: Option<Arc<crate::metrics::MetricsRegistry>> = ctx.meter.as_ref().map(|m| {
+        let dataset_ref = table.dataset_reference().clone();
+        let job_id = ctx.job_id.map(|id| *id).unwrap_or(0);
+        Arc::new(crate::metrics::MetricsRegistry::new(m, dataset_ref, job_id))
+    });
+
     // Clone values needed for metrics after async block
     let table_name_for_metrics = table_name.clone();
-    let metrics_for_after = ctx.metrics.clone();
+    let metrics_for_after = metrics.clone();
 
     // Get the table definition from the manifest
     let table_def = manifest
@@ -269,6 +276,7 @@ pub async fn materialize_table(
                 table.clone(),
                 compactor,
                 &opts,
+                metrics,
             )
             .await;
 

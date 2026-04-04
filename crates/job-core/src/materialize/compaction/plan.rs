@@ -30,14 +30,12 @@ use futures::{
 };
 use metadata_db::{MetadataDb, files::FileId};
 
-use crate::materialize::{
-    WriterProperties,
-    compaction::{
-        compactor::CompactionGroup,
-        error::{CompactionResult, CompactorError},
-    },
-    metrics::MetricsRegistry,
+use super::{
+    compactor::CompactionGroup,
+    error::{CompactionResult, CompactorError},
+    metrics::CompactionMetrics,
 };
+use crate::materialize::WriterProperties;
 
 /// A single Parquet file opened for compaction, carrying its record-batch stream and sizing info.
 pub struct CompactionFile {
@@ -120,7 +118,7 @@ pub struct CompactionPlan<'a> {
     opts: Arc<WriterProperties>,
     /// The metrics registry for tracking compaction metrics.
     /// This is optional because metrics may not be enabled.
-    metrics: Option<Arc<MetricsRegistry>>,
+    metrics: Option<Arc<CompactionMetrics>>,
     /// The physical table being compacted.
     table: Arc<PhysicalTable>,
     /// The current group of files being built for compaction.
@@ -141,7 +139,7 @@ impl<'a> CompactionPlan<'a> {
         opts: Arc<WriterProperties>,
         table: &'a TableSnapshot,
         reader_factory: Arc<AmpReaderFactory>,
-        metrics: &Option<Arc<MetricsRegistry>>,
+        metrics: &Option<Arc<CompactionMetrics>>,
     ) -> CompactionResult<Option<Self>> {
         let chain = table.canonical_segments();
 

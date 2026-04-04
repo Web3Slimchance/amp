@@ -30,7 +30,7 @@ use datafusion::parquet::errors::ParquetError;
 use futures::StreamExt as _;
 use js_runtime::isolate_pool::IsolatePool;
 
-use crate::job_ctx::Context;
+use crate::{job_ctx::Context, metrics::MetricsRegistry};
 
 #[tracing::instrument(skip_all, err)]
 #[expect(clippy::too_many_arguments)]
@@ -46,6 +46,7 @@ pub async fn materialize_sql_query(
     physical_table: Arc<PhysicalTable>,
     compactor: Arc<AmpCompactor>,
     opts: &Arc<WriterProperties>,
+    metrics: Option<Arc<MetricsRegistry>>,
 ) -> Result<(), MaterializeSqlQueryError> {
     tracing::info!(
         "materializing {} [{}-{}]",
@@ -119,7 +120,7 @@ pub async fn materialize_sql_query(
                     .map_err(MaterializeSqlQueryError::write_batch)
                     .map_err(|err| err.with_block_range(microbatch_start, current_end))?;
 
-                if let Some(ref metrics) = ctx.metrics {
+                if let Some(ref metrics) = metrics {
                     let num_rows: u64 = batch.num_rows().try_into().unwrap();
                     let num_bytes: u64 = batch.get_array_memory_size().try_into().unwrap();
                     metrics.record_ingestion_rows(num_rows, table_name.to_string(), location_id);
@@ -209,7 +210,7 @@ pub async fn materialize_sql_query(
                 )
                 .map_err(MaterializeSqlQueryError::create_parquet_file_writer)?;
 
-                if let Some(ref metrics) = ctx.metrics {
+                if let Some(ref metrics) = metrics {
                     metrics.record_file_written(table_name.to_string(), location_id);
                     if let Some(ts) = block_timestamp {
                         metrics.record_table_freshness(table_name.to_string(), location_id, ts);
