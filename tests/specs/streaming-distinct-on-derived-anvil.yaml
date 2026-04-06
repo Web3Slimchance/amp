@@ -34,33 +34,33 @@
 - name: take_initial_distinct_blocks
   stream: register_distinct_blocks_stream
   take: 4
-  results: |
+  resultsPattern: |
     [
-      {"_block_num": 0, "block_num()": 0, "block_num": 0, "gas_used": 0},
-      {"_block_num": 1, "block_num()": 1, "block_num": 1, "gas_used": 0},
-      {"_block_num": 2, "block_num()": 2, "block_num": 2, "gas_used": 0},
-      {"_block_num": 3, "block_num()": 3, "block_num": 3, "gas_used": 0}
+      {"_block_num": "0", "_ts": ".+", "block_num()": "0", "block_num": "0", "gas_used": "0"},
+      {"_block_num": "1", "_ts": ".+", "block_num()": "1", "block_num": "1", "gas_used": "0"},
+      {"_block_num": "2", "_ts": ".+", "block_num()": "2", "block_num": "2", "gas_used": "0"},
+      {"_block_num": "3", "_ts": ".+", "block_num()": "3", "block_num": "3", "gas_used": "0"}
     ]
 
 - name: take_initial_group_by_blocks
   stream: register_group_by_blocks_stream
   take: 4
-  results: |
+  resultsPattern: |
     [
-      {"_block_num": 0, "cnt": 2},
-      {"_block_num": 1, "cnt": 2},
-      {"_block_num": 2, "cnt": 2},
-      {"_block_num": 3, "cnt": 2}
+      {"_block_num": "0", "_ts": ".+", "cnt": "2"},
+      {"_block_num": "1", "_ts": ".+", "cnt": "2"},
+      {"_block_num": "2", "_ts": ".+", "cnt": "2"},
+      {"_block_num": "3", "_ts": ".+", "cnt": "2"}
     ]
 
 - name: take_initial_distinct_join_blocks
   stream: register_distinct_join_blocks_stream
   take: 3
-  results: |
+  resultsPattern: |
     [
-      {"_block_num": 1, "block_num()": 1, "parent_num": 0},
-      {"_block_num": 2, "block_num()": 2, "parent_num": 1},
-      {"_block_num": 3, "block_num()": 3, "parent_num": 2}
+      {"_block_num": "1", "_ts": ".+", "block_num()": "1", "parent_num": "0"},
+      {"_block_num": "2", "_ts": ".+", "block_num()": "2", "parent_num": "1"},
+      {"_block_num": "3", "_ts": ".+", "block_num()": "3", "parent_num": "2"}
     ]
 
 - name: mine_more
@@ -77,26 +77,26 @@
 - name: take_incremental_distinct_blocks
   stream: register_distinct_blocks_stream
   take: 2
-  results: |
+  resultsPattern: |
     [
-      {"_block_num": 4, "block_num()": 4, "block_num": 4, "gas_used": 0},
-      {"_block_num": 5, "block_num()": 5, "block_num": 5, "gas_used": 0}
+      {"_block_num": "4", "_ts": ".+", "block_num()": "4", "block_num": "4", "gas_used": "0"},
+      {"_block_num": "5", "_ts": ".+", "block_num()": "5", "block_num": "5", "gas_used": "0"}
     ]
 
 - name: take_incremental_group_by_blocks
   stream: register_group_by_blocks_stream
   take: 2
-  results: |
+  resultsPattern: |
     [
-      {"_block_num": 4, "cnt": 2},
-      {"_block_num": 5, "cnt": 2}
+      {"_block_num": "4", "_ts": ".+", "cnt": "2"},
+      {"_block_num": "5", "_ts": ".+", "cnt": "2"}
     ]
 
 - name: take_incremental_distinct_join_blocks
   stream: register_distinct_join_blocks_stream
   take: 2
-  results: |
+  resultsPattern: |
     [
-      {"_block_num": 4, "block_num()": 4, "parent_num": 3},
-      {"_block_num": 5, "block_num()": 5, "parent_num": 4}
+      {"_block_num": "4", "_ts": ".+", "block_num()": "4", "parent_num": "3"},
+      {"_block_num": "5", "_ts": ".+", "block_num()": "5", "parent_num": "4"}
     ]

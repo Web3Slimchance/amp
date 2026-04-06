@@ -57,6 +57,7 @@ opentelemetry = { workspace = true }
 opentelemetry_sdk = { workspace = true, features = ["testing"] }
 pretty_assertions.workspace = true
 rand.workspace = true
+regex.workspace = true
 reqwest.workspace = true
 rustls.workspace = true
 serde.workspace = true

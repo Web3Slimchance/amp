@@ -50,28 +50,28 @@
   query: SELECT * FROM "_/multi_version@0.0.1".blocks ORDER BY block_num LIMIT 1
   results: |
     [
-      {"_block_num":15000000,"block_num":15000000,"gas_limit":30000000,"gas_used":29998802,"hash":"9a71a95be3fe957457b11817587e5af4c7e24836d5b383c430ff25b9286a457f","miner":"ea674fdde714fd979de3edf0f56aa9716b898ec8","nonce":11581608188404422748,"parent_hash":"93a8a23a2f5296db7251ab4c5e9b10bdc5a6c9c4ed56fb230dc729d3dc03a138"}
+      {"_block_num":15000000,"_ts":"2022-06-21T02:28:20Z","block_num":15000000,"gas_limit":30000000,"gas_used":29998802,"hash":"9a71a95be3fe957457b11817587e5af4c7e24836d5b383c430ff25b9286a457f","miner":"ea674fdde714fd979de3edf0f56aa9716b898ec8","nonce":11581608188404422748,"parent_hash":"93a8a23a2f5296db7251ab4c5e9b10bdc5a6c9c4ed56fb230dc729d3dc03a138"}
     ]
 
 - name: query_v2_versioned_name
   query: SELECT * FROM "_/multi_version@0.0.2".blocks ORDER BY block_num LIMIT 1
   results: |
     [
-      {"_block_num":15000000,"block_num":15000000,"gas_limit":30000000,"hash":"9a71a95be3fe957457b11817587e5af4c7e24836d5b383c430ff25b9286a457f","parent_hash":"93a8a23a2f5296db7251ab4c5e9b10bdc5a6c9c4ed56fb230dc729d3dc03a138"}
+      {"_block_num":15000000,"_ts":"2022-06-21T02:28:20Z","block_num":15000000,"gas_limit":30000000,"hash":"9a71a95be3fe957457b11817587e5af4c7e24836d5b383c430ff25b9286a457f","parent_hash":"93a8a23a2f5296db7251ab4c5e9b10bdc5a6c9c4ed56fb230dc729d3dc03a138"}
     ]
 
 - name: query_v2_namespaced
   query: SELECT * FROM "test_namespace/multi_version@0.0.2".blocks ORDER BY block_num LIMIT 1
   results: |
     [
-      {"_block_num":15000000,"block_num":15000000,"gas_limit":30000000,"hash":"9a71a95be3fe957457b11817587e5af4c7e24836d5b383c430ff25b9286a457f","parent_hash":"93a8a23a2f5296db7251ab4c5e9b10bdc5a6c9c4ed56fb230dc729d3dc03a138"}
+      {"_block_num":15000000,"_ts":"2022-06-21T02:28:20Z","block_num":15000000,"gas_limit":30000000,"hash":"9a71a95be3fe957457b11817587e5af4c7e24836d5b383c430ff25b9286a457f","parent_hash":"93a8a23a2f5296db7251ab4c5e9b10bdc5a6c9c4ed56fb230dc729d3dc03a138"}
     ]
 
 - name: query_v3
   query: SELECT * FROM "test_namespace/multi_version@0.0.3".blocks ORDER BY block_num LIMIT 1
   results: |
     [
-      {"_block_num":15000000,"block_num":15000000,"gas_limit":30000000,"hash":"9a71a95be3fe957457b11817587e5af4c7e24836d5b383c430ff25b9286a457f"}
+      {"_block_num":15000000,"_ts":"2022-06-21T02:28:20Z","block_num":15000000,"gas_limit":30000000,"hash":"9a71a95be3fe957457b11817587e5af4c7e24836d5b383c430ff25b9286a457f"}
     ]
 
 # Test queries with non-versioned dataset names (should point to latest version)
@@ -79,7 +79,7 @@
   query: SELECT * FROM multi_version.blocks ORDER BY block_num LIMIT 1
   results: |
     [
-      {"_block_num":15000000,"block_num":15000000,"gas_limit":30000000,"hash":"9a71a95be3fe957457b11817587e5af4c7e24836d5b383c430ff25b9286a457f","parent_hash":"93a8a23a2f5296db7251ab4c5e9b10bdc5a6c9c4ed56fb230dc729d3dc03a138"}
+      {"_block_num":15000000,"_ts":"2022-06-21T02:28:20Z","block_num":15000000,"gas_limit":30000000,"hash":"9a71a95be3fe957457b11817587e5af4c7e24836d5b383c430ff25b9286a457f","parent_hash":"93a8a23a2f5296db7251ab4c5e9b10bdc5a6c9c4ed56fb230dc729d3dc03a138"}
     ]
 
 # Test field availability for different versions
@@ -93,7 +93,7 @@
 - name: query_v2_missing_fields_should_fail
   query: SELECT nonce FROM "_/multi_version@0.0.2".blocks
   failure: |
-    No field named nonce. Valid fields are \"_/multi_version@0.0.2\".blocks._block_num, \"_/multi_version@0.0.2\".blocks.block_num, \"_/multi_version@0.0.2\".blocks.gas_limit, \"_/multi_version@0.0.2\".blocks.hash, \"_/multi_version@0.0.2\".blocks.parent_hash
+    No field named nonce. Valid fields are \"_/multi_version@0.0.2\".blocks._block_num, \"_/multi_version@0.0.2\".blocks._ts, \"_/multi_version@0.0.2\".blocks.block_num, \"_/multi_version@0.0.2\".blocks.gas_limit, \"_/multi_version@0.0.2\".blocks.hash, \"_/multi_version@0.0.2\".blocks.parent_hash
 
 # Test count queries for different versions
 - name: query_v1_count

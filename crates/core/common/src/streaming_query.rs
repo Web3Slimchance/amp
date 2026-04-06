@@ -388,8 +388,18 @@ impl StreamingQuery {
         }
 
         // Only propagate watermark columns that all source tables support.
-        let watermark_columns_to_propagate =
+        // When materializing to a destination, also restrict to columns the
+        // destination schema includes (the manifest may predate `_ts`).
+        let mut watermark_columns_to_propagate =
             WatermarkColumn::supported_by_all(catalog.entries().iter().map(|(pt, _)| pt.schema()));
+        if let Some(dest) = &destination {
+            watermark_columns_to_propagate.retain(|wm| {
+                dest.schema()
+                    .fields()
+                    .iter()
+                    .any(|f| f.name() == wm.column_name())
+            });
+        }
         if !watermark_columns_to_propagate.contains(&WatermarkColumn::BlockNum) {
             return Err(SpawnError::MissingBlockNum);
         }

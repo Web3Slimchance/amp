@@ -38,6 +38,12 @@ use crate::{
 
 // ── Watermark column definition ──────────────────────────────────────────
 
+/// Old EVM datasets have `timestamp` instead of `_ts`. During propagation and
+/// schema inference, `timestamp` is accepted as an equivalent of `_ts`.
+///
+/// This should be removed entirely once all raw datasets have been migrated to include `_ts`.
+const TS_COMPAT_COLUMN_NAME: &str = "timestamp";
+
 /// A watermark column that gets propagated through the query plan.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum WatermarkColumn {
@@ -54,14 +60,32 @@ impl WatermarkColumn {
         let schemas: Vec<_> = source_schemas.into_iter().collect();
         Self::ALL
             .iter()
-            .filter(|wm| {
-                let name = wm.column_name();
-                schemas
-                    .iter()
-                    .all(|s| s.fields().iter().any(|f| f.name() == name))
-            })
+            .filter(|wm| schemas.iter().all(|s| wm.is_present_in(s)))
             .copied()
             .collect()
+    }
+
+    /// Checks if this watermark column (or an equivalent) is present in the schema.
+    ///
+    /// For `_ts`, a `timestamp` column with `Timestamp(Nanosecond, "+00:00")`
+    /// is accepted as an equivalent — old EVM datasets have `timestamp` but
+    /// not `_ts`.
+    fn is_present_in(&self, schema: &datafusion::arrow::datatypes::Schema) -> bool {
+        use datafusion::common::DFSchema;
+
+        let has_field = |name: &str| schema.fields().iter().any(|f| f.name() == name);
+        let has_field_with_type = |name: &str, dt: &DataType| {
+            schema.fields().iter().any(|f| {
+                f.name() == name && DFSchema::datatype_is_logically_equal(f.data_type(), dt)
+            })
+        };
+        match self {
+            Self::BlockNum => has_field(RESERVED_BLOCK_NUM_COLUMN_NAME),
+            Self::Ts => {
+                has_field(RESERVED_TS_COLUMN_NAME)
+                    || has_field_with_type(TS_COMPAT_COLUMN_NAME, &self.data_type())
+            }
+        }
     }
 
     /// Reserved column name, e.g. `"_block_num"` or `"_ts"`.
@@ -104,6 +128,32 @@ impl WatermarkColumn {
         datafusion::arrow::datatypes::Field::new(self.column_name(), self.data_type(), false)
     }
 
+    /// Resolve this watermark column in a table schema, returning the expression
+    /// to use. For `_ts`, falls back to `col("timestamp").alias("_ts")` when
+    /// `_ts` is absent but `timestamp` is present (old EVM datasets).
+    fn resolve_in_schema(
+        &self,
+        schema: &datafusion::arrow::datatypes::SchemaRef,
+        table_name: &datafusion::sql::TableReference,
+    ) -> Result<Expr, DataFusionError> {
+        let name = self.column_name();
+        if schema.fields().iter().any(|f| f.name() == name) {
+            return Ok(col(name));
+        }
+        if matches!(self, Self::Ts)
+            && schema
+                .fields()
+                .iter()
+                .any(|f| f.name() == TS_COMPAT_COLUMN_NAME)
+        {
+            return Ok(col(TS_COMPAT_COLUMN_NAME)
+                .alias_qualified(Some(table_name.clone()), RESERVED_TS_COLUMN_NAME));
+        }
+        Err(df_err(format!(
+            "Table {table_name} is missing column {name}"
+        )))
+    }
+
     /// Returns `true` if `expr` is the sentinel UDF for this watermark column.
     fn is_udf(&self, expr: &Expr) -> bool {
         match self {
@@ -121,8 +171,8 @@ pub fn forbid_underscore_prefixed_aliases(plan: &LogicalPlan) -> Result<(), Data
             expr.apply(|e| {
                 if let Expr::Alias(alias) = e
                     && alias.name.starts_with('_')
-                    && !alias.name.starts_with(UNNEST_PLACEHOLDER)
                 // DF built-in we want to allow
+                    && !alias.name.starts_with(UNNEST_PLACEHOLDER)
                 {
                     return plan_err!(
                         "expression contains a column alias starting with '_': '{}'. \
@@ -328,12 +378,7 @@ impl TreeNodeRewriter for WatermarkColumnPropagator {
         // Step 2: Handle actual propagation of the watermark column value.
         match node {
             Projection(mut projection) => {
-                // Over a join, each input table contributes its own watermark column; a bare
-                // column reference (e.g. from `SELECT *` or `SELECT t.*`) picks one
-                // arbitrarily.  Users must write the UDF function instead so the propagator
-                // can replace it with `greatest(left.<col>, right.<col>)`.
-                //
-                // This check gives this case a nicer error message.
+                // Check against bare watermark column references when projecting over joins.
                 let input_qualifiers: BTreeSet<&TableReference> = projection
                     .input
                     .schema()
@@ -405,11 +450,27 @@ impl TreeNodeRewriter for WatermarkColumnPropagator {
                 if scan.projection.is_some() {
                     return Err(df_err(format!("Scan should not have projection: {scan:?}")));
                 }
-                self.next_expr = Some(self.col());
-                Ok(Transformed::new_transformed(node, was_replaced))
+                let resolved = self
+                    .column
+                    .resolve_in_schema(&scan.source.schema(), &scan.table_name)?;
+
+                // If the column was resolved via a compat alias (e.g. timestamp→_ts),
+                // wrap the scan in a Projection so the alias is visible to parent
+                // nodes (especially Joins which inspect child schemas directly).
+                if resolved != self.col() {
+                    let mut exprs: Vec<Expr> = node.schema().iter().map(Expr::from).collect();
+                    exprs.push(resolved.clone());
+                    let projected = LogicalPlanBuilder::from(node).project(exprs)?.build()?;
+                    self.next_expr = Some(self.col());
+                    Ok(Transformed::yes(projected))
+                } else {
+                    self.next_expr = Some(self.col());
+                    Ok(Transformed::new_transformed(node, was_replaced))
+                }
             }
 
-            // Constants are formally produced "before block 0" / at epoch.
+            // Constants are formally produced "before the first watermark", but
+            // using watermark 0 should be ok in practice.
             EmptyRelation(_) | Values(_) => {
                 self.next_expr = Some(self.column.default_literal());
                 Ok(Transformed::new_transformed(node, was_replaced))

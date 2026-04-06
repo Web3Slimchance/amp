@@ -1,0 +1,28 @@
+# Tests that ts() works on datasets that have `timestamp` but not `_ts`.
+#
+# The anvil_rpc manifest does not include `_ts`, but does include `timestamp`.
+# The compat layer in the propagator aliases `timestamp` as `_ts`,
+# allowing ts() to work transparently.
+
+- anvil: {}
+
+- name: mine_blocks
+  anvil_mine: 3
+
+- name: dump_blocks
+  dataset: _/anvil_rpc@0.0.0
+  end: 3
+
+# ts() should return the same value as the timestamp column
+- name: ts_equals_timestamp
+  query: |
+    SELECT block_num, CASE WHEN ts() = timestamp THEN true ELSE false END AS ts_matches
+    FROM anvil_rpc.blocks
+    ORDER BY block_num
+  results: |
+    [
+      {"block_num": 0, "ts_matches": true},
+      {"block_num": 1, "ts_matches": true},
+      {"block_num": 2, "ts_matches": true},
+      {"block_num": 3, "ts_matches": true}
+    ]

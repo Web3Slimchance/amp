@@ -1705,3 +1705,154 @@ mod stacked_join_detection {
         );
     }
 }
+
+// ── timestamp→_ts compat tests ───────────────────────────────────────────
+
+mod ts_compat {
+    use super::*;
+
+    /// Scan with `timestamp` but no `_ts` — simulates an old EVM dataset.
+    fn old_scan(name: &str) -> LogicalPlan {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int32, false),
+            Field::new(RESERVED_BLOCK_NUM_COLUMN_NAME, DataType::UInt64, false),
+            Field::new("timestamp", ts_type(), false),
+            Field::new("value", DataType::Int64, false),
+        ]));
+        let batch = array::RecordBatch::new_empty(schema.clone());
+        let table =
+            MemTable::try_new(schema, vec![vec![batch]]).expect("should create in-memory table");
+        LogicalPlanBuilder::scan(name, provider_as_source(Arc::new(table)), None)
+            .expect("should create table scan")
+            .build()
+            .expect("should build scan plan")
+    }
+
+    #[test]
+    fn propagate_ts_on_old_dataset_uses_timestamp_column() {
+        // SELECT id FROM old_table → _ts should be propagated using `timestamp`
+        let plan = LogicalPlanBuilder::from(old_scan("t"))
+            .project(vec![col("id")])
+            .expect("should create projection")
+            .build()
+            .expect("should build plan");
+
+        let result =
+            propagate_watermark_columns(plan, &[WatermarkColumn::BlockNum, WatermarkColumn::Ts])
+                .expect("propagation should succeed");
+
+        // _ts must be in the output schema
+        assert!(
+            result
+                .schema()
+                .fields()
+                .iter()
+                .any(|f| f.name() == RESERVED_TS_COLUMN_NAME),
+            "_ts must be in the output schema, fields: {:?}",
+            result.schema().field_names()
+        );
+    }
+
+    #[tokio::test]
+    async fn propagate_ts_on_old_dataset_cte_cross_join_succeeds() {
+        // WITH cte AS (SELECT value FROM old_table)
+        // SELECT block_num, cte.value FROM cte, old_table
+        //
+        // The CTE wraps an old scan in a SubqueryAlias. The compat Projection
+        // injects _ts. This must not create an ambiguity when the outer join
+        // merges schemas from both sides.
+
+        // CTE: SELECT id, value FROM old_table
+        let cte_scan = LogicalPlanBuilder::from(old_scan("txs"))
+            .project(vec![col("id"), col("value")])
+            .expect("should create projection")
+            .build()
+            .expect("should build cte plan");
+        let cte_alias = SubqueryAliasStruct::try_new(Arc::new(cte_scan), "cte")
+            .expect("should create subquery alias");
+        let cte_plan = LogicalPlan::SubqueryAlias(cte_alias);
+
+        // Outer: SELECT blocks.value, cte.value FROM cte JOIN blocks ON cte.id = blocks.id
+        let plan = LogicalPlanBuilder::from(cte_plan)
+            .join(
+                old_scan("blocks"),
+                JoinType::Inner,
+                (
+                    vec![Column::from_qualified_name("cte.id")],
+                    vec![Column::from_qualified_name("blocks.id")],
+                ),
+                None,
+            )
+            .expect("should create join")
+            .project(vec![col("blocks.value"), col("cte.value")])
+            .expect("should create projection")
+            .build()
+            .expect("should build plan");
+
+        let propagated =
+            propagate_watermark_columns(plan, &[WatermarkColumn::BlockNum, WatermarkColumn::Ts])
+                .expect("propagation should succeed");
+
+        // Print the propagated plan for debugging
+        eprintln!("propagated plan:\n{}", propagated.display_indent_schema());
+
+        // Also run through DF optimization to catch schema ambiguities
+        // that only surface during type_coercion.
+        let ctx = datafusion::prelude::SessionContext::new();
+        let optimized = ctx.state().optimize(&propagated);
+        assert!(
+            optimized.is_ok(),
+            "optimization should succeed (no schema ambiguities): {:?}",
+            optimized.err()
+        );
+    }
+
+    #[test]
+    fn propagate_ts_on_old_dataset_join_produces_greatest_ts() {
+        // SELECT foo.id FROM foo JOIN bar ON foo.id = bar.id
+        // Both foo and bar have `timestamp` but not `_ts`.
+        // _ts in the output should be `greatest(foo.timestamp, bar.timestamp)`.
+        let plan = LogicalPlanBuilder::from(old_scan("foo"))
+            .join(
+                old_scan("bar"),
+                JoinType::Inner,
+                (
+                    vec![Column::from_qualified_name("foo.id")],
+                    vec![Column::from_qualified_name("bar.id")],
+                ),
+                None,
+            )
+            .expect("should create join")
+            .project(vec![col("foo.id")])
+            .expect("should create projection")
+            .build()
+            .expect("should build plan");
+
+        let result =
+            propagate_watermark_columns(plan, &[WatermarkColumn::BlockNum, WatermarkColumn::Ts])
+                .expect("propagation over join with old datasets should succeed");
+
+        let LogicalPlan::Projection(p) = &result else {
+            panic!("expected Projection, got {:?}", result)
+        };
+
+        // Find the _ts expression
+        let ts_expr = p
+            .expr
+            .iter()
+            .find(|e| physical_name(e).is_ok_and(|n| n == RESERVED_TS_COLUMN_NAME))
+            .unwrap_or_else(|| {
+                panic!(
+                    "_ts must be in projection, exprs: {:?}",
+                    p.expr.iter().map(physical_name).collect::<Vec<_>>()
+                )
+            });
+
+        // It should be an alias wrapping a greatest() call (not a bare column)
+        let display = format!("{ts_expr}");
+        assert!(
+            display.contains("greatest"),
+            "_ts over a join should use greatest(), got: {display}"
+        );
+    }
+}

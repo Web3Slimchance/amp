@@ -1,5 +1,6 @@
 //! Test step for taking data from registered streams.
 use anyhow::Result;
+use regex::Regex;
 
 use crate::testlib::fixtures::FlightClient;
 
@@ -47,6 +48,13 @@ pub enum SqlTestResult {
         #[serde(rename = "recordBatchCount", default)]
         record_batch_count: Option<usize>,
     },
+    /// Expected successful result where each field value is a regex pattern.
+    /// String values in the expected JSON are treated as regex patterns that
+    /// must match the actual string representation of the corresponding field.
+    SuccessPattern {
+        #[serde(rename = "resultsPattern")]
+        results_pattern: String,
+    },
     /// Expected failure with a specific error message substring.
     Failure { failure: String },
 }
@@ -84,6 +92,12 @@ impl SqlTestResult {
                 }
             }
 
+            SqlTestResult::SuccessPattern { results_pattern } => {
+                let expected: serde_json::Value = serde_json::from_str(results_pattern)?;
+                let (actual, _) = actual_result?;
+                assert_json_matches_pattern(&actual, &expected);
+            }
+
             SqlTestResult::Failure { failure } => {
                 let expected_substring = failure.trim();
                 let actual_error = actual_result.expect_err("expected failure, got success");
@@ -97,5 +111,72 @@ impl SqlTestResult {
             }
         }
         Ok(())
+    }
+}
+
+/// Recursively asserts that `actual` matches `pattern`, where string values in
+/// `pattern` are treated as regex patterns. Non-string values must match exactly.
+fn assert_json_matches_pattern(actual: &serde_json::Value, pattern: &serde_json::Value) {
+    match (actual, pattern) {
+        (serde_json::Value::Array(actual_arr), serde_json::Value::Array(pattern_arr)) => {
+            assert_eq!(
+                actual_arr.len(),
+                pattern_arr.len(),
+                "Array length mismatch: actual {} vs pattern {}",
+                actual_arr.len(),
+                pattern_arr.len()
+            );
+            for (i, (a, p)) in actual_arr.iter().zip(pattern_arr.iter()).enumerate() {
+                assert_json_matches_pattern_ctx(a, p, &format!("[{i}]"));
+            }
+        }
+        _ => assert_json_matches_pattern_ctx(actual, pattern, ""),
+    }
+}
+
+fn assert_json_matches_pattern_ctx(
+    actual: &serde_json::Value,
+    pattern: &serde_json::Value,
+    ctx: &str,
+) {
+    use serde_json::Value;
+    match (actual, pattern) {
+        (Value::Object(actual_map), Value::Object(pattern_map)) => {
+            let actual_keys: std::collections::BTreeSet<_> = actual_map.keys().collect();
+            let pattern_keys: std::collections::BTreeSet<_> = pattern_map.keys().collect();
+            assert_eq!(actual_keys, pattern_keys, "Key mismatch at {ctx}");
+            for (key, pattern_val) in pattern_map {
+                assert_json_matches_pattern_ctx(
+                    &actual_map[key],
+                    pattern_val,
+                    &format!("{ctx}.{key}"),
+                );
+            }
+        }
+        (Value::Array(actual_arr), Value::Array(pattern_arr)) => {
+            assert_eq!(
+                actual_arr.len(),
+                pattern_arr.len(),
+                "Array length mismatch at {ctx}"
+            );
+            for (i, (a, p)) in actual_arr.iter().zip(pattern_arr.iter()).enumerate() {
+                assert_json_matches_pattern_ctx(a, p, &format!("{ctx}[{i}]"));
+            }
+        }
+        (actual_val, Value::String(pattern_str)) => {
+            let actual_str = match actual_val {
+                Value::String(s) => s.clone(),
+                other => other.to_string(),
+            };
+            let re = Regex::new(pattern_str)
+                .unwrap_or_else(|e| panic!("Invalid regex at {ctx}: {pattern_str:?}: {e}"));
+            assert!(
+                re.is_match(&actual_str),
+                "Regex mismatch at {ctx}: pattern {pattern_str:?} did not match {actual_str:?}",
+            );
+        }
+        (actual_val, pattern_val) => {
+            assert_eq!(actual_val, pattern_val, "Value mismatch at {ctx}");
+        }
     }
 }
