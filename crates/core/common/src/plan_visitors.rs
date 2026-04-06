@@ -14,8 +14,8 @@ use datafusion::{
     functions::core::expr_fn::greatest,
     functions_aggregate::first_last::first_value,
     logical_expr::{
-        Aggregate as AggregateStruct, Join as JoinStruct, LogicalPlan, LogicalPlanBuilder, Sort,
-        SubqueryAlias as SubqueryAliasStruct, Union as UnionStruct,
+        Aggregate as AggregateStruct, Distinct as DistinctKind, Join as JoinStruct, LogicalPlan,
+        LogicalPlanBuilder, Sort, SubqueryAlias as SubqueryAliasStruct, Union as UnionStruct,
     },
     physical_plan::ExecutionPlan,
     prelude::{Expr, col, lit},
@@ -270,6 +270,25 @@ impl WatermarkColumnPropagator {
     fn col(&self) -> Expr {
         col(self.column.column_name())
     }
+
+    fn set_next_expr(&mut self, expr: Expr) {
+        self.next_expr = Some(if expr == self.col() {
+            expr
+        } else {
+            expr.alias(self.column.column_name())
+        });
+    }
+
+    /// Returns the current `next_expr`, or errors if it hasn't been set yet
+    /// (which would mean a non-leaf node was reached before any leaf).
+    fn next_expr(&self) -> Result<Expr, DataFusionError> {
+        self.next_expr.clone().ok_or_else(|| {
+            df_err(format!(
+                "next_expr is None at non-leaf node for {}",
+                self.column.column_name()
+            ))
+        })
+    }
 }
 
 impl TreeNodeRewriter for WatermarkColumnPropagator {
@@ -280,104 +299,126 @@ impl TreeNodeRewriter for WatermarkColumnPropagator {
 
         let column_name = self.column.column_name();
         let is_udf = |e: &Expr| self.column.is_udf(e);
-
-        // Step 1: Replace the sentinel UDF in all expressions of this node using
-        // the currently accumulated expression.
-        //
-        // `next_expr` is `None` at initialization, leaf nodes set it unconditionally.
-        // The unwrap_or fallback is only reached for leaf nodes themselves (where
-        // the UDF cannot appear, so replacement is a no-op) and post-Aggregate
-        // nodes where we skip propagation.
-        let col_expr = {
-            let raw = self.next_expr.clone().unwrap_or_else(|| self.col());
-            if raw != self.col() {
-                raw.alias(column_name)
-            } else {
-                raw
-            }
-        };
-        // Output-column positions (Projection.expr, DistinctOn.select_expr) use
-        // `replace_udf_select`: when the UDF IS the entire expression it gets
-        // aliased as udf_schema_name (preserving the user's output column
-        // name); when the UDF is nested inside a larger expression the alias
-        // would be swallowed by the outer expression anyway, so the plain
-        // unaliased replacement is used there.
-        //
-        // All other positions (sort keys, Aggregate group keys, Filter …) always
-        // use the unaliased replacement via `replace_udf`.
-        use datafusion::logical_expr::Distinct as DistinctKind;
         let udf_schema_name = self.column.udf_schema_name();
-        let select_replacement = col_expr.clone().alias(udf_schema_name);
-        let replace_udf = |e: Expr, repl: &Expr| {
-            e.transform(|e| {
-                if is_udf(&e) {
-                    Ok(Transformed::yes(repl.clone()))
-                } else {
-                    Ok(Transformed::no(e))
-                }
-            })
-        };
-        let replace_udf_select = |e: Expr| -> Result<Transformed<Expr>, DataFusionError> {
-            if is_udf(&e) {
-                Ok(Transformed::yes(select_replacement.clone()))
-            } else {
-                replace_udf(e, &col_expr)
-            }
-        };
-        let (was_replaced, node) = match node {
-            Distinct(DistinctKind::On(mut on)) => {
-                // on_expr / sort_expr are sort keys — unaliased.
-                // select_expr is named output — top-level-aware alias.
-                let mut changed = false;
-                for e in std::mem::take(&mut on.on_expr) {
-                    let t = replace_udf(e, &col_expr)?;
-                    changed |= t.transformed;
-                    on.on_expr.push(t.data);
-                }
-                for e in std::mem::take(&mut on.select_expr) {
-                    let t = replace_udf_select(e)?;
-                    changed |= t.transformed;
-                    on.select_expr.push(t.data);
-                }
-                if let Some(sort_exprs) = on.sort_expr.take() {
-                    let mut new_sort = Vec::with_capacity(sort_exprs.len());
-                    for mut s in sort_exprs {
-                        let t = replace_udf(s.expr, &col_expr)?;
-                        changed |= t.transformed;
-                        s.expr = t.data;
-                        new_sort.push(s);
-                    }
-                    on.sort_expr = Some(new_sort);
-                }
-                let node = if changed {
-                    Distinct(DistinctKind::On(on)).recompute_schema()?
-                } else {
-                    Distinct(DistinctKind::On(on))
-                };
-                (changed, node)
-            }
-            node => {
-                let is_projection = matches!(node, Projection(_));
-                let r = node.map_expressions(|e| {
-                    if is_projection {
-                        replace_udf_select(e)
+
+        // Step 1: Replace sentinel UDF calls with the accumulated expression.
+        //
+        // At leaf nodes `next_expr` is `None` (no child has set it yet) and
+        // UDF replacement is a no-op since leaves have no user expressions.
+        // For non-leaf output positions (Projection.expr, DistinctOn.select_expr),
+        // a top-level UDF is aliased to preserve the user's column name (e.g.
+        // `block_num()` → `_block_num AS "block_num()"`). Nested UDFs are
+        // replaced without alias since the outer expression determines the name.
+        // All other positions (sort keys, group keys, filters) use the plain
+        // unaliased replacement.
+        let (was_replaced, node) = if let Some(next_expr) = self.next_expr.clone() {
+            let select_replacement = next_expr.clone().alias(udf_schema_name);
+            let replace_udf = |e: Expr, repl: &Expr| {
+                e.transform(|e| {
+                    if is_udf(&e) {
+                        Ok(Transformed::yes(repl.clone()))
                     } else {
-                        replace_udf(e, &col_expr)
+                        Ok(Transformed::no(e))
                     }
-                })?;
-                let was = r.transformed;
-                let node = if was {
-                    r.data.recompute_schema()?
+                })
+            };
+            let replace_udf_select = |e: Expr| -> Result<Transformed<Expr>, DataFusionError> {
+                if is_udf(&e) {
+                    Ok(Transformed::yes(select_replacement.clone()))
                 } else {
-                    r.data
-                };
-                (was, node)
+                    replace_udf(e, &next_expr)
+                }
+            };
+            match node {
+                Distinct(DistinctKind::On(mut on)) => {
+                    // on_expr / sort_expr are sort keys — unaliased.
+                    // select_expr is named output — top-level-aware alias.
+                    let mut changed = false;
+                    for e in std::mem::take(&mut on.on_expr) {
+                        let t = replace_udf(e, &next_expr)?;
+                        changed |= t.transformed;
+                        on.on_expr.push(t.data);
+                    }
+                    for e in std::mem::take(&mut on.select_expr) {
+                        let t = replace_udf_select(e)?;
+                        changed |= t.transformed;
+                        on.select_expr.push(t.data);
+                    }
+                    if let Some(sort_exprs) = on.sort_expr.take() {
+                        let mut new_sort = Vec::with_capacity(sort_exprs.len());
+                        for mut s in sort_exprs {
+                            let t = replace_udf(s.expr, &next_expr)?;
+                            changed |= t.transformed;
+                            s.expr = t.data;
+                            new_sort.push(s);
+                        }
+                        on.sort_expr = Some(new_sort);
+                    }
+                    let node = if changed {
+                        Distinct(DistinctKind::On(on)).recompute_schema()?
+                    } else {
+                        Distinct(DistinctKind::On(on))
+                    };
+                    (changed, node)
+                }
+                node => {
+                    let is_projection = matches!(node, Projection(_));
+                    let r = node.map_expressions(|e| {
+                        if is_projection {
+                            replace_udf_select(e)
+                        } else {
+                            replace_udf(e, &next_expr)
+                        }
+                    })?;
+                    let was = r.transformed;
+                    let node = if was {
+                        r.data.recompute_schema()?
+                    } else {
+                        r.data
+                    };
+                    (was, node)
+                }
             }
+        } else {
+            (false, node)
         };
 
-        // Step 2: Handle actual propagation of the watermark column value.
+        // Step 2: Handle propagation of the watermark column value.
         match node {
+            TableScan(ref scan) => {
+                // We run this before optimizations, so we can assume the projection to be empty.
+                if scan.projection.is_some() {
+                    return Err(df_err(format!("Scan should not have projection: {scan:?}")));
+                }
+                let resolved = self
+                    .column
+                    .resolve_in_schema(&scan.source.schema(), &scan.table_name)?;
+
+                // If the column was resolved via a compat alias (e.g. timestamp→_ts),
+                // wrap the scan in a Projection so the alias is visible to parent
+                // nodes (especially Joins which inspect child schemas directly).
+                if resolved != self.col() {
+                    let mut exprs: Vec<Expr> = node.schema().iter().map(Expr::from).collect();
+                    exprs.push(resolved.clone());
+                    let projected = LogicalPlanBuilder::from(node).project(exprs)?.build()?;
+                    self.set_next_expr(self.col());
+                    Ok(Transformed::yes(projected))
+                } else {
+                    self.set_next_expr(self.col());
+                    Ok(Transformed::no(node))
+                }
+            }
+
+            // Constants are formally produced "before the first watermark", but
+            // using watermark 0 should be ok in practice.
+            EmptyRelation(_) | Values(_) => {
+                self.set_next_expr(self.column.default_literal());
+                Ok(Transformed::no(node))
+            }
+
             Projection(mut projection) => {
+                let next_expr = self.next_expr()?;
+
                 // Check against bare watermark column references when projecting over joins.
                 let input_qualifiers: BTreeSet<&TableReference> = projection
                     .input
@@ -402,14 +443,14 @@ impl TreeNodeRewriter for WatermarkColumnPropagator {
 
                 // Consume next_expr: reset to col() so parent nodes see a simple
                 // column reference from this projection's output.
-                self.next_expr = Some(self.col());
+                self.set_next_expr(self.col());
 
-                // In the trivial single-table case (`col_expr` is just
+                // In the trivial single-table case (`next_expr` is just
                 // `col("<column_name>")`), skip auto-prepend when the projection
-                // already contains the column.  For joins the expr is non-trivial
+                // already contains the column. For joins the expr is non-trivial
                 // (e.g. `greatest(...)`) so we always prepend and let DF report
                 // any ambiguity.
-                if col_expr == self.col()
+                if next_expr == self.col()
                     && projection
                         .expr
                         .iter()
@@ -422,18 +463,17 @@ impl TreeNodeRewriter for WatermarkColumnPropagator {
                 }
 
                 // Auto-prepend the watermark column expression.
-                projection.expr.insert(0, col_expr);
+                projection.expr.insert(0, next_expr);
                 projection.schema = prepend_watermark_field(&projection.schema, &self.column);
                 Ok(Transformed::yes(LogicalPlan::Projection(projection)))
             }
 
             // Rebuild union schemas to match their child projections
             Union(union) => {
-                // Sanity check
-                if self.next_expr != Some(self.col()) {
+                let next_expr = self.next_expr()?;
+                if next_expr != self.col() {
                     return Err(df_err(format!(
-                        "unexpected `next_expr` for {}: {:?}",
-                        column_name, self.next_expr
+                        "unexpected `next_expr` for {column_name}: {next_expr:?}"
                     )));
                 }
 
@@ -441,38 +481,7 @@ impl TreeNodeRewriter for WatermarkColumnPropagator {
             }
 
             Join(ref join) => {
-                self.next_expr = Some(greatest_col_for_join(join, column_name)?);
-                Ok(Transformed::new_transformed(node, was_replaced))
-            }
-
-            TableScan(ref scan) => {
-                // We run this before optimizations, so we can assume the projection to be empty
-                if scan.projection.is_some() {
-                    return Err(df_err(format!("Scan should not have projection: {scan:?}")));
-                }
-                let resolved = self
-                    .column
-                    .resolve_in_schema(&scan.source.schema(), &scan.table_name)?;
-
-                // If the column was resolved via a compat alias (e.g. timestamp→_ts),
-                // wrap the scan in a Projection so the alias is visible to parent
-                // nodes (especially Joins which inspect child schemas directly).
-                if resolved != self.col() {
-                    let mut exprs: Vec<Expr> = node.schema().iter().map(Expr::from).collect();
-                    exprs.push(resolved.clone());
-                    let projected = LogicalPlanBuilder::from(node).project(exprs)?.build()?;
-                    self.next_expr = Some(self.col());
-                    Ok(Transformed::yes(projected))
-                } else {
-                    self.next_expr = Some(self.col());
-                    Ok(Transformed::new_transformed(node, was_replaced))
-                }
-            }
-
-            // Constants are formally produced "before the first watermark", but
-            // using watermark 0 should be ok in practice.
-            EmptyRelation(_) | Values(_) => {
-                self.next_expr = Some(self.column.default_literal());
+                self.set_next_expr(greatest_col_for_join(join, column_name)?);
                 Ok(Transformed::new_transformed(node, was_replaced))
             }
 
@@ -493,14 +502,15 @@ impl TreeNodeRewriter for WatermarkColumnPropagator {
             // DISTINCT ON has a cached schema field that must be rebuilt to include
             // the watermark column after propagation.
             Distinct(distinct) => {
+                let next_expr = self.next_expr()?;
                 match distinct {
                     DistinctKind::On(mut on) => {
                         // Consume next_expr.
-                        self.next_expr = Some(self.col());
+                        self.set_next_expr(self.col());
 
                         // In the trivial single-table case, skip auto-prepend when
                         // the column is already in the select list.
-                        if col_expr == self.col()
+                        if next_expr == self.col()
                             && on
                                 .select_expr
                                 .iter()
@@ -513,7 +523,7 @@ impl TreeNodeRewriter for WatermarkColumnPropagator {
                         }
 
                         // Prepend watermark column to select_expr and rebuild the cached schema.
-                        on.select_expr.insert(0, col_expr);
+                        on.select_expr.insert(0, next_expr);
                         on.schema = prepend_watermark_field(&on.schema, &self.column);
                         Ok(Transformed::yes(LogicalPlan::Distinct(DistinctKind::On(
                             on,
@@ -533,19 +543,20 @@ impl TreeNodeRewriter for WatermarkColumnPropagator {
             // `_block_num`), add `first_value(<col>)` as an aggregate expression
             // so the column survives past the aggregate.
             Aggregate(agg) => {
+                let next_expr = self.next_expr()?;
                 let in_output = agg.schema.fields().iter().any(|f| f.name() == column_name);
                 if in_output {
-                    self.next_expr = Some(self.col());
+                    self.set_next_expr(self.col());
                     Ok(Transformed::new_transformed(Aggregate(agg), was_replaced))
                 } else {
                     // The column is not a group key. Add first_value(<col>) AS <col>
                     // to the aggregate so it appears in the output.
-                    let first_val = first_value(col_expr.clone(), vec![]).alias(column_name);
+                    let first_val = first_value(next_expr, vec![]).alias(column_name);
                     let mut aggr_expr = agg.aggr_expr.to_vec();
                     aggr_expr.push(first_val);
                     let new_agg =
                         AggregateStruct::try_new(agg.input, agg.group_expr.to_vec(), aggr_expr)?;
-                    self.next_expr = Some(self.col());
+                    self.set_next_expr(self.col());
                     Ok(Transformed::yes(Aggregate(new_agg)))
                 }
             }
