@@ -1,11 +1,14 @@
-//! Integration tests for dataset redeployment idempotency
+//! Integration tests for dataset deployment via the admin API.
 //!
-//! Verifies that deploying the same dataset version multiple times returns the same
-//! job ID (idempotency key deduplication) and that re-deploying with a different
-//! end_block while the job is still active does not create a new job.
+//! Verifies redeployment idempotency and retry_strategy round-tripping through
+//! the admin API: the field is persisted in the job descriptor when provided
+//! and absent when omitted.
 
 use amp_client_admin::{self as client, end_block::EndBlock};
-use amp_job_core::job_id::JobId;
+use amp_job_core::{
+    job_id::JobId,
+    retry_strategy::{Backoff, ExponentialParams, MaxAttempts, RetryStrategy},
+};
 use datasets_common::reference::Reference;
 
 use crate::testlib::ctx::TestCtxBuilder;
@@ -37,6 +40,68 @@ async fn redeploy_with_different_end_block_returns_same_job_id() {
         "expected ActiveJobConflict, got: {error:?}"
     );
 }
+
+// --- Retry strategy tests ---
+
+#[tokio::test]
+async fn deploy_with_retry_strategy_persists_in_descriptor() {
+    //* Given
+    let ctx = TestCtx::setup("deploy_retry_bounded").await;
+
+    let retry_strategy = RetryStrategy::Bounded {
+        max_attempts: MaxAttempts::new(10).unwrap(),
+        backoff: Backoff::Exponential {
+            params: ExponentialParams::new(1, 3.0, None).unwrap(),
+        },
+    };
+
+    //* When
+    let job_id = ctx
+        .deploy_dataset_with_retry(Some(EndBlock::Latest), Some(retry_strategy.clone()))
+        .await
+        .expect("deployment should succeed");
+
+    //* Then
+    let job = ctx
+        .ampctl_client
+        .jobs()
+        .get(&job_id)
+        .await
+        .expect("get job should succeed")
+        .expect("job should exist");
+
+    let rs: RetryStrategy = serde_json::from_value(job.descriptor["retry_strategy"].clone())
+        .expect("retry_strategy should deserialize");
+    assert_eq!(rs, retry_strategy, "persisted strategy should match input");
+}
+
+#[tokio::test]
+async fn deploy_without_retry_strategy_omits_field() {
+    //* Given
+    let ctx = TestCtx::setup("deploy_retry_omitted").await;
+
+    //* When
+    let job_id = ctx
+        .deploy_dataset(Some(EndBlock::Latest))
+        .await
+        .expect("deployment should succeed");
+
+    //* Then
+    let job = ctx
+        .ampctl_client
+        .jobs()
+        .get(&job_id)
+        .await
+        .expect("get job should succeed")
+        .expect("job should exist");
+
+    assert!(
+        job.descriptor.get("retry_strategy").is_none(),
+        "retry_strategy should be absent from descriptor"
+    );
+}
+
+// --- Test helpers ---
 
 struct TestCtx {
     ctx: crate::testlib::ctx::TestCtx,
@@ -83,9 +148,17 @@ impl TestCtx {
         &self,
         end_block: Option<EndBlock>,
     ) -> Result<JobId, client::datasets::DeployError> {
+        self.deploy_dataset_with_retry(end_block, None).await
+    }
+
+    async fn deploy_dataset_with_retry(
+        &self,
+        end_block: Option<EndBlock>,
+        retry_strategy: Option<RetryStrategy>,
+    ) -> Result<JobId, client::datasets::DeployError> {
         self.ampctl_client
             .datasets()
-            .deploy(&self.dataset_ref, end_block, 1, None, false)
+            .deploy(&self.dataset_ref, end_block, 1, None, false, retry_strategy)
             .await
     }
 }

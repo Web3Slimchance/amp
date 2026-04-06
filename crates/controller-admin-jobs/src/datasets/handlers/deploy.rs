@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use amp_datasets_registry::error::{ListVersionTagsError, ResolveRevisionError};
-use amp_job_core::job_id::JobId;
+use amp_job_core::{job_id::JobId, retry_strategy::RetryStrategy};
 use amp_job_materialize_datasets_derived::job_descriptor::JobDescriptor as MaterializeDerivedDatasetJobDescriptor;
 use amp_job_materialize_datasets_raw::job_descriptor::JobDescriptor as MaterializeRawDatasetJobDescriptor;
 use axum::{
@@ -37,6 +37,7 @@ use crate::{
 /// - `parallelism`: Number of parallel workers (default: 1, only for raw datasets)
 /// - `worker_id`: Optional worker selector (exact ID or glob pattern)
 /// - `verify`: Enable cryptographic verification of EVM block data (default: false)
+/// - `retry_strategy`: Optional retry strategy controlling how failed jobs are retried
 ///
 /// ## Response
 /// - **202 Accepted**: Job successfully scheduled
@@ -109,6 +110,7 @@ pub async fn handler(
         parallelism,
         worker_id,
         verify,
+        retry_strategy,
     } = match json {
         Ok(Json(request)) => request,
         Err(err) => {
@@ -151,29 +153,33 @@ pub async fn handler(
     // Build the job descriptor and compute idempotency key based on dataset kind
     let (job_descriptor, idempotency_key) = if dataset.kind() == DerivedDatasetKind {
         (
-            JobDescriptor::from(MaterializeDerivedDatasetJobDescriptor {
-                end_block: end_block.into(),
-                dataset_namespace: reference.namespace().clone(),
-                dataset_name: reference.name().clone(),
-                manifest_hash: reference.hash().clone(),
-            }),
+            JobDescriptor::materialize_derived(
+                MaterializeDerivedDatasetJobDescriptor {
+                    end_block: end_block.into(),
+                    dataset_namespace: reference.namespace().clone(),
+                    dataset_name: reference.name().clone(),
+                    manifest_hash: reference.hash().clone(),
+                },
+                retry_strategy,
+            ),
             amp_job_materialize_datasets_derived::job_key::idempotency_key(&reference),
         )
     } else {
         (
-            MaterializeRawDatasetJobDescriptor {
-                end_block: end_block.into(),
-                max_writers: parallelism,
-                dataset_namespace: reference.namespace().clone(),
-                dataset_name: reference.name().clone(),
-                manifest_hash: reference.hash().clone(),
-                verify,
-            }
-            .into(),
+            JobDescriptor::materialize_raw(
+                MaterializeRawDatasetJobDescriptor {
+                    end_block: end_block.into(),
+                    max_writers: parallelism,
+                    dataset_namespace: reference.namespace().clone(),
+                    dataset_name: reference.name().clone(),
+                    manifest_hash: reference.hash().clone(),
+                    verify,
+                },
+                retry_strategy,
+            ),
             amp_job_materialize_datasets_raw::job_key::idempotency_key(&reference),
         )
     };
-
     // Schedule the extraction job using the scheduler
     let job_id = ctx
         .scheduler
@@ -270,6 +276,18 @@ pub struct DeployRequest {
     /// Defaults to false if not specified.
     #[serde(default)]
     pub verify: bool,
+
+    /// Optional retry strategy controlling how failed jobs are retried.
+    ///
+    /// Supports three strategies:
+    /// - `none`: Never retry — fail immediately on first error.
+    /// - `bounded`: Retry up to `max_attempts` times with configurable backoff.
+    /// - `unless_stopped`: Retry indefinitely until the job is explicitly stopped.
+    ///
+    /// If not specified, the scheduler applies its default strategy.
+    #[serde(default)]
+    #[cfg_attr(feature = "utoipa", schema(value_type = Option<Object>))]
+    pub retry_strategy: Option<RetryStrategy>,
 }
 
 fn default_parallelism() -> u16 {

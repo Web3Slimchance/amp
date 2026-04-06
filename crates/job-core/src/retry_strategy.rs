@@ -4,12 +4,14 @@
 //! The metadata-db layer stores this as opaque JSON; this module provides the
 //! typed interpretation used by the scheduler.
 
-use std::time::Duration;
+use std::{fmt, time::Duration};
+
+use serde::de;
 
 /// Retry strategy for a job, deserialized from the descriptor's `retry_strategy` field.
 ///
 /// Each variant carries only the parameters relevant to that strategy.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "strategy", rename_all = "snake_case")]
 pub enum RetryStrategy {
     /// Never retry — transition to FATAL on first failure.
@@ -17,8 +19,8 @@ pub enum RetryStrategy {
 
     /// Retry up to `max_attempts` times, then mark FATAL.
     Bounded {
-        /// Maximum number of retry attempts (required).
-        max_attempts: u32,
+        /// Maximum number of retry attempts (required, >= 1).
+        max_attempts: MaxAttempts,
         /// Backoff configuration. Defaults to exponential (base=1s, mult=2.0).
         #[serde(default)]
         backoff: Backoff,
@@ -32,116 +34,26 @@ pub enum RetryStrategy {
     },
 }
 
-/// Backoff algorithm with variant-specific parameters.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum Backoff {
-    /// Fixed delay: `delay = base_delay_secs` for every attempt.
-    Fixed {
-        #[serde(default = "default_base_delay_secs")]
-        base_delay_secs: u64,
-    },
-
-    /// Exponential: `delay = base_delay_secs * multiplier ^ attempt_index`.
-    Exponential {
-        #[serde(flatten)]
-        params: ExponentialParams,
-    },
-
-    /// Exponential base delay with bounded jitter applied by the caller.
-    ExponentialWithJitter {
-        #[serde(flatten)]
-        params: ExponentialParams,
-    },
-}
-
-/// Shared parameters for exponential backoff variants.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct ExponentialParams {
-    #[serde(default = "default_base_delay_secs")]
-    pub base_delay_secs: u64,
-    #[serde(default = "default_multiplier")]
-    pub multiplier: f64,
-    /// Optional cap on computed delay (seconds).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_delay_secs: Option<u64>,
-}
-
-fn default_base_delay_secs() -> u64 {
-    1
-}
-
-fn default_multiplier() -> f64 {
-    2.0
-}
-
-impl ExponentialParams {
-    fn compute_delay(&self, attempt_index: u32) -> Duration {
-        let base = self.base_delay_secs as f64;
-        let cap = self.max_delay_secs.map(|c| c as f64).unwrap_or(f64::MAX);
-        // Clamp exponent to avoid f64 overflow → infinity → Duration panic.
-        let exp = attempt_index.min(63) as i32;
-        let raw = base * self.multiplier.powi(exp);
-        Duration::from_secs_f64(raw.clamp(0.0, cap))
-    }
-}
-
-impl Default for ExponentialParams {
-    fn default() -> Self {
-        Self {
-            base_delay_secs: default_base_delay_secs(),
-            multiplier: default_multiplier(),
-            max_delay_secs: None,
-        }
-    }
-}
-
-impl Default for Backoff {
-    fn default() -> Self {
-        Self::Exponential {
-            params: ExponentialParams::default(),
-        }
-    }
-}
-
-impl Default for RetryStrategy {
-    /// Matches current behavior: unlimited retries with exponential backoff.
-    fn default() -> Self {
-        Self::UnlessStopped {
-            backoff: Backoff::default(),
-        }
-    }
-}
-
-impl Backoff {
-    /// Compute the backoff delay for a given attempt index (0-based).
-    /// Does NOT include jitter — caller applies jitter for `ExponentialWithJitter`.
-    fn compute_delay(&self, attempt_index: u32) -> Duration {
-        match self {
-            Backoff::Fixed { base_delay_secs } => Duration::from_secs(*base_delay_secs),
-            Backoff::Exponential { params } | Backoff::ExponentialWithJitter { params } => {
-                params.compute_delay(attempt_index)
-            }
-        }
-    }
-}
-
 impl RetryStrategy {
     /// Parse a `RetryStrategy` from a job descriptor JSON string.
     ///
     /// Extracts the `retry_strategy` field from the descriptor object and
     /// deserializes it. Returns `None` if the field is missing or malformed.
     pub fn from_descriptor(descriptor_json: &str) -> Option<Self> {
-        let value: serde_json::Value = serde_json::from_str(descriptor_json).ok()?;
-        let retry_obj = value.get("retry_strategy")?;
-        serde_json::from_value(retry_obj.clone()).ok()
+        #[derive(serde::Deserialize)]
+        struct Extract {
+            retry_strategy: Option<RetryStrategy>,
+        }
+        serde_json::from_str::<Extract>(descriptor_json)
+            .ok()?
+            .retry_strategy
     }
 
     /// Returns `true` if retries are exhausted for the given attempt index (0-based).
     pub fn is_exhausted(&self, attempt_index: u32) -> bool {
         match self {
             RetryStrategy::None => true,
-            RetryStrategy::Bounded { max_attempts, .. } => attempt_index >= *max_attempts,
+            RetryStrategy::Bounded { max_attempts, .. } => attempt_index >= max_attempts.get(),
             RetryStrategy::UnlessStopped { .. } => false,
         }
     }
@@ -168,6 +80,326 @@ impl RetryStrategy {
                 backoff.compute_delay(attempt_index)
             }
         }
+    }
+}
+
+impl Default for RetryStrategy {
+    /// Matches current behavior: unlimited retries with exponential backoff.
+    fn default() -> Self {
+        Self::UnlessStopped {
+            backoff: Backoff::default(),
+        }
+    }
+}
+
+impl fmt::Display for RetryStrategy {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RetryStrategy::None => write!(f, "none"),
+            RetryStrategy::Bounded { max_attempts, .. } => {
+                write!(f, "bounded(max_attempts={})", max_attempts.get())
+            }
+            RetryStrategy::UnlessStopped { .. } => write!(f, "unless_stopped"),
+        }
+    }
+}
+
+/// Backoff algorithm with variant-specific parameters.
+#[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Backoff {
+    /// Fixed delay: `delay = base_delay_secs` for every attempt.
+    Fixed {
+        #[serde(default = "BaseDelaySecs::default")]
+        base_delay_secs: BaseDelaySecs,
+    },
+
+    /// Exponential: `delay = base_delay_secs * multiplier ^ attempt_index`.
+    Exponential {
+        #[serde(flatten)]
+        params: ExponentialParams,
+    },
+
+    /// Exponential base delay with bounded jitter applied by the caller.
+    ExponentialWithJitter {
+        #[serde(flatten)]
+        params: ExponentialParams,
+    },
+}
+
+impl Backoff {
+    /// Compute the backoff delay for a given attempt index (0-based).
+    /// Does NOT include jitter — caller applies jitter for `ExponentialWithJitter`.
+    fn compute_delay(&self, attempt_index: u32) -> Duration {
+        match self {
+            Backoff::Fixed { base_delay_secs } => Duration::from_secs(base_delay_secs.get()),
+            Backoff::Exponential { params } | Backoff::ExponentialWithJitter { params } => {
+                params.compute_delay(attempt_index)
+            }
+        }
+    }
+}
+
+impl Default for Backoff {
+    fn default() -> Self {
+        Self::Exponential {
+            params: ExponentialParams::default(),
+        }
+    }
+}
+
+/// Shared parameters for exponential backoff variants.
+///
+/// Cross-field invariant: when `max_delay_secs` is present it must be
+/// `>= base_delay_secs`. This is enforced by the custom `Deserialize` impl
+/// and the `new()` constructor.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
+pub struct ExponentialParams {
+    base_delay_secs: BaseDelaySecs,
+    multiplier: Multiplier,
+    /// Optional cap on computed delay (seconds).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    max_delay_secs: Option<u64>,
+}
+
+/// Errors when constructing [`ExponentialParams`] with invalid values
+#[derive(Debug, thiserror::Error)]
+pub enum ExponentialParamsError {
+    /// The `base_delay_secs` value is invalid
+    #[error("invalid base delay")]
+    BaseDelay(#[source] BaseDelaySecsError),
+
+    /// The `multiplier` value is invalid
+    #[error("invalid multiplier")]
+    Multiplier(#[source] MultiplierError),
+
+    /// The `max_delay_secs` cap is less than `base_delay_secs`
+    ///
+    /// This makes the cap unreachable from the first attempt.
+    #[error("max_delay_secs ({max}) must be >= base_delay_secs ({base})")]
+    MaxDelayBelowBase {
+        /// The provided max delay cap
+        max: u64,
+        /// The provided base delay
+        base: u64,
+    },
+}
+
+impl ExponentialParams {
+    /// Create a new `ExponentialParams` with the given values.
+    ///
+    /// Returns an error if any field is invalid or `max_delay_secs < base_delay_secs`.
+    pub fn new(
+        base_delay_secs: u64,
+        multiplier: f64,
+        max_delay_secs: Option<u64>,
+    ) -> Result<Self, ExponentialParamsError> {
+        let base =
+            BaseDelaySecs::new(base_delay_secs).map_err(ExponentialParamsError::BaseDelay)?;
+        let mult = Multiplier::new(multiplier).map_err(ExponentialParamsError::Multiplier)?;
+
+        if let Some(max) = max_delay_secs
+            && max < base_delay_secs
+        {
+            return Err(ExponentialParamsError::MaxDelayBelowBase {
+                max,
+                base: base_delay_secs,
+            });
+        }
+
+        Ok(Self {
+            base_delay_secs: base,
+            multiplier: mult,
+            max_delay_secs,
+        })
+    }
+
+    /// Returns the base delay in seconds.
+    pub fn base_delay_secs(&self) -> u64 {
+        self.base_delay_secs.get()
+    }
+
+    /// Returns the multiplier.
+    pub fn multiplier(&self) -> f64 {
+        self.multiplier.get()
+    }
+
+    /// Returns the optional maximum delay cap in seconds.
+    pub fn max_delay_secs(&self) -> Option<u64> {
+        self.max_delay_secs
+    }
+
+    fn compute_delay(&self, attempt_index: u32) -> Duration {
+        let base = self.base_delay_secs.get() as f64;
+        let cap = self.max_delay_secs.map(|c| c as f64).unwrap_or(f64::MAX);
+        // Clamp exponent to avoid f64 overflow → infinity → Duration panic.
+        let exp = attempt_index.min(63) as i32;
+        let raw = base * self.multiplier.get().powi(exp);
+        Duration::from_secs_f64(raw.clamp(0.0, cap))
+    }
+}
+
+impl Eq for ExponentialParams {}
+
+/// Helper for deserializing `ExponentialParams` with cross-field validation.
+impl<'de> de::Deserialize<'de> for ExponentialParams {
+    fn deserialize<D: de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        /// Raw helper that mirrors the wire format without validation.
+        #[derive(serde::Deserialize)]
+        struct Raw {
+            #[serde(default = "BaseDelaySecs::default")]
+            base_delay_secs: BaseDelaySecs,
+            #[serde(default = "Multiplier::default")]
+            multiplier: Multiplier,
+            #[serde(default)]
+            max_delay_secs: Option<u64>,
+        }
+
+        let raw = Raw::deserialize(deserializer)?;
+
+        if let Some(max) = raw.max_delay_secs
+            && max < raw.base_delay_secs.get()
+        {
+            return Err(de::Error::custom(
+                "max_delay_secs must be >= base_delay_secs",
+            ));
+        }
+
+        Ok(Self {
+            base_delay_secs: raw.base_delay_secs,
+            multiplier: raw.multiplier,
+            max_delay_secs: raw.max_delay_secs,
+        })
+    }
+}
+
+/// Maximum retry attempts for a bounded strategy. Must be at least 1.
+///
+/// Validates on construction and deserialization.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, serde::Serialize)]
+#[serde(transparent)]
+pub struct MaxAttempts(u32);
+
+/// The provided `max_attempts` value is zero
+///
+/// A bounded retry strategy requires at least one attempt to be meaningful.
+#[derive(Debug, thiserror::Error)]
+#[error("max_attempts must be at least 1, got {value}")]
+pub struct MaxAttemptsError {
+    value: u32,
+}
+
+impl MaxAttempts {
+    /// Create a new `MaxAttempts`, returning an error if the value is zero.
+    pub fn new(value: u32) -> Result<Self, MaxAttemptsError> {
+        if value == 0 {
+            return Err(MaxAttemptsError { value });
+        }
+        Ok(Self(value))
+    }
+
+    /// Returns the inner value.
+    pub fn get(self) -> u32 {
+        self.0
+    }
+}
+
+impl<'de> de::Deserialize<'de> for MaxAttempts {
+    fn deserialize<D: de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = u32::deserialize(deserializer)?;
+        Self::new(value).map_err(de::Error::custom)
+    }
+}
+
+/// Base delay in seconds. Must be at least 1.
+///
+/// Validates on construction and deserialization — invalid values are rejected
+/// at parse time rather than via a post-hoc `validate()` call.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, serde::Serialize)]
+#[serde(transparent)]
+pub struct BaseDelaySecs(u64);
+
+/// The provided `base_delay_secs` value is zero
+///
+/// A delay of zero seconds is meaningless for backoff configuration.
+#[derive(Debug, thiserror::Error)]
+#[error("base_delay_secs must be at least 1, got {value}")]
+pub struct BaseDelaySecsError {
+    value: u64,
+}
+
+impl BaseDelaySecs {
+    /// Create a new `BaseDelaySecs`, returning an error if the value is zero.
+    pub fn new(value: u64) -> Result<Self, BaseDelaySecsError> {
+        if value == 0 {
+            return Err(BaseDelaySecsError { value });
+        }
+        Ok(Self(value))
+    }
+
+    /// Returns the inner value.
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
+impl Default for BaseDelaySecs {
+    fn default() -> Self {
+        Self(1)
+    }
+}
+
+impl<'de> de::Deserialize<'de> for BaseDelaySecs {
+    fn deserialize<D: de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = u64::deserialize(deserializer)?;
+        Self::new(value).map_err(de::Error::custom)
+    }
+}
+
+/// Exponential backoff multiplier. Must be finite and positive.
+///
+/// Validates on construction and deserialization.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+#[serde(transparent)]
+pub struct Multiplier(f64);
+
+/// The provided `multiplier` value is not a finite positive number
+///
+/// This occurs when the multiplier is NaN, infinite, zero, or negative.
+#[derive(Debug, thiserror::Error)]
+#[error("multiplier must be a finite positive number, got {value}")]
+pub struct MultiplierError {
+    value: f64,
+}
+
+impl Multiplier {
+    /// Create a new `Multiplier`, returning an error if the value is not finite
+    /// and positive.
+    pub fn new(value: f64) -> Result<Self, MultiplierError> {
+        if !value.is_finite() || value <= 0.0 {
+            return Err(MultiplierError { value });
+        }
+        Ok(Self(value))
+    }
+
+    /// Returns the inner value.
+    pub fn get(self) -> f64 {
+        self.0
+    }
+}
+
+impl Default for Multiplier {
+    fn default() -> Self {
+        Self(2.0)
+    }
+}
+
+impl Eq for Multiplier {}
+
+impl<'de> de::Deserialize<'de> for Multiplier {
+    fn deserialize<D: de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = f64::deserialize(deserializer)?;
+        Self::new(value).map_err(de::Error::custom)
     }
 }
 
@@ -216,7 +448,9 @@ mod tests {
     fn compute_delay_with_fixed_backoff_returns_constant_delay() {
         //* Given
         let strategy = RetryStrategy::UnlessStopped {
-            backoff: Backoff::Fixed { base_delay_secs: 5 },
+            backoff: Backoff::Fixed {
+                base_delay_secs: BaseDelaySecs::new(5).unwrap(),
+            },
         };
 
         //* When
@@ -241,10 +475,7 @@ mod tests {
         //* Given
         let strategy = RetryStrategy::UnlessStopped {
             backoff: Backoff::Exponential {
-                params: ExponentialParams {
-                    max_delay_secs: Some(60),
-                    ..ExponentialParams::default()
-                },
+                params: ExponentialParams::new(1, 2.0, Some(60)).unwrap(),
             },
         };
 
@@ -264,10 +495,7 @@ mod tests {
         //* Given
         let strategy = RetryStrategy::UnlessStopped {
             backoff: Backoff::Exponential {
-                params: ExponentialParams {
-                    max_delay_secs: Some(3600),
-                    ..ExponentialParams::default()
-                },
+                params: ExponentialParams::new(1, 2.0, Some(3600)).unwrap(),
             },
         };
 
@@ -311,7 +539,7 @@ mod tests {
     fn is_exhausted_with_bounded_strategy_respects_max_attempts() {
         //* Given
         let strategy = RetryStrategy::Bounded {
-            max_attempts: 3,
+            max_attempts: MaxAttempts::new(3).unwrap(),
             backoff: Backoff::default(),
         };
 
@@ -348,9 +576,9 @@ mod tests {
         assert_eq!(
             strategy,
             Some(RetryStrategy::Bounded {
-                max_attempts: 5,
+                max_attempts: MaxAttempts::new(5).unwrap(),
                 backoff: Backoff::Fixed {
-                    base_delay_secs: 10
+                    base_delay_secs: BaseDelaySecs::new(10).unwrap(),
                 },
             }),
             "should parse retry_strategy from descriptor JSON"
@@ -385,7 +613,7 @@ mod tests {
     fn needs_jitter_with_exponential_with_jitter_returns_true() {
         //* Given
         let strategy = RetryStrategy::Bounded {
-            max_attempts: 3,
+            max_attempts: MaxAttempts::new(3).unwrap(),
             backoff: Backoff::ExponentialWithJitter {
                 params: ExponentialParams::default(),
             },
@@ -402,7 +630,7 @@ mod tests {
     fn needs_jitter_with_exponential_returns_false() {
         //* Given
         let strategy = RetryStrategy::Bounded {
-            max_attempts: 3,
+            max_attempts: MaxAttempts::new(3).unwrap(),
             backoff: Backoff::Exponential {
                 params: ExponentialParams::default(),
             },
@@ -419,7 +647,9 @@ mod tests {
     fn needs_jitter_with_fixed_returns_false() {
         //* Given
         let strategy = RetryStrategy::UnlessStopped {
-            backoff: Backoff::Fixed { base_delay_secs: 5 },
+            backoff: Backoff::Fixed {
+                base_delay_secs: BaseDelaySecs::new(5).unwrap(),
+            },
         };
 
         //* Then
@@ -429,17 +659,119 @@ mod tests {
         );
     }
 
+    // --- Deserialization rejection tests (replaces validate() tests) ---
+
+    #[test]
+    fn deserialize_rejects_zero_max_attempts() {
+        //* Given
+        let json = r#"{"strategy":"bounded","max_attempts":0}"#;
+
+        //* When
+        let result = serde_json::from_str::<RetryStrategy>(json);
+
+        //* Then
+        let err = result.expect_err("zero max_attempts should be rejected at parse time");
+        assert!(
+            err.to_string().contains("max_attempts must be at least 1"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn deserialize_rejects_nan_multiplier() {
+        //* Given — NaN is not valid JSON, so we test via the constructor
+        let result = Multiplier::new(f64::NAN);
+
+        //* Then
+        assert!(
+            result.is_err(),
+            "NaN multiplier should be rejected at construction"
+        );
+    }
+
+    #[test]
+    fn deserialize_rejects_negative_multiplier() {
+        //* Given
+        let json = r#"{"strategy":"bounded","max_attempts":3,"backoff":{"kind":"exponential","multiplier":-1.0}}"#;
+
+        //* When
+        let result = serde_json::from_str::<RetryStrategy>(json);
+
+        //* Then
+        let err = result.expect_err("negative multiplier should be rejected at parse time");
+        assert!(
+            err.to_string()
+                .contains("multiplier must be a finite positive number"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn deserialize_rejects_zero_base_delay() {
+        //* Given
+        let json =
+            r#"{"strategy":"unless_stopped","backoff":{"kind":"fixed","base_delay_secs":0}}"#;
+
+        //* When
+        let result = serde_json::from_str::<RetryStrategy>(json);
+
+        //* Then
+        let err = result.expect_err("zero base delay should be rejected at parse time");
+        assert!(
+            err.to_string()
+                .contains("base_delay_secs must be at least 1"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn deserialize_rejects_max_delay_less_than_base_delay() {
+        //* Given
+        let json = r#"{"strategy":"bounded","max_attempts":3,"backoff":{"kind":"exponential","base_delay_secs":60,"max_delay_secs":10}}"#;
+
+        //* When
+        let result = serde_json::from_str::<RetryStrategy>(json);
+
+        //* Then
+        let err = result.expect_err("max_delay < base_delay should be rejected at parse time");
+        assert!(
+            err.to_string()
+                .contains("max_delay_secs must be >= base_delay_secs"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn deserialize_accepts_valid_bounded_strategy() {
+        //* Given
+        let json = r#"{"strategy":"bounded","max_attempts":5,"backoff":{"kind":"exponential","base_delay_secs":1,"multiplier":2.0,"max_delay_secs":60}}"#;
+
+        //* When
+        let result = serde_json::from_str::<RetryStrategy>(json);
+
+        //* Then
+        assert!(result.is_ok(), "valid strategy should parse successfully");
+    }
+
+    #[test]
+    fn deserialize_accepts_none_strategy() {
+        //* Given
+        let json = r#"{"strategy":"none"}"#;
+
+        //* When
+        let result = serde_json::from_str::<RetryStrategy>(json);
+
+        //* Then
+        assert!(result.is_ok(), "none strategy should parse successfully");
+    }
+
     #[test]
     fn retry_strategy_serde_round_trip_preserves_values() {
         //* Given
         let strategy = RetryStrategy::Bounded {
-            max_attempts: 5,
+            max_attempts: MaxAttempts::new(5).unwrap(),
             backoff: Backoff::ExponentialWithJitter {
-                params: ExponentialParams {
-                    base_delay_secs: 2,
-                    multiplier: 3.0,
-                    max_delay_secs: Some(120),
-                },
+                params: ExponentialParams::new(2, 3.0, Some(120)).unwrap(),
             },
         };
 

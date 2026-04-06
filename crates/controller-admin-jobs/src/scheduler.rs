@@ -23,7 +23,7 @@
 //! - Worker information queries
 //! - Worker status retrieval
 
-use amp_job_core::{job_id::JobId, status::JobStatus};
+use amp_job_core::{job_id::JobId, retry_strategy::RetryStrategy, status::JobStatus};
 use amp_worker_core::node_id::{InvalidIdError, NodeId, validate_node_id};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -228,25 +228,85 @@ impl From<&EventDetail<'_>> for JobDescriptor {
     }
 }
 
-impl From<amp_job_materialize_datasets_raw::job_descriptor::JobDescriptor> for JobDescriptor {
-    fn from(desc: amp_job_materialize_datasets_raw::job_descriptor::JobDescriptor) -> Self {
-        let raw: EventDetailOwned = desc.into();
-        Self(raw.into_inner())
+impl JobDescriptor {
+    /// Construct a scheduler descriptor for a raw dataset materialization job.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the descriptor cannot be serialized to JSON. In practice this
+    /// cannot happen because the concrete descriptor types contain only
+    /// primitive and string fields.
+    pub fn materialize_raw(
+        desc: amp_job_materialize_datasets_raw::job_descriptor::JobDescriptor,
+        retry_strategy: Option<RetryStrategy>,
+    ) -> Self {
+        Self::descriptor(
+            amp_job_materialize_datasets_raw::job_kind::JOB_KIND,
+            desc,
+            retry_strategy,
+        )
+    }
+
+    /// Construct a scheduler descriptor for a derived dataset materialization job.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the descriptor cannot be serialized to JSON. In practice this
+    /// cannot happen because the concrete descriptor types contain only
+    /// primitive and string fields.
+    pub fn materialize_derived(
+        desc: amp_job_materialize_datasets_derived::job_descriptor::JobDescriptor,
+        retry_strategy: Option<RetryStrategy>,
+    ) -> Self {
+        Self::descriptor(
+            amp_job_materialize_datasets_derived::job_kind::JOB_KIND,
+            desc,
+            retry_strategy,
+        )
+    }
+
+    /// Construct a scheduler descriptor for a garbage collection job.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the descriptor cannot be serialized to JSON. In practice this
+    /// cannot happen because the concrete descriptor types contain only
+    /// primitive and string fields.
+    pub fn gc(
+        desc: amp_job_gc::job_descriptor::JobDescriptor,
+        retry_strategy: Option<RetryStrategy>,
+    ) -> Self {
+        Self::descriptor(amp_job_gc::job_kind::JOB_KIND, desc, retry_strategy)
+    }
+
+    /// Serialize a job descriptor together with scheduler-level fields.
+    fn descriptor<D: serde::Serialize>(
+        kind: &str,
+        details: D,
+        retry_strategy: Option<RetryStrategy>,
+    ) -> Self {
+        // SAFETY: All concrete descriptor types (`MaterializeRawJobDescriptor`,
+        // `MaterializeDerivedJobDescriptor`, `GcJobDescriptor`) contain only
+        // primitive and string fields whose `Serialize` impls are infallible.
+        let raw = serde_json::value::to_raw_value(&Descriptor {
+            kind,
+            retry_strategy,
+            details,
+        })
+        .expect("Descriptor serialization is infallible");
+        Self(raw)
     }
 }
 
-impl From<amp_job_materialize_datasets_derived::job_descriptor::JobDescriptor> for JobDescriptor {
-    fn from(desc: amp_job_materialize_datasets_derived::job_descriptor::JobDescriptor) -> Self {
-        let raw: EventDetailOwned = desc.into();
-        Self(raw.into_inner())
-    }
-}
-
-impl From<amp_job_gc::job_descriptor::JobDescriptor> for JobDescriptor {
-    fn from(desc: amp_job_gc::job_descriptor::JobDescriptor) -> Self {
-        let raw: EventDetailOwned = desc.into();
-        Self(raw.into_inner())
-    }
+/// Combines a typed job descriptor with its `kind` tag and scheduler-level
+/// fields (retry strategy) into a single JSON object for storage.
+#[derive(serde::Serialize)]
+struct Descriptor<'a, D> {
+    kind: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    retry_strategy: Option<RetryStrategy>,
+    #[serde(flatten)]
+    details: D,
 }
 
 /// Errors that can occur when scheduling a dataset dump job

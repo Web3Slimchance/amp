@@ -2,7 +2,7 @@
 //!
 //! Provides methods for interacting with the `/datasets` endpoints of the admin API.
 
-use amp_job_core::job_id::JobId;
+use amp_job_core::{job_id::JobId, retry_strategy::RetryStrategy};
 use amp_worker_core::node_id::{InvalidIdError, NodeId, validate_node_id};
 use datasets_common::{
     dataset_kind_str::DatasetKindStr, fqn::FullyQualifiedName, hash::Hash, name::Name,
@@ -274,6 +274,7 @@ impl<'a> DatasetsClient<'a> {
         parallelism: u16,
         worker_id: Option<NodeSelector>,
         verify: bool,
+        retry_strategy: Option<RetryStrategy>,
     ) -> Result<JobId, DeployError> {
         let namespace = dataset_ref.namespace();
         let name = dataset_ref.name();
@@ -292,6 +293,7 @@ impl<'a> DatasetsClient<'a> {
             parallelism,
             worker_id,
             verify,
+            retry_strategy,
         };
 
         let response = self
@@ -1412,6 +1414,8 @@ struct DeployRequest {
     worker_id: Option<NodeSelector>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     verify: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    retry_strategy: Option<RetryStrategy>,
 }
 
 /// Input type for dataset registration manifest parameter.

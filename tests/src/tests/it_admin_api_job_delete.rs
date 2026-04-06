@@ -406,7 +406,7 @@ impl TestCtx {
         );
         self.ampctl_client
             .datasets()
-            .deploy(&reference, None, 1, None, false)
+            .deploy(&reference, None, 1, None, false, None)
             .await
     }
 

@@ -15,6 +15,8 @@ pub async fn run(Args { global, kind }: Args) -> Result<(), Error> {
     let request = match kind {
         JobKind::Gc(gc_args) => CreateJobRequest::Gc {
             location_id: gc_args.location_id,
+            // TODO: Accept retry_strategy from args
+            retry_strategy: None,
         },
     };
 

@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 
-use amp_job_core::job_id::JobId;
+use amp_job_core::{job_id::JobId, retry_strategy::RetryStrategy};
 use monitoring::logging;
 
 use super::{
@@ -1361,6 +1361,9 @@ pub enum CreateJobRequest {
     Gc {
         /// The location ID of the physical table revision to garbage collect.
         location_id: i64,
+        /// The retry strategy for this job.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        retry_strategy: Option<RetryStrategy>,
     },
 }
 

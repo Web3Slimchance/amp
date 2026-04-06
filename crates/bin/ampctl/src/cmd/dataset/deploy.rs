@@ -134,7 +134,8 @@ async fn deploy_dataset(
     let client = global.build_client().map_err(Error::ClientBuild)?;
     let job_id = client
         .datasets()
-        .deploy(dataset_ref, end_block, parallelism, worker_id, verify)
+        // TODO: Accept retry strategy
+        .deploy(dataset_ref, end_block, parallelism, worker_id, verify, None)
         .await
         .map_err(Error::Deploy)?;
 

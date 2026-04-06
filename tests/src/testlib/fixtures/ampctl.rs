@@ -214,6 +214,7 @@ impl Ampctl {
                 parallelism.unwrap_or(1),
                 worker_id,
                 verify,
+                None,
             )
             .await
             .map_err(Into::into)

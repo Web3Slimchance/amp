@@ -1,6 +1,6 @@
 //! Job creation handler
 
-use amp_job_core::job_id::JobId;
+use amp_job_core::{job_id::JobId, retry_strategy::RetryStrategy};
 use amp_job_gc::job_descriptor::JobDescriptor as GcJobDescriptor;
 use amp_job_materialize_datasets_derived::job_descriptor::JobDescriptor as MaterializeDerivedJobDescriptor;
 use amp_job_materialize_datasets_raw::job_descriptor::JobDescriptor as MaterializeRawJobDescriptor;
@@ -25,14 +25,20 @@ use crate::{
 /// or `materialize-derived`). Additional fields depend on the job kind and are
 /// defined by the corresponding job descriptor type.
 ///
+/// ## Request Body
+/// - `kind`: Job type (`gc`, `materialize-raw`, or `materialize-derived`)
+/// - `worker_id`: Optional worker selector (exact ID or glob pattern)
+/// - `retry_strategy`: Optional retry strategy controlling how failed jobs are retried
+/// - Additional fields vary by job kind (see [`CreateJobRequest`] variants)
+///
 /// ## Response
 /// - **202 Accepted**: Job scheduled successfully
-/// - **400 Bad Request**: Invalid request body or unsupported job kind
+/// - **400 Bad Request**: Invalid request body, invalid retry strategy, or no workers
 /// - **409 Conflict**: An active job with the same idempotency key already exists
 /// - **500 Internal Server Error**: Scheduler error
 ///
 /// ## Error Codes
-/// - `INVALID_BODY`: The request body is not valid JSON or has missing/invalid fields
+/// - `INVALID_BODY`: The request body is not valid JSON, has missing/invalid fields, or has invalid retry strategy parameters
 /// - `NO_WORKERS_AVAILABLE`: No active workers to handle the job
 /// - `ACTIVE_JOB_CONFLICT`: An active job with the same idempotency key already exists
 /// - `SCHEDULER_ERROR`: Internal scheduler failure
@@ -67,14 +73,16 @@ pub async fn handler(
         CreateJobRequest::Gc {
             descriptor,
             worker_id,
+            retry_strategy,
         } => {
             let key = amp_job_gc::job_key::idempotency_key(descriptor.location_id);
-            let desc = scheduler::JobDescriptor::from(descriptor);
+            let desc = scheduler::JobDescriptor::gc(descriptor, retry_strategy);
             (key, desc, worker_id)
         }
         CreateJobRequest::MaterializeRaw {
             descriptor,
             worker_id,
+            retry_strategy,
         } => {
             let reference = HashReference::new(
                 descriptor.dataset_namespace.clone(),
@@ -82,12 +90,13 @@ pub async fn handler(
                 descriptor.manifest_hash.clone(),
             );
             let key = amp_job_materialize_datasets_raw::job_key::idempotency_key(&reference);
-            let desc = scheduler::JobDescriptor::from(descriptor);
+            let desc = scheduler::JobDescriptor::materialize_raw(descriptor, retry_strategy);
             (key, desc, worker_id)
         }
         CreateJobRequest::MaterializeDerived {
             descriptor,
             worker_id,
+            retry_strategy,
         } => {
             let reference = HashReference::new(
                 descriptor.dataset_namespace.clone(),
@@ -95,7 +104,7 @@ pub async fn handler(
                 descriptor.manifest_hash.clone(),
             );
             let key = amp_job_materialize_datasets_derived::job_key::idempotency_key(&reference);
-            let desc = scheduler::JobDescriptor::from(descriptor);
+            let desc = scheduler::JobDescriptor::materialize_derived(descriptor, retry_strategy);
             (key, desc, worker_id)
         }
     };
@@ -137,6 +146,10 @@ pub enum CreateJobRequest {
         #[serde(default)]
         #[cfg_attr(feature = "utoipa", schema(value_type = Option<String>))]
         worker_id: Option<scheduler::NodeSelector>,
+        /// Optional retry strategy controlling how failed jobs are retried.
+        #[serde(default)]
+        #[cfg_attr(feature = "utoipa", schema(value_type = Option<Object>))]
+        retry_strategy: Option<RetryStrategy>,
     },
     /// Schedule a raw dataset materialization job.
     MaterializeRaw {
@@ -148,6 +161,10 @@ pub enum CreateJobRequest {
         #[serde(default)]
         #[cfg_attr(feature = "utoipa", schema(value_type = Option<String>))]
         worker_id: Option<scheduler::NodeSelector>,
+        /// Optional retry strategy controlling how failed jobs are retried.
+        #[serde(default)]
+        #[cfg_attr(feature = "utoipa", schema(value_type = Option<Object>))]
+        retry_strategy: Option<RetryStrategy>,
     },
     /// Schedule a derived dataset materialization job.
     MaterializeDerived {
@@ -159,6 +176,10 @@ pub enum CreateJobRequest {
         #[serde(default)]
         #[cfg_attr(feature = "utoipa", schema(value_type = Option<String>))]
         worker_id: Option<scheduler::NodeSelector>,
+        /// Optional retry strategy controlling how failed jobs are retried.
+        #[serde(default)]
+        #[cfg_attr(feature = "utoipa", schema(value_type = Option<Object>))]
+        retry_strategy: Option<RetryStrategy>,
     },
 }
 
