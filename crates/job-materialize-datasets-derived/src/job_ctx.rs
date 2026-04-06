@@ -1,10 +1,10 @@
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use amp_data_store::DataStore;
-use amp_job_core::materialize::{config::ParquetConfig, progress::ProgressReporter};
+use amp_job_core::{events::EventEmitter, materialize::config::ParquetConfig};
 use common::{datasets_cache::DatasetsCache, udfs::eth_call::EthCallUdfsCache};
 use js_runtime::isolate_pool::IsolatePool;
-use metadata_db::{MetadataDb, NotificationMultiplexerHandle, jobs::JobId};
+use metadata_db::{MetadataDb, NotificationMultiplexerHandle};
 use monitoring::telemetry::metrics::Meter;
 
 /// Job context for derived dataset materialization.
@@ -14,9 +14,6 @@ use monitoring::telemetry::metrics::Meter;
 /// dispatching a derived dataset job.
 #[derive(Clone)]
 pub struct Context {
-    /// Job ID for tracing. Recorded on inner spans so it's searchable in Jaeger
-    /// even when outer spans (materialize_table) are still open.
-    pub job_id: Option<JobId>,
     /// Job configuration parameters.
     pub config: Config,
     /// Connection pool for the metadata database.
@@ -33,8 +30,8 @@ pub struct Context {
     pub notification_multiplexer: Arc<NotificationMultiplexerHandle>,
     /// Optional OpenTelemetry meter for recording job-specific metrics.
     pub meter: Option<Meter>,
-    /// Optional progress reporter for external event streaming.
-    pub progress_reporter: Option<Arc<dyn ProgressReporter>>,
+    /// Event emitter for creating job-specific progress reporters.
+    pub event_emitter: Arc<dyn EventEmitter>,
 }
 
 /// Configuration parameters for derived dataset materialization.

@@ -6,9 +6,11 @@
 mod emitter;
 #[cfg(feature = "events-kafka")]
 mod kafka;
-#[cfg(feature = "events-kafka")]
 mod progress_adapter;
 
-pub use self::emitter::{EventEmitter, NoOpEmitter};
 #[cfg(feature = "events-kafka")]
-pub use self::{kafka::KafkaEventEmitter, progress_adapter::JobProgressReporter};
+pub use self::kafka::KafkaEventEmitter;
+pub use self::{
+    emitter::{EventEmitter, NoOpEmitter},
+    progress_adapter::JobProgressReporter,
+};

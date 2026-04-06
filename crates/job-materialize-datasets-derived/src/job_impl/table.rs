@@ -2,12 +2,13 @@ use std::{collections::BTreeMap, sync::Arc, time::Instant};
 
 use amp_job_core::{
     error::{ErrorDetailsProvider, RetryableErrorExt},
+    job_id::JobId,
     materialize::{
         AmpCompactor, WriterProperties,
         block_ranges::{
             EndBlock, GetLatestBlockError, ResolutionError, ResolvedEndBlock, resolve_end_block,
         },
-        progress::{SyncCompletedInfo, SyncFailedInfo, SyncStartedInfo},
+        progress::{ProgressReporter, SyncCompletedInfo, SyncFailedInfo, SyncStartedInfo},
         tasks::{self, TryWaitAllError},
     },
 };
@@ -37,11 +38,11 @@ use datasets_derived::{
 use tracing::Instrument as _;
 
 use super::query::{MaterializeSqlQueryError, materialize_sql_query};
-use crate::job_ctx::Context;
+use crate::{job_ctx::Context, metrics::MetricsRegistry};
 
 /// Materializes a derived dataset table
 #[allow(clippy::too_many_arguments)]
-#[tracing::instrument(skip_all, fields(table = %table.table_name(), job_id = ctx.job_id.map(tracing::field::display)), err)]
+#[tracing::instrument(skip_all, fields(table = %table.table_name(), %job_id), err)]
 pub async fn materialize_table(
     ctx: Context,
     manifest: &DerivedManifest,
@@ -51,16 +52,17 @@ pub async fn materialize_table(
     opts: Arc<WriterProperties>,
     end: EndBlock,
     siblings: &BTreeMap<TableName, Arc<PhysicalTable>>,
+    job_id: JobId,
+    progress_reporter: Arc<dyn ProgressReporter>,
 ) -> Result<(), MaterializeTableError> {
     let materialize_start_time = Instant::now();
 
     let table_name = table.table_name().to_string();
 
     // Create crate-local metrics from the meter on the context
-    let metrics: Option<Arc<crate::metrics::MetricsRegistry>> = ctx.meter.as_ref().map(|m| {
+    let metrics: Option<Arc<MetricsRegistry>> = ctx.meter.as_ref().map(|m| {
         let dataset_ref = table.dataset_reference().clone();
-        let job_id = ctx.job_id.map(|id| *id).unwrap_or(0);
-        Arc::new(crate::metrics::MetricsRegistry::new(m, dataset_ref, job_id))
+        Arc::new(MetricsRegistry::new(m, dataset_ref, *job_id))
     });
 
     // Clone values needed for metrics after async block
@@ -246,13 +248,11 @@ pub async fn materialize_table(
             };
 
             // Emit sync.started event now that we have resolved start/end blocks
-            if let Some(ref reporter) = ctx.progress_reporter {
-                reporter.report_sync_started(SyncStartedInfo {
-                    table_name: table.table_name().clone(),
-                    start_block: Some(start),
-                    end_block: end,
-                });
-            }
+            progress_reporter.report_sync_started(SyncStartedInfo {
+                table_name: table.table_name().clone(),
+                start_block: Some(start),
+                end_block: end,
+            });
 
             // Track start time for duration calculation
             let table_materialize_start = Instant::now();
@@ -277,27 +277,25 @@ pub async fn materialize_table(
                 compactor,
                 &opts,
                 metrics,
+                job_id,
+                &*progress_reporter,
             )
             .await;
 
             // Handle materialization result and emit appropriate lifecycle event
             if let Err(ref err) = materialize_result {
-                if let Some(ref reporter) = ctx.progress_reporter {
-                    reporter.report_sync_failed(SyncFailedInfo {
-                        table_name: table.table_name().clone(),
-                        error_message: err.to_string(),
-                        error_type: Some("DerivedMaterializeError".to_string()),
-                    });
-                }
+                progress_reporter.report_sync_failed(SyncFailedInfo {
+                    table_name: table.table_name().clone(),
+                    error_message: err.to_string(),
+                    error_type: Some("DerivedMaterializeError".to_string()),
+                });
                 return materialize_result.map_err(MaterializeTableSpawnError::MaterializeSqlQuery);
             }
 
             // Emit sync.completed event for bounded jobs only
             // (continuous jobs never complete, they just keep syncing)
-            if let Some(final_block) = end
-                && let Some(ref reporter) = ctx.progress_reporter
-            {
-                reporter.report_sync_completed(SyncCompletedInfo {
+            if let Some(final_block) = end {
+                progress_reporter.report_sync_completed(SyncCompletedInfo {
                     table_name: table.table_name().clone(),
                     final_block,
                     duration_millis: table_materialize_start.elapsed().as_millis() as u64,

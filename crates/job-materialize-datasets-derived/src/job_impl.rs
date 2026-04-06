@@ -106,10 +106,13 @@ use std::{
 use amp_data_store::retryable::RetryableErrorExt as _;
 use amp_job_core::{
     error::{ErrorDetailsProvider, RetryableErrorExt},
+    events::JobProgressReporter,
+    job_id::JobId,
     materialize::{
         AmpCompactor, check::consistency_check, collector::metrics::CollectorMetrics,
-        compaction::metrics::CompactionMetrics, tasks::TryWaitAllError,
+        compaction::metrics::CompactionMetrics, progress::ProgressReporter, tasks::TryWaitAllError,
     },
+    proto,
 };
 use common::{physical_table::PhysicalTable, retryable::RetryableErrorExt as _};
 use datasets_common::{hash_reference::HashReference, table_name::TableName};
@@ -120,11 +123,7 @@ use crate::{job_ctx::Context, job_descriptor::JobDescriptor};
 
 /// Executes materialization of a set of derived dataset tables.
 /// All tables must belong to the same dataset.
-pub async fn execute(
-    ctx: Context,
-    desc: JobDescriptor,
-    writer: impl Into<Option<metadata_db::jobs::JobId>>,
-) -> Result<(), Error> {
+pub async fn execute(ctx: Context, desc: JobDescriptor, job_id: JobId) -> Result<(), Error> {
     let dataset_ref = HashReference::new(
         desc.dataset_namespace.clone(),
         desc.dataset_name.clone(),
@@ -132,17 +131,25 @@ pub async fn execute(
     );
     let end = desc.end_block;
 
-    let writer = writer.into();
+    let dataset_info = proto::DatasetInfo {
+        namespace: dataset_ref.namespace().to_string(),
+        name: dataset_ref.name().to_string(),
+        manifest_hash: dataset_ref.hash().to_string(),
+    };
+    let progress_reporter: Arc<dyn ProgressReporter> = Arc::new(JobProgressReporter::new(
+        job_id,
+        dataset_info,
+        ctx.event_emitter.clone(),
+    ));
 
-    let job_id = writer.map(|w| *w).unwrap_or(0);
     let compaction_metrics = ctx
         .meter
         .as_ref()
-        .map(|m| Arc::new(CompactionMetrics::new(m, dataset_ref.clone(), job_id)));
+        .map(|m| Arc::new(CompactionMetrics::new(m, dataset_ref.clone(), *job_id)));
     let collector_metrics = ctx
         .meter
         .as_ref()
-        .map(|m| Arc::new(CollectorMetrics::new(m, dataset_ref.clone(), job_id)));
+        .map(|m| Arc::new(CollectorMetrics::new(m, dataset_ref.clone(), *job_id)));
 
     // Resolve manifest once using the provided hash reference
     let manifest = ctx
@@ -219,14 +226,13 @@ pub async fn execute(
         return Ok(());
     }
 
-    // Assign job writer if provided (locks tables to job)
-    if let Some(writer) = writer {
-        let tables_revs = tables.iter().map(|(pt, _)| pt.revision());
-        ctx.data_store
-            .lock_revisions_for_writer(tables_revs, writer)
-            .await
-            .map_err(Error::LockRevisionsForWriter)?;
-    }
+    // Lock tables to the job writer
+    let writer: metadata_db::jobs::JobId = job_id.into();
+    let tables_revs = tables.iter().map(|(pt, _)| pt.revision());
+    ctx.data_store
+        .lock_revisions_for_writer(tables_revs, writer)
+        .await
+        .map_err(Error::LockRevisionsForWriter)?;
 
     // Pre-check all tables for consistency before spawning tasks
     for (table, _) in &tables {
@@ -269,13 +275,25 @@ pub async fn execute(
         let manifest = manifest.clone();
         let siblings = siblings.clone();
         let opts = parquet_opts.clone();
+        let progress_reporter = progress_reporter.clone();
 
         join_set.spawn(
             async move {
                 let table_name = table.table_name().to_string();
 
-                materialize_table(ctx, &manifest, env, table, compactor, opts, end, &siblings)
-                    .await?;
+                materialize_table(
+                    ctx,
+                    &manifest,
+                    env,
+                    table,
+                    compactor,
+                    opts,
+                    end,
+                    &siblings,
+                    job_id,
+                    progress_reporter,
+                )
+                .await?;
 
                 tracing::info!("materialization of `{}` completed successfully", table_name);
                 Ok(())

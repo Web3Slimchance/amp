@@ -1,15 +1,9 @@
 //! Internal job implementation for the worker service.
 
-use std::sync::Arc;
-
 use amp_job_core::{
     error::{ErrorDetailsProvider, JobErrorExt, RetryableErrorExt},
-    events::JobProgressReporter,
     job_id::JobId,
-    materialize::progress::ProgressReporter,
-    proto,
 };
-use datasets_common::hash_reference::HashReference;
 use tracing::{Instrument, info_span};
 
 use crate::{job::JobDescriptor, service::WorkerJobCtx};
@@ -38,27 +32,7 @@ pub(super) async fn new(
                 .map_err(JobError::Gc)?;
         }
         JobDescriptor::MaterializeRaw(desc) => {
-            let reference = HashReference::new(
-                desc.dataset_namespace.clone(),
-                desc.dataset_name.clone(),
-                desc.manifest_hash.clone(),
-            );
-            let progress_reporter: Option<Arc<dyn ProgressReporter>> = {
-                let dataset_info = proto::DatasetInfo {
-                    namespace: reference.namespace().to_string(),
-                    name: reference.name().to_string(),
-                    manifest_hash: reference.hash().to_string(),
-                };
-                Some(Arc::new(JobProgressReporter::new(
-                    job_id,
-                    dataset_info,
-                    job_ctx.event_emitter.clone(),
-                )))
-            };
-            let writer: metadata_db::jobs::JobId = job_id.into();
-
             let ctx = amp_job_materialize_datasets_raw::job_ctx::Context {
-                job_id: Some(writer),
                 config: amp_job_materialize_datasets_raw::job_ctx::Config {
                     poll_interval: job_ctx.config.poll_interval,
                     progress_interval: job_ctx
@@ -76,38 +50,23 @@ pub(super) async fn new(
                 data_store: job_ctx.data_store.clone(),
                 notification_multiplexer: job_ctx.notification_multiplexer.clone(),
                 meter: job_ctx.meter.clone(),
-                progress_reporter,
+                event_emitter: job_ctx.event_emitter.clone(),
             };
 
-            amp_job_materialize_datasets_raw::job_impl::execute(ctx, desc, writer)
+            let dataset_ref = datasets_common::hash_reference::HashReference::new(
+                desc.dataset_namespace.clone(),
+                desc.dataset_name.clone(),
+                desc.manifest_hash.clone(),
+            );
+            amp_job_materialize_datasets_raw::job_impl::execute(ctx, desc, job_id)
                 .instrument(
-                    info_span!("materialize_raw_job", %job_id, dataset = %format!("{reference:#}")),
+                    info_span!("materialize_raw_job", %job_id, dataset = %format!("{dataset_ref:#}")),
                 )
                 .await
                 .map_err(JobError::MaterializeRaw)?;
         }
         JobDescriptor::MaterializeDerived(desc) => {
-            let reference = HashReference::new(
-                desc.dataset_namespace.clone(),
-                desc.dataset_name.clone(),
-                desc.manifest_hash.clone(),
-            );
-            let progress_reporter: Option<Arc<dyn ProgressReporter>> = {
-                let dataset_info = proto::DatasetInfo {
-                    namespace: reference.namespace().to_string(),
-                    name: reference.name().to_string(),
-                    manifest_hash: reference.hash().to_string(),
-                };
-                Some(Arc::new(JobProgressReporter::new(
-                    job_id,
-                    dataset_info,
-                    job_ctx.event_emitter.clone(),
-                )))
-            };
-            let writer: metadata_db::jobs::JobId = job_id.into();
-
             let ctx = amp_job_materialize_datasets_derived::job_ctx::Context {
-                job_id: Some(writer),
                 config: amp_job_materialize_datasets_derived::job_ctx::Config {
                     keep_alive_interval: job_ctx.config.keep_alive_interval,
                     max_mem_mb: job_ctx.config.max_mem_mb,
@@ -130,11 +89,16 @@ pub(super) async fn new(
                 isolate_pool: job_ctx.isolate_pool.clone(),
                 notification_multiplexer: job_ctx.notification_multiplexer.clone(),
                 meter: job_ctx.meter.clone(),
-                progress_reporter,
+                event_emitter: job_ctx.event_emitter.clone(),
             };
 
-            amp_job_materialize_datasets_derived::job_impl::execute(ctx, desc, writer)
-                .instrument(info_span!("materialize_derived_job", %job_id, dataset = %format!("{reference:#}")))
+            let dataset_ref = datasets_common::hash_reference::HashReference::new(
+                desc.dataset_namespace.clone(),
+                desc.dataset_name.clone(),
+                desc.manifest_hash.clone(),
+            );
+            amp_job_materialize_datasets_derived::job_impl::execute(ctx, desc, job_id)
+                .instrument(info_span!("materialize_derived_job", %job_id, dataset = %format!("{dataset_ref:#}")))
                 .await
                 .map_err(JobError::MaterializeDerived)?;
         }

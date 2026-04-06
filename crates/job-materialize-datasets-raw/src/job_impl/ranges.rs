@@ -15,6 +15,7 @@ use std::{
 use amp_data_store::DataStore;
 use amp_job_core::{
     error::{ErrorDetailsProvider, RetryableErrorExt},
+    job_id::JobId,
     materialize::{
         AmpCompactor, WriterProperties,
         progress::{ProgressReporter, ProgressUpdate},
@@ -55,6 +56,8 @@ pub(super) async fn materialize_ranges<S: BlockStreamer + Send + Sync>(
     missing_ranges_by_table: BTreeMap<TableName, Vec<RangeInclusive<BlockNum>>>,
     compactors_by_table: BTreeMap<TableName, Arc<AmpCompactor>>,
     tables: &[(Arc<PhysicalTable>, Arc<AmpCompactor>)],
+    progress_reporter: &Arc<dyn ProgressReporter>,
+    job_id: JobId,
     // The job's actual start block (from dataset definition), used for progress events
     job_start_block: BlockNum,
     // The job's actual end block (resolved), used for progress events. None for continuous mode.
@@ -97,7 +100,7 @@ pub(super) async fn materialize_ranges<S: BlockStreamer + Send + Sync>(
         last_emitted_block: AtomicU64::new(0),
         has_emitted: AtomicBool::new(false),
         interval: ctx.config.progress_interval,
-        progress_reporter: ctx.progress_reporter.clone(),
+        progress_reporter: progress_reporter.clone(),
         table_names,
         job_start_block,
         job_end_block,
@@ -118,7 +121,7 @@ pub(super) async fn materialize_ranges<S: BlockStreamer + Send + Sync>(
             compactors_by_table: compactors_by_table.clone(),
             id: i as u32,
             metrics: metrics.clone(),
-            job_id: ctx.job_id,
+            job_id,
             progress_tracker: progress_tracker.clone(),
             verify,
         });
@@ -173,8 +176,8 @@ struct ProgressTracker {
     has_emitted: AtomicBool,
     /// Minimum interval between progress events
     interval: Duration,
-    /// Optional progress reporter for external event streaming
-    progress_reporter: Option<Arc<dyn ProgressReporter>>,
+    /// Progress reporter for external event streaming.
+    progress_reporter: Arc<dyn ProgressReporter>,
     /// Table names for progress reporting
     table_names: Vec<TableName>,
     /// The job's actual start block (from dataset definition)
@@ -215,7 +218,7 @@ impl ProgressTracker {
 
         // Time-based progress event emission
         // Only emit if: interval has elapsed AND we have new progress
-        if let Some(ref reporter) = self.progress_reporter {
+        {
             let last_block = self.last_emitted_block.load(Ordering::SeqCst);
             let has_emitted = self.has_emitted.load(Ordering::SeqCst);
 
@@ -236,7 +239,7 @@ impl ProgressTracker {
 
                     // Report for each table
                     for table_name in &self.table_names {
-                        reporter.report_progress(ProgressUpdate {
+                        self.progress_reporter.report_progress(ProgressUpdate {
                             table_name: table_name.clone(),
                             start_block: self.job_start_block,
                             current_block,
@@ -429,7 +432,7 @@ struct MaterializePartition<S: BlockStreamer> {
     /// Metrics registry
     metrics: Option<Arc<crate::metrics::MetricsRegistry>>,
     /// Job ID for tracing
-    job_id: Option<metadata_db::jobs::JobId>,
+    job_id: JobId,
     /// A progress tracker which logs the overall progress of all partitions.
     progress_tracker: Arc<ProgressTracker>,
     /// Enable cryptographic verification of EVM block data
@@ -476,7 +479,7 @@ impl<S: BlockStreamer> MaterializePartition<S> {
         fields(
             start_block = %range.start(),
             end_block = %range.end(),
-            job_id = self.job_id.map(tracing::field::display),
+            job_id = %self.job_id,
         )
     )]
     async fn run_range(&self, range: RangeInclusive<BlockNum>) -> Result<(), RunRangeError> {
@@ -990,7 +993,7 @@ mod test {
             last_emitted_block: AtomicU64::new(0),
             has_emitted: AtomicBool::new(false),
             interval: Duration::ZERO, // Zero interval for testing
-            progress_reporter: Some(reporter.clone()),
+            progress_reporter: reporter.clone(),
             table_names: vec![table_name.clone()],
             job_start_block: 0,
             job_end_block: Some(99),
@@ -1043,7 +1046,7 @@ mod test {
             last_emitted_block: AtomicU64::new(0),
             has_emitted: AtomicBool::new(false),
             interval: Duration::ZERO, // Zero interval for testing
-            progress_reporter: Some(reporter.clone()),
+            progress_reporter: reporter.clone(),
             table_names: tables.clone(),
             job_start_block: 0,
             job_end_block: Some(99),
@@ -1082,14 +1085,15 @@ mod test {
 
     #[test]
     fn progress_tracker_no_reporter_no_updates() {
-        // Given: A ProgressTracker with no reporter
+        // Given: A ProgressTracker with a no-op reporter
+        let reporter = Arc::new(MockProgressReporter::new());
         let tracker = ProgressTracker {
             last_logged_percent: AtomicUsize::new(0),
             last_emission_time: Mutex::new(Instant::now() - Duration::from_secs(10)),
             last_emitted_block: AtomicU64::new(0),
             has_emitted: AtomicBool::new(false),
             interval: Duration::ZERO,
-            progress_reporter: None,
+            progress_reporter: reporter.clone(),
             table_names: vec!["blocks".parse().unwrap()],
             job_start_block: 0,
             job_end_block: Some(99),
@@ -1117,7 +1121,7 @@ mod test {
             last_emitted_block: AtomicU64::new(0),
             has_emitted: AtomicBool::new(false),
             interval: Duration::ZERO, // Zero interval for testing
-            progress_reporter: Some(reporter.clone()),
+            progress_reporter: reporter.clone(),
             table_names: vec![table_name],
             job_start_block: 1000, // Non-zero start block
             job_end_block: Some(10999),
@@ -1157,7 +1161,7 @@ mod test {
             last_emitted_block: AtomicU64::new(0),
             has_emitted: AtomicBool::new(false),
             interval: Duration::from_secs(3600), // 1 hour - won't elapse
-            progress_reporter: Some(reporter.clone()),
+            progress_reporter: reporter.clone(),
             table_names: vec![table_name],
             job_start_block: 0,
             job_end_block: Some(99),

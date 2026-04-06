@@ -83,15 +83,18 @@ use std::{collections::BTreeMap, ops::RangeInclusive, sync::Arc, time::Instant};
 use amp_data_store::retryable::RetryableErrorExt as _;
 use amp_job_core::{
     error::{ErrorDetailsProvider, RetryableErrorExt},
+    events::JobProgressReporter,
+    job_id::JobId,
     materialize::{
         AmpCompactor,
         block_ranges::{ResolvedEndBlock, resolve_end_block},
         check::consistency_check,
         collector::metrics::CollectorMetrics,
         compaction::metrics::CompactionMetrics,
-        progress::{SyncCompletedInfo, SyncFailedInfo, SyncStartedInfo},
+        progress::{ProgressReporter, SyncCompletedInfo, SyncFailedInfo, SyncStartedInfo},
         tasks::TryWaitAllError,
     },
+    proto,
 };
 use amp_providers_registry::retryable::RetryableErrorExt as _;
 use common::{
@@ -117,11 +120,7 @@ use self::ranges::{RunRangeError, materialize_ranges, spawn_freshness_tracker};
 
 /// Executes a raw dataset job. All tables must belong to the same dataset.
 #[tracing::instrument(skip_all, err)]
-pub async fn execute(
-    ctx: Context,
-    desc: JobDescriptor,
-    writer: impl Into<Option<metadata_db::jobs::JobId>>,
-) -> Result<(), Error> {
+pub async fn execute(ctx: Context, desc: JobDescriptor, job_id: JobId) -> Result<(), Error> {
     let dataset_ref = HashReference::new(
         desc.dataset_namespace.clone(),
         desc.dataset_name.clone(),
@@ -130,7 +129,6 @@ pub async fn execute(
     let end = desc.end_block;
     let max_writers = desc.max_writers;
 
-    let progress_reporter = ctx.progress_reporter.clone();
     let dataset = ctx
         .datasets_cache
         .get_dataset(&dataset_ref)
@@ -139,25 +137,31 @@ pub async fn execute(
     let dataset = dataset
         .downcast_arc::<RawDataset>()
         .map_err(|_| Error::NotARawDataset(dataset_ref.clone()))?;
-
-    let writer = writer.into();
-
-    let job_id = writer.map(|w| *w).unwrap_or(0);
+    let dataset_info = proto::DatasetInfo {
+        namespace: dataset_ref.namespace().to_string(),
+        name: dataset_ref.name().to_string(),
+        manifest_hash: dataset_ref.hash().to_string(),
+    };
+    let progress_reporter: Arc<dyn ProgressReporter> = Arc::new(JobProgressReporter::new(
+        job_id,
+        dataset_info,
+        ctx.event_emitter.clone(),
+    ));
     let metrics = ctx.meter.as_ref().map(|m| {
         Arc::new(crate::metrics::MetricsRegistry::new(
             m,
             dataset_ref.clone(),
-            job_id,
+            *job_id,
         ))
     });
     let compaction_metrics = ctx
         .meter
         .as_ref()
-        .map(|m| Arc::new(CompactionMetrics::new(m, dataset_ref.clone(), job_id)));
+        .map(|m| Arc::new(CompactionMetrics::new(m, dataset_ref.clone(), *job_id)));
     let collector_metrics = ctx
         .meter
         .as_ref()
-        .map(|m| Arc::new(CollectorMetrics::new(m, dataset_ref.clone(), job_id)));
+        .map(|m| Arc::new(CollectorMetrics::new(m, dataset_ref.clone(), *job_id)));
 
     let dataset_reference = dataset.reference();
 
@@ -210,14 +214,13 @@ pub async fn execute(
         return Ok(());
     }
 
-    // Assign job writer if provided (locks tables to job)
-    if let Some(writer) = writer {
-        let tables_revs = tables.iter().map(|(pt, _)| pt.revision());
-        ctx.data_store
-            .lock_revisions_for_writer(tables_revs, writer)
-            .await
-            .map_err(Error::LockRevisionsForWriter)?;
-    }
+    // Lock tables to the job writer
+    let writer: metadata_db::jobs::JobId = job_id.into();
+    let tables_revs = tables.iter().map(|(pt, _)| pt.revision());
+    ctx.data_store
+        .lock_revisions_for_writer(tables_revs, writer)
+        .await
+        .map_err(Error::LockRevisionsForWriter)?;
 
     let sql_schema_name = dataset.reference().to_string();
     let resolved_tables: Vec<_> = tables
@@ -273,7 +276,7 @@ pub async fn execute(
         });
     }
     let (provider_name, config) =
-        select_provider_for_attempt(providers, ctx.job_id, &ctx.metadata_db).await;
+        select_provider_for_attempt(providers, Some(writer), &ctx.metadata_db).await;
     tracing::info!(
         provider = %provider_name,
         "selected provider for block streaming"
@@ -308,14 +311,12 @@ pub async fn execute(
     timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
     // Emit sync.started event for each table
-    if let Some(ref reporter) = progress_reporter {
-        for (table, _) in &tables {
-            reporter.report_sync_started(SyncStartedInfo {
-                table_name: table.table_name().clone(),
-                start_block: dataset.start_block(),
-                end_block: end,
-            });
-        }
+    for (table, _) in &tables {
+        progress_reporter.report_sync_started(SyncStartedInfo {
+            table_name: table.table_name().clone(),
+            start_block: dataset.start_block(),
+            end_block: end,
+        });
     }
 
     // In order to resolve reorgs in the same block as they are detected, we run the
@@ -408,6 +409,8 @@ pub async fn execute(
                 missing_ranges_by_table,
                 compactors_by_table,
                 &tables,
+                &progress_reporter,
+                job_id,
                 start,
                 end,
                 latest_block,
@@ -422,15 +425,13 @@ pub async fn execute(
 
     // Handle materialize errors by emitting failure events for each table
     if let Err(ref err) = materialize_result {
-        if let Some(ref reporter) = progress_reporter {
-            let error_message = err.to_string();
-            for (table, _) in &tables {
-                reporter.report_sync_failed(SyncFailedInfo {
-                    table_name: table.table_name().clone(),
-                    error_message: error_message.clone(),
-                    error_type: Some("MaterializeError".to_string()),
-                });
-            }
+        let error_message = err.to_string();
+        for (table, _) in &tables {
+            progress_reporter.report_sync_failed(SyncFailedInfo {
+                table_name: table.table_name().clone(),
+                error_message: error_message.clone(),
+                error_type: Some("MaterializeError".to_string()),
+            });
         }
         return materialize_result;
     }
@@ -445,16 +446,14 @@ pub async fn execute(
     }
 
     // Emit sync.completed event for each table
-    if let Some(ref reporter) = progress_reporter {
-        // The final block is the configured end block (we only exit the loop when we reach it)
-        let final_block = end.expect("materialize loop only exits when end block is reached");
-        for (table, _) in &tables {
-            reporter.report_sync_completed(SyncCompletedInfo {
-                table_name: table.table_name().clone(),
-                final_block,
-                duration_millis,
-            });
-        }
+    // The final block is the configured end block (we only exit the loop when we reach it)
+    let final_block = end.expect("materialize loop only exits when end block is reached");
+    for (table, _) in &tables {
+        progress_reporter.report_sync_completed(SyncCompletedInfo {
+            table_name: table.table_name().clone(),
+            final_block,
+            duration_millis,
+        });
     }
 
     tracing::info!("materialize completed successfully");

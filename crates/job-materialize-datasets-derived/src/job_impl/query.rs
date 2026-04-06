@@ -3,8 +3,10 @@ use std::{sync::Arc, time::Instant};
 use amp_data_store::file_name::FileName;
 use amp_job_core::{
     error::{ErrorDetailsProvider, RetryableErrorExt},
+    job_id::JobId,
     materialize::{
-        AmpCompactor, AmpCompactorTaskError, WriterProperties, progress::ProgressUpdate,
+        AmpCompactor, AmpCompactorTaskError, WriterProperties,
+        progress::{ProgressReporter, ProgressUpdate},
     },
 };
 use amp_parquet::{
@@ -47,6 +49,8 @@ pub async fn materialize_sql_query(
     compactor: Arc<AmpCompactor>,
     opts: &Arc<WriterProperties>,
     metrics: Option<Arc<MetricsRegistry>>,
+    job_id: JobId,
+    progress_reporter: &dyn ProgressReporter,
 ) -> Result<(), MaterializeSqlQueryError> {
     tracing::info!(
         "materializing {} [{}-{}]",
@@ -68,7 +72,7 @@ pub async fn materialize_sql_query(
             Some(physical_table.clone()),
             ctx.config.microbatch_max_interval,
             keep_alive_interval,
-            ctx.job_id,
+            Some(job_id.into()),
         )
         .await
         .map_err(MaterializeSqlQueryError::streaming_query_spawn)?
@@ -169,7 +173,7 @@ pub async fn materialize_sql_query(
 
                 // Time-based progress event emission
                 // Emit when interval has elapsed AND we have new progress
-                if let Some(ref reporter) = ctx.progress_reporter {
+                {
                     let now = Instant::now();
                     let interval_elapsed =
                         now.duration_since(last_emission_time) >= ctx.config.progress_interval;
@@ -180,7 +184,7 @@ pub async fn materialize_sql_query(
                         last_emitted_block = microbatch_end;
                         has_emitted = true;
 
-                        reporter.report_progress(ProgressUpdate {
+                        progress_reporter.report_progress(ProgressUpdate {
                             table_name: table_name.clone(),
                             start_block: start,
                             current_block: microbatch_end,

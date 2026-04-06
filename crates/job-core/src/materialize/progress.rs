@@ -4,8 +4,6 @@
 //! progress updates during dump operations. This enables real-time monitoring of sync jobs
 //! through event streaming systems like Kafka.
 
-use std::sync::Arc;
-
 use common::BlockNum;
 use datasets_common::table_name::TableName;
 
@@ -114,43 +112,5 @@ impl ProgressReporter for NoOpProgressReporter {
 
     fn report_sync_failed(&self, _info: SyncFailedInfo) {
         // Intentionally empty
-    }
-}
-
-/// Extension trait for optional progress reporters.
-pub trait ProgressReporterExt {
-    /// Report progress if a reporter is configured.
-    fn report_progress(&self, update: ProgressUpdate);
-    /// Report sync started if a reporter is configured.
-    fn report_sync_started(&self, info: SyncStartedInfo);
-    /// Report sync completed if a reporter is configured.
-    fn report_sync_completed(&self, info: SyncCompletedInfo);
-    /// Report sync failed if a reporter is configured.
-    fn report_sync_failed(&self, info: SyncFailedInfo);
-}
-
-impl ProgressReporterExt for Option<Arc<dyn ProgressReporter>> {
-    fn report_progress(&self, update: ProgressUpdate) {
-        if let Some(reporter) = self {
-            reporter.report_progress(update);
-        }
-    }
-
-    fn report_sync_started(&self, info: SyncStartedInfo) {
-        if let Some(reporter) = self {
-            reporter.report_sync_started(info);
-        }
-    }
-
-    fn report_sync_completed(&self, info: SyncCompletedInfo) {
-        if let Some(reporter) = self {
-            reporter.report_sync_completed(info);
-        }
-    }
-
-    fn report_sync_failed(&self, info: SyncFailedInfo) {
-        if let Some(reporter) = self {
-            reporter.report_sync_failed(info);
-        }
     }
 }
