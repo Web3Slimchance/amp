@@ -1638,7 +1638,6 @@ dependencies = [
  "amp-job-core",
  "amp-object-store",
  "amp-worker-core",
- "amp-worker-service",
  "anyhow",
  "chrono",
  "clap",

@@ -15,9 +15,9 @@
 
 use amp_client_admin as client;
 use amp_job_core::job_id::JobId;
-use amp_worker_service::job::JobDescriptor;
 use monitoring::logging;
 
+use self::descriptor::JobDescriptor;
 use crate::args::GlobalArgs;
 
 /// Command-line arguments for the `jobs list` command.
@@ -118,6 +118,30 @@ impl std::fmt::Display for ListResult {
     }
 }
 
+/// Local descriptor types for display purposes only, avoiding a dependency on `worker-service`
+/// and the individual job crates.
+mod descriptor {
+    #[derive(serde::Deserialize)]
+    #[serde(tag = "kind", rename_all = "kebab-case")]
+    pub enum JobDescriptor {
+        MaterializeRaw(MaterializeDescriptor),
+        MaterializeDerived(MaterializeDescriptor),
+        Gc(GcDescriptor),
+    }
+
+    #[derive(serde::Deserialize)]
+    pub struct MaterializeDescriptor {
+        pub dataset_namespace: String,
+        pub dataset_name: String,
+        pub manifest_hash: String,
+    }
+
+    #[derive(serde::Deserialize)]
+    pub struct GcDescriptor {
+        pub location_id: String,
+    }
+}
+
 fn show_dataset_descriptor(descriptor: &serde_json::Value) -> Option<String> {
     let descriptor: JobDescriptor = serde_json::from_value(descriptor.clone()).ok()?;
     match descriptor {
@@ -125,13 +149,13 @@ fn show_dataset_descriptor(descriptor: &serde_json::Value) -> Option<String> {
             "materialize-raw {}/{dataset_name}@{hash}",
             desc.dataset_namespace,
             dataset_name = desc.dataset_name,
-            hash = &desc.manifest_hash.as_str()[..7],
+            hash = &desc.manifest_hash[..7],
         )),
         JobDescriptor::MaterializeDerived(desc) => Some(format!(
             "materialize-derived {}/{dataset_name}@{hash}",
             desc.dataset_namespace,
             dataset_name = desc.dataset_name,
-            hash = &desc.manifest_hash.as_str()[..7],
+            hash = &desc.manifest_hash[..7],
         )),
         JobDescriptor::Gc(desc) => Some(format!("gc location:{}", desc.location_id)),
     }
