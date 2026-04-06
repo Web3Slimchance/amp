@@ -4,48 +4,49 @@ use std::{
 };
 
 use arrow::{array::RecordBatch, error::ArrowError};
-use datasets_common::block_num::RESERVED_BLOCK_NUM_COLUMN_NAME;
 use datasets_raw::arrow::DataType;
 use futures::{Stream, ready};
 
 use super::QueryMessage;
-use crate::BlockNum;
+use crate::plan_visitors::WatermarkColumn;
 
 /// A stream adapter that enriches a `QueryMessage` stream with `Watermark` messages.
 ///
 /// This stream wraps a QueryMessage stream and:
-/// - Validates that Data batches are ordered by `_block_num`
-/// - Tracks the last block number emitted
-/// - Splits batches on block boundaries and emits Watermark messages
+/// - Validates that Data batches are ordered by the active watermark column
+/// - Tracks the last watermark value emitted
+/// - Splits batches on watermark boundaries and emits Watermark messages
 /// - Clears state on MicrobatchEnd and reorgs
-pub struct MessageStreamWithBlockComplete<S> {
+pub struct MessageStreamWithWatermark<S> {
     inner: S,
-    /// The last block number we've been emitting data for
-    last_block_num: Option<BlockNum>,
+    watermark_column: WatermarkColumn,
+    /// The last watermark value we've been emitting data for
+    last_watermark_value: Option<u64>,
     /// Buffer for partial batch data that needs to be emitted
     pending_batch: Option<RecordBatch>,
-    /// Block number to complete when emitting the pending batch
-    pending_block_complete: Option<BlockNum>,
+    /// Watermark value to complete when emitting the pending batch
+    pending_watermark: Option<u64>,
 }
 
-/// Error type for [`MessageStreamWithBlockComplete`] stream items.
+/// Error type for [`MessageStreamWithWatermark`] stream items.
 pub type MessageStreamError = Box<dyn std::error::Error + Sync + Send + 'static>;
 
-impl<S> MessageStreamWithBlockComplete<S>
+impl<S> MessageStreamWithWatermark<S>
 where
     S: Stream<Item = Result<QueryMessage, MessageStreamError>>,
 {
-    pub fn new(inner: S) -> Self {
+    pub fn new(inner: S, watermark_column: WatermarkColumn) -> Self {
         Self {
             inner,
-            last_block_num: None,
+            watermark_column,
+            last_watermark_value: None,
             pending_batch: None,
-            pending_block_complete: None,
+            pending_watermark: None,
         }
     }
 }
 
-impl<S> Stream for MessageStreamWithBlockComplete<S>
+impl<S> Stream for MessageStreamWithWatermark<S>
 where
     S: Stream<Item = Result<QueryMessage, MessageStreamError>> + Unpin,
 {
@@ -54,9 +55,9 @@ where
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
 
-        // First, emit any pending block complete message, then pending batch
-        if let Some(block_num) = this.pending_block_complete.take() {
-            return Poll::Ready(Some(Ok(QueryMessage::Watermark(block_num))));
+        // First, emit any pending watermark message, then pending batch
+        if let Some(watermark) = this.pending_watermark.take() {
+            return Poll::Ready(Some(Ok(QueryMessage::Watermark(watermark))));
         }
 
         if let Some(batch) = this.pending_batch.take() {
@@ -74,41 +75,36 @@ where
             QueryMessage::MicrobatchStart { range, is_reorg } => {
                 // Clear state on reorgs
                 if is_reorg {
-                    this.last_block_num = None;
+                    this.last_watermark_value = None;
                 }
                 Poll::Ready(Some(Ok(QueryMessage::MicrobatchStart { range, is_reorg })))
             }
             QueryMessage::Data(batch) => {
-                match process_data_batch(batch, this.last_block_num) {
+                match process_data_batch(batch, this.last_watermark_value, this.watermark_column) {
                     Ok(BatchProcessResult::PassThrough(batch)) => {
                         Poll::Ready(Some(Ok(QueryMessage::Data(batch))))
                     }
                     Ok(BatchProcessResult::Split {
-                        current_block_batch,
-                        completed_block_num,
-                        next_block_batch,
-                        next_block_num,
+                        current_batch,
+                        completed_watermark,
+                        next_batch,
+                        next_watermark,
                     }) => {
-                        // Update state for the next block
-                        this.last_block_num = Some(next_block_num);
+                        this.last_watermark_value = Some(next_watermark);
+                        this.pending_batch = Some(next_batch);
 
-                        // Queue the next batch
-                        this.pending_batch = Some(next_block_batch);
-
-                        // If current block batch is None, emit BlockComplete directly
-                        match current_block_batch {
+                        match current_batch {
                             None => {
-                                Poll::Ready(Some(Ok(QueryMessage::Watermark(completed_block_num))))
+                                Poll::Ready(Some(Ok(QueryMessage::Watermark(completed_watermark))))
                             }
                             Some(batch) => {
-                                // Queue the block complete message and emit the current batch first
-                                this.pending_block_complete = Some(completed_block_num);
+                                this.pending_watermark = Some(completed_watermark);
                                 Poll::Ready(Some(Ok(QueryMessage::Data(batch))))
                             }
                         }
                     }
-                    Ok(BatchProcessResult::UpdateBlockNum(batch, block_num)) => {
-                        this.last_block_num = Some(block_num);
+                    Ok(BatchProcessResult::UpdateWatermark(batch, watermark)) => {
+                        this.last_watermark_value = Some(watermark);
                         Poll::Ready(Some(Ok(QueryMessage::Data(batch))))
                     }
                     Err(e) => Poll::Ready(Some(Err(e.into()))),
@@ -116,7 +112,7 @@ where
             }
             QueryMessage::MicrobatchEnd(range) => {
                 // Clear state on microbatch end
-                this.last_block_num = None;
+                this.last_watermark_value = None;
                 Poll::Ready(Some(Ok(QueryMessage::MicrobatchEnd(range))))
             }
             QueryMessage::Watermark(block_num) => Poll::Ready(Some(Err(format!(
@@ -131,177 +127,162 @@ where
 enum BatchProcessResult {
     /// Pass the batch through unchanged
     PassThrough(RecordBatch),
-    /// Update the tracked block number and pass through
-    UpdateBlockNum(RecordBatch, BlockNum),
-    /// Split the batch on block boundary
+    /// Update the tracked watermark value and pass through
+    UpdateWatermark(RecordBatch, u64),
+    /// Split the batch on watermark boundary
     Split {
-        current_block_batch: Option<RecordBatch>,
-        completed_block_num: BlockNum,
-        next_block_batch: RecordBatch,
-        next_block_num: BlockNum,
+        current_batch: Option<RecordBatch>,
+        completed_watermark: u64,
+        next_batch: RecordBatch,
+        next_watermark: u64,
     },
 }
 
 fn process_data_batch(
     batch: RecordBatch,
-    last_block_num: Option<BlockNum>,
+    last_watermark_value: Option<u64>,
+    watermark_column: WatermarkColumn,
 ) -> Result<BatchProcessResult, ProcessDataBatchError> {
-    // Find the _block_num column
-    let block_num_column = batch.column_by_name(RESERVED_BLOCK_NUM_COLUMN_NAME);
+    let watermark_array = batch.column_by_name(watermark_column.column_name());
 
-    let Some(block_num_array) = block_num_column else {
-        // No _block_num column, pass through unchanged
+    let Some(watermark_array) = watermark_array else {
+        // No watermark column, pass through unchanged
         return Ok(BatchProcessResult::PassThrough(batch));
     };
 
-    // Extract block numbers from the array
-    let block_nums = extract_block_numbers(block_num_array)
-        .map_err(ProcessDataBatchError::ExtractBlockNumbers)?;
+    // Extract watermark values from the array
+    let watermarks = extract_watermark_values(watermark_array)
+        .map_err(ProcessDataBatchError::ExtractWatermarkValues)?;
 
-    if block_nums.is_empty() {
+    if watermarks.is_empty() {
         return Ok(BatchProcessResult::PassThrough(batch));
     }
 
     // Always validate ordering
-    validate_block_ordering(&block_nums).map_err(ProcessDataBatchError::ValidateBlockOrdering)?;
+    validate_watermark_ordering(&watermarks)
+        .map_err(ProcessDataBatchError::ValidateWatermarkOrdering)?;
 
-    let first_block = block_nums[0];
-    let last_block = block_nums[block_nums.len() - 1];
+    let first = watermarks[0];
+    let last = watermarks[watermarks.len() - 1];
 
-    match last_block_num {
+    match last_watermark_value {
         None => {
-            // First batch, just track the block number (no splitting on first batch)
-            Ok(BatchProcessResult::UpdateBlockNum(batch, last_block))
+            // First batch, just track the watermark (no splitting on first batch)
+            Ok(BatchProcessResult::UpdateWatermark(batch, last))
         }
-        Some(current_block) => {
-            if first_block == current_block {
-                if last_block == current_block {
-                    // All rows are for the same block as before
+        Some(current) => {
+            if first == current {
+                if last == current {
+                    // All rows have the same watermark as before
                     Ok(BatchProcessResult::PassThrough(batch))
                 } else {
-                    // Batch spans multiple blocks, need to split
-                    let split_index = block_nums.iter().position(|&n| n > current_block).unwrap(); // Safe: we know last_block > current_block from condition above
+                    // Batch spans multiple watermark values, need to split
+                    let split_index = watermarks.iter().position(|&n| n > current).unwrap(); // Safe: we know last > current from condition above
                     let (current_batch, next_batch) = split_record_batch(&batch, split_index)
                         .map_err(ProcessDataBatchError::SplitRecordBatch)?;
 
                     Ok(BatchProcessResult::Split {
-                        current_block_batch: Some(current_batch),
-                        completed_block_num: current_block,
-                        next_block_batch: next_batch,
-                        next_block_num: last_block,
+                        current_batch: Some(current_batch),
+                        completed_watermark: current,
+                        next_batch,
+                        next_watermark: last,
                     })
                 }
-            } else if first_block > current_block {
-                // New block started - emit entire batch as-is (don't split within it)
+            } else if first > current {
+                // New watermark value started - emit entire batch as-is
                 Ok(BatchProcessResult::Split {
-                    current_block_batch: None,
-                    completed_block_num: current_block,
-                    next_block_batch: batch,
-                    next_block_num: last_block,
+                    current_batch: None,
+                    completed_watermark: current,
+                    next_batch: batch,
+                    next_watermark: last,
                 })
             } else {
-                // Block number went backwards - this can happen during reorgs
+                // Watermark went backwards - this can happen during reorgs
                 // Since we clear state on reorgs, this should be handled naturally
-                Ok(BatchProcessResult::UpdateBlockNum(batch, last_block))
+                Ok(BatchProcessResult::UpdateWatermark(batch, last))
             }
         }
     }
 }
 
-/// Errors that occur when processing a data batch for block alignment
-///
-/// This error type is used by `process_data_batch()`.
+/// Errors that occur when processing a data batch for watermark alignment.
 #[derive(Debug, thiserror::Error)]
 pub enum ProcessDataBatchError {
-    /// Failed to extract block numbers
-    ///
-    /// This occurs when the block numbers cannot be extracted from the batch.
-    #[error("Failed to extract block numbers")]
-    ExtractBlockNumbers(#[source] ExtractBlockNumbersError),
+    #[error("Failed to extract watermark values")]
+    ExtractWatermarkValues(#[source] ExtractWatermarkValuesError),
 
-    /// Failed to validate block ordering
-    ///
-    /// This occurs when the block numbers are not ordered.
-    #[error("Failed to validate block ordering")]
-    ValidateBlockOrdering(#[source] ValidateBlockOrderingError),
+    #[error("Failed to validate watermark ordering")]
+    ValidateWatermarkOrdering(#[source] ValidateWatermarkOrderingError),
 
-    /// Failed to split record batch
-    ///
-    /// This occurs when the record batch cannot be split.
     #[error("Failed to split record batch")]
     SplitRecordBatch(#[source] SplitRecordBatchError),
 }
 
-fn extract_block_numbers(
+fn extract_watermark_values(
     array: &dyn arrow::array::Array,
-) -> Result<Vec<BlockNum>, ExtractBlockNumbersError> {
+) -> Result<Vec<u64>, ExtractWatermarkValuesError> {
     use arrow::{array::*, datatypes::DataType};
 
-    let block_nums = match array.data_type() {
+    match array.data_type() {
         DataType::UInt64 => {
             let uint64_array = array
                 .as_any()
                 .downcast_ref::<UInt64Array>()
-                .ok_or(ExtractBlockNumbersError::Downcast)?;
+                .ok_or(ExtractWatermarkValuesError::Downcast)?;
             uint64_array
                 .iter()
                 .collect::<Option<Vec<_>>>()
-                .ok_or(ExtractBlockNumbersError::NullValues)?
+                .ok_or(ExtractWatermarkValuesError::NullValues)
         }
-        _ => {
-            return Err(ExtractBlockNumbersError::UnsupportedType(
-                array.data_type().clone(),
-            ));
+        DataType::Timestamp(arrow::datatypes::TimeUnit::Nanosecond, _) => {
+            let ts_array = array
+                .as_any()
+                .downcast_ref::<TimestampNanosecondArray>()
+                .ok_or(ExtractWatermarkValuesError::Downcast)?;
+            ts_array
+                .iter()
+                .map(|v| {
+                    v.map(|nanos| nanos as u64)
+                        .ok_or(ExtractWatermarkValuesError::NullValues)
+                })
+                .collect()
         }
-    };
-
-    Ok(block_nums)
+        _ => Err(ExtractWatermarkValuesError::UnsupportedType(
+            array.data_type().clone(),
+        )),
+    }
 }
 
-/// Errors that occur when extracting block numbers from an array
-///
-/// This error type is used by `extract_block_numbers()`.
+/// Errors that occur when extracting watermark values from an array.
 #[derive(Debug, thiserror::Error)]
-pub enum ExtractBlockNumbersError {
-    /// Failed to downcast to UInt64Array
-    ///
-    /// This occurs when the array cannot be downcast to a UInt64Array.
-    #[error("Failed to downcast to UInt64Array")]
+pub enum ExtractWatermarkValuesError {
+    #[error("Failed to downcast watermark array")]
     Downcast,
 
-    /// Found null values in _block_num column
-    ///
-    /// This occurs when the array contains null values.
-    #[error("Found null values in _block_num column")]
+    #[error("Found null values in watermark column")]
     NullValues,
 
-    /// Unsupported _block_num column type
-    ///
-    /// This occurs when the array is of an unsupported type.
-    #[error("Unsupported _block_num column type: {0}")]
+    #[error("Unsupported watermark column type: {0}")]
     UnsupportedType(DataType),
 }
 
-fn validate_block_ordering(block_nums: &[BlockNum]) -> Result<(), ValidateBlockOrderingError> {
-    for window in block_nums.windows(2) {
+fn validate_watermark_ordering(values: &[u64]) -> Result<(), ValidateWatermarkOrderingError> {
+    for window in values.windows(2) {
         if window[0] > window[1] {
-            return Err(ValidateBlockOrderingError {
-                previous_block: window[0],
-                current_block: window[1],
+            return Err(ValidateWatermarkOrderingError {
+                previous: window[0],
+                current: window[1],
             });
         }
     }
     Ok(())
 }
 
-/// Block numbers not ordered
-///
-/// This occurs when the block numbers are not ordered.
 #[derive(Debug, thiserror::Error)]
-#[error("Block numbers not ordered: {previous_block} > {current_block}")]
-pub struct ValidateBlockOrderingError {
-    previous_block: BlockNum,
-    current_block: BlockNum,
+#[error("Watermark values not ordered: {previous} > {current}")]
+pub struct ValidateWatermarkOrderingError {
+    previous: u64,
+    current: u64,
 }
 
 fn split_record_batch(
@@ -368,6 +349,7 @@ mod tests {
         array::UInt64Array,
         datatypes::{DataType, Field, Schema},
     };
+    use datasets_common::block_num::RESERVED_BLOCK_NUM_COLUMN_NAME;
     use futures::{StreamExt as _, stream};
 
     use super::*;
@@ -399,7 +381,8 @@ mod tests {
         messages: Vec<Result<QueryMessage, MessageStreamError>>,
     ) -> Vec<Result<QueryMessage, MessageStreamError>> {
         let input_stream = stream::iter(messages);
-        let mut aligned_stream = MessageStreamWithBlockComplete::new(input_stream);
+        let mut aligned_stream =
+            MessageStreamWithWatermark::new(input_stream, WatermarkColumn::BlockNum);
 
         let mut results = Vec::new();
         while let Some(msg) = aligned_stream.next().await {
@@ -410,7 +393,7 @@ mod tests {
 
     fn expect_data_blocks(msg: &Result<QueryMessage, MessageStreamError>) -> Vec<u64> {
         if let Ok(QueryMessage::Data(batch)) = msg {
-            extract_block_numbers(
+            extract_watermark_values(
                 batch
                     .column_by_name(RESERVED_BLOCK_NUM_COLUMN_NAME)
                     .unwrap(),
@@ -612,7 +595,7 @@ mod tests {
         ];
 
         let results = collect_messages(messages).await;
-        assert_eq!(results.len(), 4); // Should handle backwards gracefully (UpdateBlockNum)
+        assert_eq!(results.len(), 4); // Should handle backwards gracefully (UpdateWatermark)
         assert_eq!(expect_data_blocks(&results[2]), vec![99, 99]); // Backwards batch passed through
     }
 }

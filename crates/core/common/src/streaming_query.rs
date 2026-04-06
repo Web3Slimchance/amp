@@ -24,7 +24,7 @@ use datasets_derived::deps::SELF_REF_KEYWORD;
 use datasets_raw::dataset::Dataset as RawDataset;
 use futures::stream::{self, BoxStream, StreamExt};
 use js_runtime::isolate_pool::IsolatePool;
-use message_stream_with_block_complete::MessageStreamWithBlockComplete;
+use message_stream_with_block_complete::MessageStreamWithWatermark;
 use metadata_db::{NotificationMultiplexerHandle, physical_table_revision::LocationId};
 use tokio::{
     sync::{mpsc, watch},
@@ -289,7 +289,10 @@ pub struct StreamingQueryHandle {
 
 impl StreamingQueryHandle {
     pub fn into_stream(self) -> BoxStream<'static, Result<QueryMessage, MessageStreamError>> {
-        let data_stream = MessageStreamWithBlockComplete::new(ReceiverStream::new(self.rx).map(Ok));
+        let data_stream = MessageStreamWithWatermark::new(
+            ReceiverStream::new(self.rx).map(Ok),
+            WatermarkColumn::BlockNum,
+        );
 
         let join = self.join_handle;
 
