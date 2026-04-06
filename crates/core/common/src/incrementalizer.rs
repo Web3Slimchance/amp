@@ -11,36 +11,37 @@ use datafusion::{
     logical_expr::{
         EmptyRelation, Join as JoinStruct, LogicalPlan, TableScan, Union as UnionStruct,
     },
-    prelude::{Expr, col, lit},
+    prelude::{Expr, col},
     sql::TableReference,
 };
-use datasets_common::block_num::RESERVED_BLOCK_NUM_COLUMN_NAME;
 use thiserror::Error;
 use tracing::instrument;
 
 use crate::{
-    BlockNum, catalog::physical::snapshot::QueryableSnapshot, plan_visitors::NonIncrementalOp,
+    catalog::physical::snapshot::QueryableSnapshot,
+    plan_visitors::{NonIncrementalOp, WatermarkColumn},
     udfs::block_num::is_block_num_udf,
 };
 
 /// Whether to match the pre-propagation `block_num()` UDF only, or also the
-/// post-propagation `col("_block_num")` form.
+/// post-propagation column reference form.
 ///
 /// - `Udf`: only `block_num()` / `col("block_num()")` — for validating raw user queries.
-/// - `Propagated`: also `col("_block_num")` — for the incrementalizer which runs after
-///   the propagator has replaced `block_num()` with `_block_num`.
+/// - `Propagated`: also `col("_block_num")` (or `col("_ts")`, depending on the active
+///   watermark) — for the incrementalizer which runs after the propagator has replaced
+///   the UDF with the watermark column.
 #[derive(Clone, Copy)]
-pub enum BlockNumForm {
+pub enum WatermarkForm {
     Udf,
-    Propagated,
+    Propagated(WatermarkColumn),
 }
 
-impl BlockNumForm {
+impl WatermarkForm {
     pub fn matches(self, expr: &Expr) -> bool {
         match self {
-            BlockNumForm::Udf => is_block_num_udf(expr),
-            BlockNumForm::Propagated => {
-                matches!(expr, Expr::Column(c) if c.name == RESERVED_BLOCK_NUM_COLUMN_NAME)
+            WatermarkForm::Udf => is_block_num_udf(expr),
+            WatermarkForm::Propagated(wm) => {
+                matches!(expr, Expr::Column(c) if c.name == wm.column_name())
             }
         }
     }
@@ -68,10 +69,11 @@ impl BlockNumForm {
 /// - https://sigmodrecord.org/publications/sigmodRecord/2403/pdfs/20_dbsp-budiu.pdf
 pub fn incrementalize_plan(
     plan: LogicalPlan,
-    start: BlockNum,
-    end: BlockNum,
+    start: Expr,
+    end: Expr,
+    watermark: WatermarkColumn,
 ) -> Result<LogicalPlan, DataFusionError> {
-    let mut incrementalizer = Incrementalizer::new(start, end);
+    let mut incrementalizer = Incrementalizer::new(start, end, watermark);
     let plan = plan.rewrite(&mut incrementalizer)?.data;
     Ok(plan)
 }
@@ -84,30 +86,34 @@ enum RelationRange {
 }
 
 /// The incrementalizer is essentially a pushdown rewriter that also applies the inner join update rule.
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 struct Incrementalizer {
-    // Inputs: The range over the input tables that will be incrementally processed and added to the output table.
-    start: BlockNum,
-    end: BlockNum,
+    /// Literal expression for the start of the microbatch range.
+    start: Expr,
+    /// Literal expression for the end of the microbatch range.
+    end: Expr,
+
+    /// Which watermark column to filter on (e.g. `_block_num` or `_ts`).
+    watermark: WatermarkColumn,
 
     // Rewriter state: The range we are currently pushing down
     curr_range: RelationRange,
 }
 
 impl Incrementalizer {
-    fn new(start: BlockNum, end: BlockNum) -> Self {
+    fn new(start: Expr, end: Expr, watermark: WatermarkColumn) -> Self {
         Self {
             start,
             end,
+            watermark,
             curr_range: RelationRange::Delta,
         }
     }
 
-    fn with_range(self, range: RelationRange) -> Self {
+    fn with_range(&self, range: RelationRange) -> Self {
         Self {
-            start: self.start,
-            end: self.end,
             curr_range: range,
+            ..self.clone()
         }
     }
 }
@@ -119,13 +125,13 @@ impl TreeNodeRewriter for Incrementalizer {
         use LogicalPlan::*;
         use RelationRange::*;
 
-        // TThe incrementalizer must run after _block_num propagation, so `BlockNumForm::Propagated`
-        match incremental_op_kind(&node, BlockNumForm::Propagated)
+        // The incrementalizer must run after watermark propagation, so `WatermarkForm::Propagated`
+        match incremental_op_kind(&node, WatermarkForm::Propagated(self.watermark))
             .map_err(|e| DataFusionError::External(e.into()))?
         {
-            IncrementalOpKind::Linear | IncrementalOpKind::BlockNumEqJoin => {
+            IncrementalOpKind::Linear | IncrementalOpKind::WatermarkEqJoin => {
                 // Linear ops and _block_num equality joins just push the current range
-                // to both children via normal tree recursion. For BlockNumEqJoin this works
+                // to both children via normal tree recursion. For WatermarkEqJoin this works
                 // because _block_num equality guarantees temporal alignment:
                 // Δ(L⋈R) = ΔL⋈ΔR and History(L⋈R) = History(L)⋈History(R).
                 Ok(Transformed::no(node))
@@ -180,8 +186,13 @@ impl TreeNodeRewriter for Incrementalizer {
 
                     validate_table_provider(table_provider.as_ref())?;
 
-                    let constrained =
-                        constrain_by_range(table_scan, self.start, self.end, self.curr_range)?;
+                    let constrained = constrain_by_range(
+                        table_scan,
+                        &self.start,
+                        &self.end,
+                        self.curr_range,
+                        self.watermark,
+                    )?;
                     Ok(Transformed::yes(TableScan(constrained)))
                 }
 
@@ -221,36 +232,38 @@ fn validate_table_provider(table_provider: &dyn TableProvider) -> Result<(), Dat
     Ok(())
 }
 
-/// Adds `where start <= _block_num and _block_num <= end` to the plan and runs filter pushdown.
+/// Adds a watermark range filter to the table scan.
 ///
-/// This assumes that the `_block_num` column has already been propagated and is therefore
+/// For a Delta range: `WHERE start <= <watermark> AND <watermark> <= end`
+/// For a History range: `WHERE <watermark> < start`
+///
+/// This assumes that the watermark column has already been propagated and is therefore
 /// present in the schema of `plan`.
 #[instrument(skip_all, err)]
 fn constrain_by_range(
     mut table_scan: TableScan,
-    delta_start: u64,
-    delta_end: u64,
+    start: &Expr,
+    end: &Expr,
     range: RelationRange,
+    watermark: WatermarkColumn,
 ) -> Result<TableScan, ConstrainByRangeError> {
     if table_scan.source.table_type() != TableType::Base
         || table_scan.source.get_logical_plan().is_some()
     {
-        // These should not exist in an streamable and optimized plan.
+        // These should not exist in a streamable and optimized plan.
         return Err(ConstrainByRangeError(
             table_scan.table_name,
             table_scan.source.table_type(),
         ));
     }
 
-    let predicate = {
-        match range {
-            // `where start <= _block_num and _block_num <= end`
-            RelationRange::Delta => lit(delta_start)
-                .lt_eq(col(RESERVED_BLOCK_NUM_COLUMN_NAME))
-                .and(col(RESERVED_BLOCK_NUM_COLUMN_NAME).lt_eq(lit(delta_end))),
-            // `where _block_num < start`
-            RelationRange::History => col(RESERVED_BLOCK_NUM_COLUMN_NAME).lt(lit(delta_start)),
-        }
+    let wm_col = col(watermark.column_name());
+    let predicate = match range {
+        RelationRange::Delta => start
+            .clone()
+            .lt_eq(wm_col.clone())
+            .and(wm_col.lt_eq(end.clone())),
+        RelationRange::History => wm_col.lt(start.clone()),
     };
 
     table_scan.filters.push(predicate);
@@ -285,15 +298,16 @@ pub enum NonIncrementalQueryError {
 pub enum IncrementalOpKind {
     Linear,
     InnerJoin,
-    /// An inner join with `l._block_num = r._block_num` in its equi-join conditions.
-    /// Acts like a linear operator: the range filter can be pushed to both children.
-    BlockNumEqJoin,
+    /// An inner join with an equi-join condition on the watermark column (e.g.
+    /// `l._block_num = r._block_num`). Acts like a linear operator: the range
+    /// filter can be pushed to both children.
+    WatermarkEqJoin,
     Table,
 }
 
 pub fn incremental_op_kind(
     node: &LogicalPlan,
-    form: BlockNumForm,
+    form: WatermarkForm,
 ) -> Result<IncrementalOpKind, NonIncrementalQueryError> {
     use IncrementalOpKind::*;
     use LogicalPlan::*;
@@ -315,8 +329,16 @@ pub fn incremental_op_kind(
         // Joins
         Join(join) => match join.join_type {
             JoinType::Inner | JoinType::LeftSemi | JoinType::RightSemi => {
-                if has_block_num_eq_condition(&join.on) {
-                    Ok(BlockNumEqJoin)
+                let has_wm_eq = match form {
+                    WatermarkForm::Udf => {
+                        // Pre-propagation: check for _block_num (the only watermark
+                        // column that existed in the original schema).
+                        has_watermark_eq_condition(&join.on, WatermarkColumn::BlockNum)
+                    }
+                    WatermarkForm::Propagated(wm) => has_watermark_eq_condition(&join.on, wm),
+                };
+                if has_wm_eq {
+                    Ok(WatermarkEqJoin)
                 } else {
                     Ok(InnerJoin)
                 }
@@ -370,14 +392,13 @@ pub fn incremental_op_kind(
     }
 }
 
-/// Returns true if any equi-join condition pair equates `_block_num` columns on both sides.
-fn has_block_num_eq_condition(on: &[(Expr, Expr)]) -> bool {
-    on.iter()
-        .any(|(l, r)| is_block_num_col(l) && is_block_num_col(r))
-}
-
-fn is_block_num_col(expr: &Expr) -> bool {
-    matches!(expr, Expr::Column(c) if c.name == RESERVED_BLOCK_NUM_COLUMN_NAME)
+/// Returns true if any equi-join condition pair equates the watermark column on both sides.
+fn has_watermark_eq_condition(on: &[(Expr, Expr)], watermark: WatermarkColumn) -> bool {
+    let col_name = watermark.column_name();
+    on.iter().any(|(l, r)| {
+        matches!(l, Expr::Column(c) if c.name == col_name)
+            && matches!(r, Expr::Column(c) if c.name == col_name)
+    })
 }
 
 fn empty_relation(schema: DFSchemaRef) -> EmptyRelation {

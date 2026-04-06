@@ -11,6 +11,7 @@ use amp_data_store::DataStore;
 use datafusion::{
     common::cast::{as_fixed_size_binary_array, as_string_array},
     error::DataFusionError,
+    prelude::lit,
 };
 use datasets_common::{
     dataset::{Dataset, Table},
@@ -54,7 +55,7 @@ use crate::{
     incrementalizer::incrementalize_plan,
     physical_table::{CanonicalChainError, PhysicalTable, segments::Segment},
     plan_visitors::{
-        WatermarkColumn, find_cross_network_join, order_by_block_num, unproject_columns,
+        WatermarkColumn, find_cross_network_join, order_by_watermark, unproject_columns,
     },
     retryable::RetryableErrorExt,
     rpc_catalog_provider::{RPC_CATALOG_NAME, RpcCatalogProvider},
@@ -539,11 +540,16 @@ impl StreamingQuery {
                 .clone()
                 .attach_to(ctx)
                 .map_err(StreamingQueryExecutionError::AttachPlan)?;
-            let mut plan = incrementalize_plan(plan, range.start(), range.end())
-                .map_err(StreamingQueryExecutionError::IncrementalizePlan)?;
+            let mut plan = incrementalize_plan(
+                plan,
+                lit(range.start()),
+                lit(range.end()),
+                WatermarkColumn::BlockNum,
+            )
+            .map_err(StreamingQueryExecutionError::IncrementalizePlan)?;
 
-            // Enforce `order by _block_num`.
-            plan = order_by_block_num(plan);
+            // Enforce ordering by the watermark column.
+            plan = order_by_watermark(plan, WatermarkColumn::BlockNum);
 
             // Remove watermark columns the user didn't explicitly select.
             if !self.watermark_columns_to_unproject.is_empty() {

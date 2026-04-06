@@ -28,7 +28,7 @@ use datasets_common::{
 
 use crate::{
     incrementalizer::{
-        BlockNumForm, IncrementalOpKind, NonIncrementalQueryError, incremental_op_kind,
+        IncrementalOpKind, NonIncrementalQueryError, WatermarkForm, incremental_op_kind,
     },
     udfs::{
         block_num::{BLOCK_NUM_UDF_SCHEMA_NAME, is_block_num_udf},
@@ -45,7 +45,7 @@ use crate::{
 const TS_COMPAT_COLUMN_NAME: &str = "timestamp";
 
 /// A watermark column that gets propagated through the query plan.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WatermarkColumn {
     BlockNum,
     Ts,
@@ -682,7 +682,7 @@ pub fn is_incremental(plan: &LogicalPlan) -> Result<(), NonIncrementalQueryError
     let mut err: Option<NonIncrementalQueryError> = None;
 
     // Check individual nodes for unsupported operations.
-    plan.exists(|node| match incremental_op_kind(node, BlockNumForm::Udf) {
+    plan.exists(|node| match incremental_op_kind(node, WatermarkForm::Udf) {
         Ok(_) => Ok(false),
         Err(e) => {
             err = Some(e);
@@ -707,7 +707,7 @@ pub fn is_incremental(plan: &LogicalPlan) -> Result<(), NonIncrementalQueryError
                 return Ok(false);
             };
             if !matches!(
-                incremental_op_kind(node, BlockNumForm::Udf),
+                incremental_op_kind(node, WatermarkForm::Udf),
                 Ok(IncrementalOpKind::InnerJoin)
             ) {
                 return Ok(false);
@@ -715,7 +715,7 @@ pub fn is_incremental(plan: &LogicalPlan) -> Result<(), NonIncrementalQueryError
             let child_has_join = |child: &LogicalPlan| {
                 child.exists(|desc| {
                     Ok(matches!(
-                        incremental_op_kind(desc, BlockNumForm::Udf),
+                        incremental_op_kind(desc, WatermarkForm::Udf),
                         Ok(IncrementalOpKind::InnerJoin)
                     ))
                 })
@@ -836,9 +836,9 @@ pub fn source_schemas(plan: &LogicalPlan) -> Vec<SchemaRef> {
     schemas
 }
 
-pub fn order_by_block_num(plan: LogicalPlan) -> LogicalPlan {
+pub fn order_by_watermark(plan: LogicalPlan, watermark: WatermarkColumn) -> LogicalPlan {
     let sort = Sort {
-        expr: vec![col(RESERVED_BLOCK_NUM_COLUMN_NAME).sort(true, false)],
+        expr: vec![col(watermark.column_name()).sort(true, false)],
         input: Arc::new(plan),
         fetch: None,
     };
