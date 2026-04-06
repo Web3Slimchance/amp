@@ -7,39 +7,21 @@ license-file.workspace = true
 [dependencies]
 amp-config = { path = "../config" }
 amp-data-store = { path = "../core/data-store" }
-amp-job-core = { path = "../job-core" }
+amp-job-core = { path = "../job-core", features = ["events-kafka"] }
 amp-job-gc = { path = "../job-gc" }
 amp-job-materialize-datasets-derived = { path = "../job-materialize-datasets-derived" }
 amp-job-materialize-datasets-raw = { path = "../job-materialize-datasets-raw" }
 amp-worker-core = { path = "../worker-core" }
-async-trait.workspace = true
 backon.workspace = true
-chrono.workspace = true
 common = { path = "../core/common" }
 datasets-common = { path = "../core/datasets-common" }
-fs-err.workspace = true
 futures.workspace = true
 js-runtime = { path = "../core/js-runtime" }
 metadata-db = { path = "../core/metadata-db" }
 monitoring = { path = "../core/monitoring" }
-prost.workspace = true
-rskafka = { version = "0.6", features = ["transport-tls"] }
-rustls.workspace = true
-rustls-pemfile.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
-uuid = { workspace = true, features = ["v7"] }
-webpki-roots.workspace = true
-
-# Protobuf code generation dependencies
-# Run with: RUSTFLAGS="--cfg gen_worker_proto" cargo check -p amp-worker-service
-[target.'cfg(gen_worker_proto)'.build-dependencies]
-prost-build.workspace = true
-
-[lints.rust]
-# Allow the gen_worker_proto cfg flag used for conditional protobuf code generation
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(gen_worker_proto)'] }

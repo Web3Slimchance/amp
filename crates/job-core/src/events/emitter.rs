@@ -2,9 +2,9 @@
 
 use async_trait::async_trait;
 
-use crate::kafka::proto;
+use crate::proto;
 
-/// Trait for emitting worker events.
+/// Trait for emitting job events.
 ///
 /// Implementations must be `Send + Sync` for use across async tasks.
 #[async_trait]

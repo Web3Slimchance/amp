@@ -5,8 +5,12 @@
 //! without pulling in worker-specific dependencies.
 
 pub mod error;
+pub mod events;
 pub mod job_id;
 pub mod job_key;
+#[cfg(feature = "events-kafka")]
+pub mod kafka;
 pub mod materialize;
+pub mod proto;
 pub mod retry_strategy;
 pub mod status;

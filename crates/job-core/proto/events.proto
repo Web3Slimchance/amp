@@ -1,6 +1,6 @@
-// Worker Events Protocol Buffer Schema
+// Job Events Protocol Buffer Schema
 //
-// This schema defines the event types emitted by Amp workers during sync jobs.
+// This schema defines the event types emitted during sync jobs.
 // Events are published to Kafka for real-time monitoring and observability.
 //
 // Event Flow:
@@ -13,9 +13,9 @@
 
 syntax = "proto3";
 
-package amp.worker.events.v1;
+package amp.job.events.v1;
 
-// WorkerEvent is the envelope that wraps all event types.
+// JobEvent is the envelope that wraps all event types.
 //
 // Every event published to Kafka uses this wrapper, which provides:
 // - Unique identification (event_id)
@@ -24,7 +24,7 @@ package amp.worker.events.v1;
 // - Timestamp for ordering and debugging (timestamp)
 // - Source attribution (source)
 // - The actual event payload (payload oneof)
-message WorkerEvent {
+message JobEvent {
   // Unique event identifier.
   // Format: UUID v7 (time-ordered) for natural chronological sorting.
   // Example: "01912345-6789-7abc-def0-123456789abc"

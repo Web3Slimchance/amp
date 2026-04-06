@@ -32,8 +32,8 @@
 use std::{collections::BTreeSet, path::Path, sync::Arc};
 
 use amp_data_store::DataStore;
+use amp_job_core::events::EventEmitter;
 use amp_worker_core::node_id::NodeId;
-use amp_worker_service::events::EventEmitter;
 use anyhow::{Result, anyhow};
 use common::{datasets_cache::DatasetsCache, udfs::eth_call::EthCallUdfsCache};
 use datasets_common::reference::Reference;

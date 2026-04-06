@@ -5,7 +5,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use amp_worker_service::{events::EventEmitter, kafka::proto};
+use amp_job_core::{events::EventEmitter, proto};
 use async_trait::async_trait;
 
 /// A mock event emitter that records all events for testing.

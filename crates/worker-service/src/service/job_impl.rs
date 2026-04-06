@@ -4,15 +4,15 @@ use std::sync::Arc;
 
 use amp_job_core::{
     error::{ErrorDetailsProvider, JobErrorExt, RetryableErrorExt},
+    events::JobProgressReporter,
     job_id::JobId,
     materialize::progress::ProgressReporter,
+    proto,
 };
 use datasets_common::hash_reference::HashReference;
 use tracing::{Instrument, info_span};
 
-use crate::{
-    events::WorkerProgressReporter, job::JobDescriptor, kafka::proto, service::WorkerJobCtx,
-};
+use crate::{job::JobDescriptor, service::WorkerJobCtx};
 
 /// Create and run a worker job.
 ///
@@ -49,7 +49,7 @@ pub(super) async fn new(
                     name: reference.name().to_string(),
                     manifest_hash: reference.hash().to_string(),
                 };
-                Some(Arc::new(WorkerProgressReporter::new(
+                Some(Arc::new(JobProgressReporter::new(
                     job_id,
                     dataset_info,
                     job_ctx.event_emitter.clone(),
@@ -98,7 +98,7 @@ pub(super) async fn new(
                     name: reference.name().to_string(),
                     manifest_hash: reference.hash().to_string(),
                 };
-                Some(Arc::new(WorkerProgressReporter::new(
+                Some(Arc::new(JobProgressReporter::new(
                     job_id,
                     dataset_info,
                     job_ctx.event_emitter.clone(),

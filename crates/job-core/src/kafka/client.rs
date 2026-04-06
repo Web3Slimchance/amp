@@ -1,8 +1,11 @@
 //! Kafka producer for worker events.
 
-use std::{path::Path, sync::Arc, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
 
-use amp_config::KafkaEventsConfig;
 use backon::{BackoffBuilder, Retryable};
 use monitoring::logging;
 use rskafka::{
@@ -14,9 +17,26 @@ use rskafka::{
 };
 use rustls::ClientConfig;
 
-// -----------------------------------------------------------------------------
-// KafkaProducer - Principal type
-// -----------------------------------------------------------------------------
+/// Kafka producer configuration.
+#[derive(Debug, Clone)]
+pub struct KafkaConfig {
+    /// Kafka broker addresses.
+    pub brokers: Vec<String>,
+    /// Kafka topic name.
+    pub topic: String,
+    /// Number of partitions for consistent key hashing.
+    pub partitions: u32,
+    /// SASL authentication mechanism (e.g., "PLAIN", "SCRAM-SHA-256", "SCRAM-SHA-512").
+    pub sasl_mechanism: Option<String>,
+    /// SASL username.
+    pub sasl_username: Option<String>,
+    /// SASL password.
+    pub sasl_password: Option<String>,
+    /// Enable TLS encryption.
+    pub tls_enabled: bool,
+    /// Path to a PEM-encoded CA certificate file for TLS verification.
+    pub tls_ca_cert_path: Option<PathBuf>,
+}
 
 /// Kafka producer for sending worker events.
 ///
@@ -29,7 +49,7 @@ pub struct KafkaProducer {
 
 impl KafkaProducer {
     /// Creates a new Kafka producer with the given configuration.
-    pub async fn new(config: &KafkaEventsConfig) -> Result<Self, Error> {
+    pub async fn new(config: &KafkaConfig) -> Result<Self, Error> {
         let mut builder = ClientBuilder::new(config.brokers.clone());
 
         // Configure SASL authentication if mechanism is specified
@@ -57,7 +77,7 @@ impl KafkaProducer {
     /// Builds SASL configuration from the provided mechanism and credentials.
     fn build_sasl_config(
         mechanism: SaslMechanism,
-        config: &KafkaEventsConfig,
+        config: &KafkaConfig,
     ) -> Result<SaslConfig, Error> {
         let username = config
             .sasl_username
@@ -68,7 +88,7 @@ impl KafkaProducer {
             .clone()
             .ok_or(Error::MissingSaslPassword)?;
 
-        let credentials = Credentials::new(username.into_inner(), password.into_inner());
+        let credentials = Credentials::new(username, password);
 
         Ok(match mechanism {
             SaslMechanism::Plain => SaslConfig::Plain(credentials),
@@ -165,7 +185,7 @@ impl KafkaProducer {
 
     /// Computes the partition for a given key using consistent hashing.
     ///
-    /// The partition count is configured via `KafkaEventsConfig::partitions`.
+    /// The partition count is configured via `KafkaConfig::partitions`.
     fn partition_for_key(&self, key: &str) -> i32 {
         // Simple hash-based partition selection
         let hash: u32 = key
@@ -174,10 +194,6 @@ impl KafkaProducer {
         (hash % self.partitions) as i32
     }
 }
-
-// -----------------------------------------------------------------------------
-// Error type
-// -----------------------------------------------------------------------------
 
 /// Errors that can occur when working with the Kafka producer.
 #[derive(Debug, thiserror::Error)]
@@ -239,10 +255,6 @@ impl Error {
         )
     }
 }
-
-// -----------------------------------------------------------------------------
-// Internal helpers
-// -----------------------------------------------------------------------------
 
 /// Supported SASL authentication mechanisms.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -338,7 +350,7 @@ mod tests {
     #[test]
     fn encode_error_is_not_retryable() {
         // Create a prost encode error by encoding to a buffer that's too small
-        let msg = crate::kafka::proto::WorkerEvent {
+        let msg = crate::proto::JobEvent {
             event_id: "test".to_string(),
             event_type: "test".to_string(),
             event_version: "1.0".to_string(),
@@ -446,14 +458,14 @@ mod tests {
         mechanism: Option<&str>,
         sasl_user: Option<String>,
         sasl_pass: Option<String>,
-    ) -> KafkaEventsConfig {
-        KafkaEventsConfig {
+    ) -> KafkaConfig {
+        KafkaConfig {
             brokers: vec!["localhost:9092".to_string()],
             topic: "test".to_string(),
             partitions: 1,
             sasl_mechanism: mechanism.map(String::from),
-            sasl_username: sasl_user.map(Into::into),
-            sasl_password: sasl_pass.map(Into::into),
+            sasl_username: sasl_user,
+            sasl_password: sasl_pass,
             tls_enabled: false,
             tls_ca_cert_path: None,
         }

@@ -8,12 +8,10 @@
 use std::sync::Arc;
 
 use amp_job_core::{
+    events::{EventEmitter, JobProgressReporter},
     job_id::JobId,
     materialize::progress::{ProgressReporter, ProgressUpdate},
-};
-use amp_worker_service::{
-    events::{EventEmitter, WorkerProgressReporter},
-    kafka::proto,
+    proto,
 };
 use monitoring::logging;
 
@@ -23,7 +21,7 @@ const TEST_HASH_2: &str = "00000000000000000000000000000000000000000000000000000
 
 use crate::testlib::fixtures::MockEventEmitter;
 
-/// WorkerProgressReporter correctly forwards progress updates to the event emitter.
+/// JobProgressReporter correctly forwards progress updates to the event emitter.
 #[tokio::test]
 async fn progress_reporter_forwards_updates_to_emitter() {
     logging::init();
@@ -33,7 +31,7 @@ async fn progress_reporter_forwards_updates_to_emitter() {
     let dataset_info = test_dataset_info("test", "dataset", TEST_HASH);
 
     let job_id = JobId::try_from(1i64).unwrap();
-    let reporter = WorkerProgressReporter::new(job_id, dataset_info, emitter.clone());
+    let reporter = JobProgressReporter::new(job_id, dataset_info, emitter.clone());
 
     //* When - emit multiple progress updates
     for block in [10u64, 25, 50, 75, 100] {
@@ -316,7 +314,7 @@ async fn separate_events_emitted_per_table() {
     //* Given
     let emitter = Arc::new(MockEventEmitter::new());
     let job_id = JobId::try_from(1i64).unwrap();
-    let reporter = WorkerProgressReporter::new(
+    let reporter = JobProgressReporter::new(
         job_id,
         test_dataset_info("test", "dataset", TEST_HASH),
         emitter.clone(),

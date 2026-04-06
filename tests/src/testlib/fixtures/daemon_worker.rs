@@ -7,10 +7,9 @@
 use std::sync::Arc;
 
 use amp_data_store::DataStore;
+use amp_job_core::events::EventEmitter;
 use amp_worker_core::node_id::NodeId;
-use amp_worker_service::{
-    config::Config, events::EventEmitter, service::RuntimeError as WorkerRuntimeError,
-};
+use amp_worker_service::{config::Config, service::RuntimeError as WorkerRuntimeError};
 use anyhow::Result;
 use common::{datasets_cache::DatasetsCache, udfs::eth_call::EthCallUdfsCache};
 use js_runtime::isolate_pool::IsolatePool;

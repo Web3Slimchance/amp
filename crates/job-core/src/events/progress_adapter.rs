@@ -1,30 +1,29 @@
 //! Progress reporter adapter for bridging job core progress to event emitter.
 //!
-//! This module provides a [`WorkerProgressReporter`] that implements the job core crate's
+//! This module provides a [`JobProgressReporter`] that implements the job core crate's
 //! [`amp_job_core::materialize::progress::ProgressReporter`] trait and forwards progress updates
-//! to the worker's [`EventEmitter`] for Kafka streaming.
+//! to the [`EventEmitter`] for Kafka streaming.
 
 use std::{sync::Arc, time::Duration};
 
-use amp_job_core::{
+use super::emitter::EventEmitter;
+use crate::{
     job_id::JobId,
     materialize::progress::{ProgressUpdate, SyncCompletedInfo, SyncFailedInfo, SyncStartedInfo},
+    proto,
 };
 
-use super::EventEmitter;
-use crate::kafka::proto;
-
-/// Adapter that bridges job core progress reporting to worker event emission.
+/// Adapter that bridges progress reporting to event emission.
 ///
 /// This struct implements [`amp_job_core::materialize::progress::ProgressReporter`] and translates
 /// progress updates into proto events that are sent to the configured [`EventEmitter`].
-pub struct WorkerProgressReporter {
+pub struct JobProgressReporter {
     job_id: JobId,
     dataset_info: proto::DatasetInfo,
     event_emitter: Arc<dyn EventEmitter>,
 }
 
-impl WorkerProgressReporter {
+impl JobProgressReporter {
     /// Creates a new progress reporter adapter.
     pub fn new(
         job_id: JobId,
@@ -39,7 +38,7 @@ impl WorkerProgressReporter {
     }
 }
 
-impl amp_job_core::materialize::progress::ProgressReporter for WorkerProgressReporter {
+impl crate::materialize::progress::ProgressReporter for JobProgressReporter {
     fn report_progress(&self, update: ProgressUpdate) {
         let event = proto::SyncProgress {
             job_id: *self.job_id,
@@ -59,6 +58,9 @@ impl amp_job_core::materialize::progress::ProgressReporter for WorkerProgressRep
         // but EventEmitter::emit_sync_progress is asynchronous.
         let emitter = Arc::clone(&self.event_emitter);
         tokio::spawn(async move {
+            // 30s timeout prevents leaked tasks if the emitter stalls (e.g., Kafka broker
+            // unreachable). Generous to allow for the emitter's internal retries.
+            // See https://github.com/edgeandnode/amp/pull/2081
             if tokio::time::timeout(Duration::from_secs(30), emitter.emit_sync_progress(event))
                 .await
                 .is_err()
@@ -79,6 +81,9 @@ impl amp_job_core::materialize::progress::ProgressReporter for WorkerProgressRep
 
         let emitter = Arc::clone(&self.event_emitter);
         tokio::spawn(async move {
+            // 30s timeout prevents leaked tasks if the emitter stalls (e.g., Kafka broker
+            // unreachable). Generous to allow for the emitter's internal retries.
+            // See https://github.com/edgeandnode/amp/pull/2081
             if tokio::time::timeout(Duration::from_secs(30), emitter.emit_sync_started(event))
                 .await
                 .is_err()
@@ -99,6 +104,9 @@ impl amp_job_core::materialize::progress::ProgressReporter for WorkerProgressRep
 
         let emitter = Arc::clone(&self.event_emitter);
         tokio::spawn(async move {
+            // 30s timeout prevents leaked tasks if the emitter stalls (e.g., Kafka broker
+            // unreachable). Generous to allow for the emitter's internal retries.
+            // See https://github.com/edgeandnode/amp/pull/2081
             if tokio::time::timeout(Duration::from_secs(30), emitter.emit_sync_completed(event))
                 .await
                 .is_err()
@@ -119,6 +127,9 @@ impl amp_job_core::materialize::progress::ProgressReporter for WorkerProgressRep
 
         let emitter = Arc::clone(&self.event_emitter);
         tokio::spawn(async move {
+            // 30s timeout prevents leaked tasks if the emitter stalls (e.g., Kafka broker
+            // unreachable). Generous to allow for the emitter's internal retries.
+            // See https://github.com/edgeandnode/amp/pull/2081
             if tokio::time::timeout(Duration::from_secs(30), emitter.emit_sync_failed(event))
                 .await
                 .is_err()

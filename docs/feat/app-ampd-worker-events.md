@@ -1,16 +1,16 @@
 ---
 name: "app-ampd-worker-events"
-description: "Worker event streaming via Kafka for real-time sync progress updates. Load when asking about push-based sync notifications, event emission, or Kafka integration"
+description: "Job event streaming via Kafka for real-time sync progress updates. Load when asking about push-based sync notifications, event emission, or Kafka integration"
 type: feature
 status: experimental
-components: "service:worker"
+components: "crate:job-core"
 ---
 
-# Worker Event Streaming
+# Job Event Streaming
 
 ## Summary
 
-Worker Event Streaming enables a **Push Model** where workers emit events to Kafka when significant state changes occur. This complements the pull-based [Job Progress API](admin-job-progress.md) by enabling real-time dashboards, event-driven Platform backend updates, alerting on sync failures, and audit logging of sync activity.
+Job Event Streaming enables a **Push Model** where jobs emit events to Kafka when significant state changes occur. This complements the pull-based [Job Progress API](admin-job-progress.md) by enabling real-time dashboards, event-driven Platform backend updates, alerting on sync failures, and audit logging of sync activity.
 
 ## Table of Contents
 
@@ -24,7 +24,7 @@ Worker Event Streaming enables a **Push Model** where workers emit events to Kaf
 
 ## Key Concepts
 
-- **Push Model**: Event-driven architecture where workers proactively emit state changes to Kafka, rather than clients polling for updates
+- **Push Model**: Event-driven architecture where jobs proactively emit state changes to Kafka, rather than clients polling for updates
 - **Protobuf Encoding**: Events are encoded using Protocol Buffers for compact, schema-enforced messages
 - **Event Envelope**: Common wrapper around all events containing metadata like `event_id`, `event_type`, `timestamp`, and `source`
 - **At-Least-Once Delivery**: Events may be delivered multiple times; consumers must handle duplicates via `event_id` deduplication
@@ -32,11 +32,11 @@ Worker Event Streaming enables a **Push Model** where workers emit events to Kaf
 
 ## Architecture
 
-Workers emit events directly to Kafka as sync jobs progress:
+Jobs emit events directly to Kafka as sync jobs progress:
 
 ```
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│     Worker      │───►│      Kafka       │───►│   Consumers     │
+│     Job         │───►│      Kafka       │───►│   Consumers     │
 │                 │    │                  │    │                 │
 │ - Extracts      │    │  Topic:          │    │ - Platform API  │
 │ - Commits       │    │  amp.worker      │    │ - Alerting      │

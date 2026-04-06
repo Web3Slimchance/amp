@@ -10,7 +10,5 @@
 
 pub mod build_info;
 pub mod config;
-pub mod events;
 pub mod job;
-pub mod kafka;
 pub mod service;

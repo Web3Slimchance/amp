@@ -415,12 +415,12 @@ gen-admin-api-openapi-spec DEST_DIR=GEN_OPENAPI_SCHEMAS_OUTDIR:
     @cp -f $(ls -t target/debug/build/amp-controller-admin-api-gen-*/out/openapi.spec.json | head -1) {{DEST_DIR}}/admin.spec.json
     @echo "Schema generated and copied to {{DEST_DIR}}/admin.spec.json"
 
-### Worker
+### Job
 
-# Generate worker events protobuf bindings (RUSTFLAGS="--cfg gen_worker_proto" cargo check)
+# Generate job events protobuf bindings (RUSTFLAGS="--cfg gen_job_proto" cargo check)
 [group: 'codegen']
-gen-worker-events-proto:
-    RUSTFLAGS="--cfg gen_worker_proto" cargo check -p worker
+gen-job-events-proto:
+    RUSTFLAGS="--cfg gen_job_proto" cargo check -p amp-job-core
 
 
 ## Misc

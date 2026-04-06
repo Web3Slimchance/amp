@@ -4,18 +4,39 @@ edition.workspace = true
 version.workspace = true
 license-file.workspace = true
 
+[features]
+# Kafka-based event streaming for job lifecycle events (sync.started, sync.progress, etc.)
+events-kafka = [
+    "dep:backon",
+    "dep:chrono",
+    "dep:fs-err",
+    "dep:rskafka",
+    "dep:rustls",
+    "dep:rustls-pemfile",
+    "dep:uuid",
+    "dep:webpki-roots",
+]
+
 [dependencies]
 amp-data-store = { path = "../core/data-store" }
 amp-parquet = { path = "../core/parquet" }
+async-trait.workspace = true
+backon = { workspace = true, optional = true }
+chrono = { workspace = true, optional = true }
 common = { path = "../core/common" }
 datafusion.workspace = true
 datasets-common = { path = "../core/datasets-common" }
+fs-err = { workspace = true, optional = true }
 futures.workspace = true
 hex.workspace = true
 metadata-db = { path = "../core/metadata-db" }
 monitoring = { path = "../core/monitoring" }
 object_store.workspace = true
 parking_lot.workspace = true
+prost.workspace = true
+rskafka = { version = "0.6", features = ["transport-tls"], optional = true }
+rustls = { workspace = true, optional = true }
+rustls-pemfile = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
@@ -23,3 +44,14 @@ thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 url.workspace = true
+uuid = { workspace = true, features = ["v7"], optional = true }
+webpki-roots = { workspace = true, optional = true }
+
+# Protobuf code generation dependencies
+# Run with: RUSTFLAGS="--cfg gen_job_proto" cargo check -p amp-job-core
+[target.'cfg(gen_job_proto)'.build-dependencies]
+prost-build.workspace = true
+
+[lints.rust]
+# Allow the gen_job_proto cfg flag used for conditional protobuf code generation
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(gen_job_proto)'] }

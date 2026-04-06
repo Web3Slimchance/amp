@@ -21,6 +21,7 @@ mod job_set;
 
 use amp_job_core::{
     error::{ErrorContext, ErrorDetailPayload, JobErrorExt as _, collect_error_details},
+    events::{EventEmitter, KafkaEventEmitter, NoOpEmitter},
     job_id::JobId,
     status::JobStatus,
 };
@@ -35,11 +36,7 @@ pub use self::error::{
     StartActionError,
 };
 use self::job_set::{JobSet, JoinError as JobSetJoinError};
-use crate::{
-    build_info::BuildInfo,
-    config::Config,
-    events::{EventEmitter, KafkaEventEmitter, NoOpEmitter},
-};
+use crate::{build_info::BuildInfo, config::Config};
 
 /// Frequency on which to send a heartbeat.
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(1);
@@ -707,9 +704,20 @@ async fn create_event_emitter(
         return Arc::new(NoOpEmitter);
     };
 
+    let config = amp_job_core::kafka::KafkaConfig {
+        brokers: kafka_config.brokers.clone(),
+        topic: kafka_config.topic.clone(),
+        partitions: kafka_config.partitions,
+        sasl_mechanism: kafka_config.sasl_mechanism.clone(),
+        sasl_username: kafka_config.sasl_username.clone().map(|r| r.into_inner()),
+        sasl_password: kafka_config.sasl_password.clone().map(|r| r.into_inner()),
+        tls_enabled: kafka_config.tls_enabled,
+        tls_ca_cert_path: kafka_config.tls_ca_cert_path.clone(),
+    };
+
     let producer = match tokio::time::timeout(
         Duration::from_secs(30),
-        crate::kafka::KafkaProducer::new(kafka_config),
+        amp_job_core::kafka::KafkaProducer::new(&config),
     )
     .await
     {

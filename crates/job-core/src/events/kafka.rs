@@ -2,25 +2,25 @@
 
 use std::sync::Arc;
 
-use amp_worker_core::node_id::NodeId;
 use async_trait::async_trait;
 use monitoring::logging;
 use prost::Message;
 
 use super::emitter::EventEmitter;
-use crate::kafka::{KafkaProducer, proto};
+use crate::{kafka::KafkaProducer, proto};
 
 /// Kafka-based event emitter.
 ///
-/// Sends worker events to a Kafka topic using protobuf encoding.
+/// Sends job events to a Kafka topic using protobuf encoding.
 pub struct KafkaEventEmitter {
     producer: Arc<KafkaProducer>,
-    worker_id: NodeId,
+    worker_id: String,
 }
 
 impl KafkaEventEmitter {
     /// Creates a new Kafka event emitter.
-    pub fn new(producer: Arc<KafkaProducer>, worker_id: NodeId) -> Self {
+    pub fn new(producer: Arc<KafkaProducer>, worker_id: impl Into<String>) -> Self {
+        let worker_id = worker_id.into();
         Self {
             producer,
             worker_id,
@@ -30,7 +30,7 @@ impl KafkaEventEmitter {
     /// Sends an event to Kafka.
     ///
     /// Logs errors but does not fail - events are best-effort.
-    async fn emit(&self, event_type: EventType, key: &str, event: proto::WorkerEvent) {
+    async fn emit(&self, event_type: EventType, key: &str, event: proto::JobEvent) {
         let mut buf = Vec::with_capacity(event.encoded_len());
         if let Err(e) = event.encode(&mut buf) {
             tracing::error!(
@@ -58,15 +58,15 @@ impl KafkaEventEmitter {
     fn create_envelope(
         &self,
         event_type: EventType,
-        payload: proto::worker_event::Payload,
-    ) -> proto::WorkerEvent {
-        proto::WorkerEvent {
+        payload: proto::job_event::Payload,
+    ) -> proto::JobEvent {
+        proto::JobEvent {
             event_id: uuid::Uuid::now_v7().to_string(),
             event_type: event_type.to_string(),
             event_version: "1.0".to_string(),
             timestamp: chrono::Utc::now().to_rfc3339(),
             source: Some(proto::EventSource {
-                worker_id: self.worker_id.to_string(),
+                worker_id: self.worker_id.clone(),
             }),
             payload: Some(payload),
         }
@@ -83,7 +83,7 @@ impl EventEmitter for KafkaEventEmitter {
             .unwrap_or_default();
         let envelope = self.create_envelope(
             EventType::Started,
-            proto::worker_event::Payload::SyncStarted(event),
+            proto::job_event::Payload::SyncStarted(event),
         );
         self.emit(EventType::Started, &key, envelope).await;
     }
@@ -96,7 +96,7 @@ impl EventEmitter for KafkaEventEmitter {
             .unwrap_or_default();
         let envelope = self.create_envelope(
             EventType::Progress,
-            proto::worker_event::Payload::SyncProgress(event),
+            proto::job_event::Payload::SyncProgress(event),
         );
         self.emit(EventType::Progress, &key, envelope).await;
     }
@@ -109,7 +109,7 @@ impl EventEmitter for KafkaEventEmitter {
             .unwrap_or_default();
         let envelope = self.create_envelope(
             EventType::Completed,
-            proto::worker_event::Payload::SyncCompleted(event),
+            proto::job_event::Payload::SyncCompleted(event),
         );
         self.emit(EventType::Completed, &key, envelope).await;
     }
@@ -122,7 +122,7 @@ impl EventEmitter for KafkaEventEmitter {
             .unwrap_or_default();
         let envelope = self.create_envelope(
             EventType::Failed,
-            proto::worker_event::Payload::SyncFailed(event),
+            proto::job_event::Payload::SyncFailed(event),
         );
         self.emit(EventType::Failed, &key, envelope).await;
     }
@@ -130,7 +130,7 @@ impl EventEmitter for KafkaEventEmitter {
 
 // --- Private helpers below ---
 
-/// Event type discriminator for worker events.
+/// Event type discriminator for job events.
 #[derive(Debug, Clone, Copy)]
 enum EventType {
     Started,
