@@ -13,7 +13,7 @@ use crate::plan_visitors::WatermarkColumn;
 /// A stream adapter that enriches a `QueryMessage` stream with `Watermark` messages.
 ///
 /// This stream wraps a QueryMessage stream and:
-/// - Validates that Data batches are ordered by the active watermark column
+/// - Validates that Data batches are ordered by the watermark column
 /// - Tracks the last watermark value emitted
 /// - Splits batches on watermark boundaries and emits Watermark messages
 /// - Clears state on MicrobatchEnd and reorgs

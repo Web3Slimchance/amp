@@ -122,9 +122,9 @@ pub enum SpawnError {
         info: crate::plan_visitors::CrossNetworkJoinInfo,
     },
 
-    /// Source tables are missing the required `_block_num` watermark column.
-    #[error("all source tables must have the _block_num column")]
-    MissingBlockNum,
+    /// Source tables do not share a common watermark column (`_block_num` or `_ts`).
+    #[error("all source tables must have at least one watermark column (_block_num or _ts)")]
+    NoWatermarkColumn,
 
     /// Failed to resolve raw dataset from dependencies
     ///
@@ -242,6 +242,7 @@ struct MicrobatchRange {
 struct SegmentStart {
     number: BlockNum,
     prev_hash: BlockHash,
+    timestamp: Option<u64>,
 }
 
 impl From<BlockRow> for SegmentStart {
@@ -249,6 +250,7 @@ impl From<BlockRow> for SegmentStart {
         Self {
             number: row.number,
             prev_hash: row.prev_hash,
+            timestamp: row.timestamp,
         }
     }
 }
@@ -285,13 +287,14 @@ impl StreamDirection {
 pub struct StreamingQueryHandle {
     rx: mpsc::Receiver<QueryMessage>,
     join_handle: AbortOnDropHandle<Result<(), StreamingQueryExecutionError>>,
+    watermark_column: WatermarkColumn,
 }
 
 impl StreamingQueryHandle {
     pub fn into_stream(self) -> BoxStream<'static, Result<QueryMessage, MessageStreamError>> {
         let data_stream = MessageStreamWithWatermark::new(
             ReceiverStream::new(self.rx).map(Ok),
-            WatermarkColumn::BlockNum,
+            self.watermark_column,
         );
 
         let join = self.join_handle;
@@ -334,6 +337,8 @@ pub struct StreamingQuery {
     microbatch_max_interval: u64,
     keep_alive_interval: u64,
     destination: Option<Arc<PhysicalTable>>,
+    /// The watermark column used for incrementalization, ordering, and output splitting.
+    watermark_column: WatermarkColumn,
     /// Watermark columns to remove from the output (those not explicitly selected).
     watermark_columns_to_unproject: Vec<&'static str>,
     network: NetworkId,
@@ -404,9 +409,14 @@ impl StreamingQuery {
                     .any(|f| f.name() == wm.column_name())
             });
         }
-        if !watermark_columns_to_propagate.contains(&WatermarkColumn::BlockNum) {
-            return Err(SpawnError::MissingBlockNum);
-        }
+        let watermark_column =
+            if watermark_columns_to_propagate.contains(&WatermarkColumn::BlockNum) {
+                WatermarkColumn::BlockNum
+            } else if watermark_columns_to_propagate.contains(&WatermarkColumn::Ts) {
+                WatermarkColumn::Ts
+            } else {
+                return Err(SpawnError::NoWatermarkColumn);
+            };
 
         // This plan is the starting point of each microbatch execution. Transformations applied to it:
         // - Propagate watermark columns.
@@ -479,6 +489,7 @@ impl StreamingQuery {
             microbatch_max_interval,
             keep_alive_interval,
             destination,
+            watermark_column,
             watermark_columns_to_unproject,
             network,
             blocks_table,
@@ -491,7 +502,11 @@ impl StreamingQuery {
             streaming_query.execute().instrument(execute_span),
         ));
 
-        Ok(StreamingQueryHandle { rx, join_handle })
+        Ok(StreamingQueryHandle {
+            rx,
+            join_handle,
+            watermark_column,
+        })
     }
 
     /// The loop:
@@ -527,6 +542,40 @@ impl StreamingQuery {
         }
     }
 
+    fn watermark_bounds(
+        &self,
+        range: &BlockRange,
+        direction: &StreamDirection,
+    ) -> (datafusion::prelude::Expr, datafusion::prelude::Expr) {
+        use datafusion::common::ScalarValue;
+
+        match self.watermark_column {
+            WatermarkColumn::BlockNum => (lit(range.start()), lit(range.end())),
+            WatermarkColumn::Ts => {
+                // Block timestamps are stored in seconds (see `get_timestamp_value`).
+                // Convert to nanoseconds to match the `_ts` column type.
+                let start_secs = direction
+                    .segment_start()
+                    .timestamp
+                    .expect("start block timestamp required when _ts is the watermark column");
+                let end_secs = range
+                    .timestamp()
+                    .expect("end block timestamp required when _ts is the watermark column");
+                let tz: Arc<str> = Arc::from("+00:00");
+                (
+                    lit(ScalarValue::TimestampNanosecond(
+                        Some(start_secs as i64 * 1_000_000_000),
+                        Some(tz.clone()),
+                    )),
+                    lit(ScalarValue::TimestampNanosecond(
+                        Some(end_secs as i64 * 1_000_000_000),
+                        Some(tz),
+                    )),
+                )
+            }
+        }
+    }
+
     /// Execute a single microbatch for the given range. Returns `true` if this was the final
     /// batch (i.e. `range.end() == self.end_block`).
     #[instrument(skip_all, err, fields(start_block = %range.start(), end_block = %range.end(), job_id = self.job_id.map(tracing::field::display)))]
@@ -543,21 +592,17 @@ impl StreamingQuery {
                 .clone()
                 .attach_to(ctx)
                 .map_err(StreamingQueryExecutionError::AttachPlan)?;
-            let mut plan = incrementalize_plan(
-                plan,
-                lit(range.start()),
-                lit(range.end()),
-                WatermarkColumn::BlockNum,
-            )
-            .map_err(StreamingQueryExecutionError::IncrementalizePlan)?;
+            let (start, end) = self.watermark_bounds(range, direction);
+            let mut plan = incrementalize_plan(plan, start, end, self.watermark_column)
+                .map_err(StreamingQueryExecutionError::IncrementalizePlan)?;
 
             // Enforce ordering by the watermark column.
-            plan = order_by_watermark(plan, WatermarkColumn::BlockNum);
+            plan = order_by_watermark(plan, self.watermark_column);
 
             // Remove watermark columns the user didn't explicitly select.
             if !self.watermark_columns_to_unproject.is_empty() {
                 plan = unproject_columns(plan, &self.watermark_columns_to_unproject)
-                    .map_err(StreamingQueryExecutionError::UnprojectSpecialBlockNumColumn)?
+                    .map_err(StreamingQueryExecutionError::UnprojectWatermarkColumn)?
             }
             plan
         };
@@ -707,6 +752,7 @@ impl StreamingQuery {
                 let segment_start = SegmentStart {
                     number: prev.number + 1,
                     prev_hash: prev.hash,
+                    timestamp: None,
                 };
                 Ok(Some(StreamDirection::ForwardFrom(segment_start)))
             }
@@ -1007,7 +1053,7 @@ pub enum StreamingQueryExecutionError {
     ///
     /// This occurs when the special block num column cannot be unprojected.
     #[error("failed to unproject the special block num column: {0}")]
-    UnprojectSpecialBlockNumColumn(#[source] DataFusionError),
+    UnprojectWatermarkColumn(#[source] DataFusionError),
 
     /// Failed to execute the plan
     ///
@@ -1028,7 +1074,7 @@ impl RetryableErrorExt for StreamingQueryExecutionError {
             // Plan-level failures are permanent — the query structure won't change on retry.
             Self::IncrementalizePlan(_)
             | Self::AttachPlan(_)
-            | Self::UnprojectSpecialBlockNumColumn(_) => false,
+            | Self::UnprojectWatermarkColumn(_) => false,
 
             // Task-level failures are transient.
             Self::StreamingTaskFailedToJoin(_) | Self::TaskTimeout => true,
@@ -1360,6 +1406,8 @@ impl ResolvedBlocksTable {
         }
     }
 
+    /// Returns the block timestamp in seconds. Providers populate block
+    /// timestamps with second precision.
     fn get_timestamp_value(&self, results: &RecordBatch) -> Option<u64> {
         let col = results.column_by_name(self.timestamp_column)?;
         if self.dataset_kind.as_str() == "solana" {
@@ -1372,10 +1420,17 @@ impl ResolvedBlocksTable {
                 }
             })
         } else {
+            // Timestamp column is DataType::Timestamp(Nanosecond, _). Extract the
+            // raw i64 nanos and convert to seconds.
             col.as_any()
                 .downcast_ref::<TimestampNanosecondArray>()
-                .and_then(|arr| arr.value_as_datetime(0))
-                .map(|dt| dt.and_utc().timestamp() as u64)
+                .and_then(|arr| {
+                    if arr.is_null(0) {
+                        None
+                    } else {
+                        Some(arr.value(0) as u64 / 1_000_000_000)
+                    }
+                })
         }
     }
 
