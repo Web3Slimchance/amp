@@ -718,7 +718,8 @@ mod test {
     fn segment_size_from_metadata_with_valid_parquet_computes_correctly() {
         use crate::parquet::arrow::arrow_reader::{ArrowReaderMetadata, ArrowReaderOptions};
 
-        let options = ArrowReaderOptions::new().with_page_index(true);
+        let options = ArrowReaderOptions::new()
+            .with_page_index_policy(crate::parquet::file::metadata::PageIndexPolicy::Optional);
         let now = Timestamp::now();
         let metadata = ArrowReaderMetadata::try_new(
             parquet_meta(1000, 3, 400, 100, 12345, 2u64.into(), now).into(),

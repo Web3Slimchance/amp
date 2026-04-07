@@ -29,7 +29,7 @@ use metadata_db::{
     physical_table_revision::{LocationId, PhysicalTableRevision, RevisionMetadataOwned},
 };
 use monitoring::telemetry::metrics::{Counter, Gauge, Meter};
-use object_store::{ObjectMeta, ObjectStore, buffered::BufWriter, path::Path};
+use object_store::{ObjectMeta, ObjectStore, ObjectStoreExt as _, buffered::BufWriter, path::Path};
 use tracing::Instrument;
 use url::Url;
 use uuid::Uuid;
@@ -612,7 +612,7 @@ impl DataStore {
         let results = rows
             .into_iter()
             .map(|row| {
-                let location = table_path.child(row.file_name.as_str());
+                let location = table_path.clone().join(row.file_name.as_str());
                 let size = row.object_size.unwrap_or_default() as u64;
 
                 // Extract created_at from ParquetMeta to use as last_modified.
@@ -817,11 +817,18 @@ impl DataStore {
         let file_path = revision
             .path
             .as_object_store_path()
-            .child(filename.as_str());
-        self.object_store
+            .clone()
+            .join(filename.as_str());
+        let mut meta = self
+            .object_store
             .head(&file_path)
             .await
-            .map_err(HeadInObjectStoreError)
+            .map_err(HeadInObjectStoreError)?;
+        // Workaround: object_store 0.13 PrefixStore doesn't strip the prefix
+        // from ObjectMeta returned by head() (which now delegates to get_opts).
+        // Restore the original relative path so callers can use it with the same store.
+        meta.location = file_path;
+        Ok(meta)
     }
 
     /// Deletes a single file from object storage.
@@ -840,10 +847,10 @@ impl DataStore {
     /// Unlike `delete_files_in_object_store`, this returns a stream that yields
     /// each deletion result individually, allowing callers to handle per-file
     /// success/failure (e.g., for metrics tracking).
-    pub fn delete_files_stream<'a>(
-        &'a self,
-        paths: BoxStream<'a, Result<Path, object_store::Error>>,
-    ) -> BoxStream<'a, Result<Path, DeleteFilesStreamError>> {
+    pub fn delete_files_stream(
+        &self,
+        paths: BoxStream<'static, Result<Path, object_store::Error>>,
+    ) -> BoxStream<'static, Result<Path, DeleteFilesStreamError>> {
         Box::pin(
             self.object_store
                 .delete_stream(paths)
@@ -943,7 +950,8 @@ impl DataStore {
         let file_path = revision
             .path
             .as_object_store_path()
-            .child(filename.as_str());
+            .clone()
+            .join(filename.as_str());
         BufWriter::new(self.object_store.clone(), file_path)
     }
 

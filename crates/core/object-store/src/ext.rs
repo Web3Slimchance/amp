@@ -3,7 +3,7 @@
 use std::future::Future;
 
 use bytes::Bytes;
-use object_store::{ObjectStore, path::Path};
+use object_store::{ObjectStore, ObjectStoreExt as _, path::Path};
 
 /// Extension trait for `ObjectStore` that provides convenient methods for common operations.
 ///

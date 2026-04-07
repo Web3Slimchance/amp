@@ -2,6 +2,7 @@
 
 use alloy::primitives::BlockNumber;
 use arrow::error::ArrowError;
+use arrow_flight::error::FlightError;
 
 // ============================================================================
 // Top-Level Error
@@ -61,6 +62,16 @@ pub enum Error {
     /// This occurs when converting RecordBatches to/from Arrow IPC format fails.
     #[error("serialization error: {0}")]
     Serialization(#[source] SerializationError),
+
+    /// Arrow Flight error
+    ///
+    /// This occurs when Arrow Flight operations fail, typically due to:
+    /// - Corrupted data in transit
+    /// - Schema mismatches
+    /// - Invalid Arrow IPC format
+    /// - Protocol-level failures
+    #[error("Arrow Flight error: {0}")]
+    Flight(#[source] FlightError),
 
     /// Arrow data decoding error
     ///

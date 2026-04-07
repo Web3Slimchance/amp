@@ -63,13 +63,13 @@ tracing = ["dep:tracing"]
 zstd = ["parquet/zstd"]
 
 [dependencies]
-arrow-array = "57"
-arrow-schema = "57"
+arrow-array = "58"
+arrow-schema = "58"
 bytes.workspace = true
 flume = "0.11"
 futures = { workspace = true, features = ["std"], optional = true }
 parking_lot.workspace = true
-parquet = { version = "57", features = ["arrow"] }
+parquet = { version = "58", features = ["arrow"] }
 tokio = { workspace = true, optional = true }
 tracing = { workspace = true, optional = true }
 

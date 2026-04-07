@@ -6,7 +6,7 @@ use amp_providers_common::{
 };
 use futures::{Stream, StreamExt as _, TryStreamExt as _, stream};
 use monitoring::logging;
-use object_store::ObjectStore;
+use object_store::{ObjectStore, ObjectStoreExt as _};
 use parking_lot::RwLock;
 
 /// Store for provider configuration files with integrated caching.

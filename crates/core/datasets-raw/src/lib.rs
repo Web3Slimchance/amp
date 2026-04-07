@@ -17,7 +17,6 @@ pub mod dataset_kind;
 pub mod evm;
 pub mod manifest;
 pub mod rows;
-#[cfg(feature = "gen-schema")]
 pub mod schema;
 pub mod tempo;
 

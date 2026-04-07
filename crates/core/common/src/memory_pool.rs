@@ -199,7 +199,7 @@ mod tests {
         let tiered =
             Arc::new(TieredMemoryPool::new(parent.clone(), child.clone())) as Arc<dyn MemoryPool>;
 
-        let mut reservation = MemoryConsumer::new("test").register(&tiered);
+        let reservation = MemoryConsumer::new("test").register(&tiered);
 
         // Should succeed: under both limits
         reservation.try_grow(400).unwrap();
@@ -222,7 +222,7 @@ mod tests {
         let tiered =
             Arc::new(TieredMemoryPool::new(parent.clone(), child.clone())) as Arc<dyn MemoryPool>;
 
-        let mut reservation = MemoryConsumer::new("test").register(&tiered);
+        let reservation = MemoryConsumer::new("test").register(&tiered);
 
         // Should succeed: under both limits
         reservation.try_grow(250).unwrap();
@@ -241,7 +241,7 @@ mod tests {
         let tiered =
             Arc::new(TieredMemoryPool::new(parent.clone(), child.clone())) as Arc<dyn MemoryPool>;
 
-        let mut reservation = MemoryConsumer::new("test").register(&tiered);
+        let reservation = MemoryConsumer::new("test").register(&tiered);
 
         reservation.try_grow(400).unwrap();
         assert_eq!(parent.reserved(), 400);
@@ -273,7 +273,7 @@ mod tests {
         let tiered_arc =
             Arc::new(TieredMemoryPool::new(parent.clone(), child.clone())) as Arc<dyn MemoryPool>;
 
-        let mut reservation = MemoryConsumer::new("test").register(&tiered_arc);
+        let reservation = MemoryConsumer::new("test").register(&tiered_arc);
 
         reservation.try_grow(300).unwrap();
 
@@ -293,7 +293,7 @@ mod tests {
         let tiered = Arc::new(TieredMemoryPool::new(parent, child));
 
         let tiered_for_registration = tiered.clone() as Arc<dyn MemoryPool>;
-        let mut reservation = MemoryConsumer::new("test").register(&tiered_for_registration);
+        let reservation = MemoryConsumer::new("test").register(&tiered_for_registration);
 
         // Initially peak should be 0
         assert_eq!(tiered.peak_reserved(), 0);

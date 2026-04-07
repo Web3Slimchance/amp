@@ -4,6 +4,7 @@ use arrow::{
     array::{ArrayRef, AsArray as _, RecordBatch},
     datatypes::{DataType, Schema, TimeUnit, UInt64Type},
 };
+use datafusion::common::DFSchema;
 use datasets_common::{
     block_num::{BlockNum, RESERVED_BLOCK_NUM_COLUMN_NAME},
     block_range::BlockRange,
@@ -83,7 +84,10 @@ impl TableRows {
                 .zip(schema.fields())
                 .all(|(left, right)| {
                     left.name() == right.name()
-                        && data_types_compatible(left.data_type(), right.data_type())
+                        && DFSchema::datatype_is_logically_equal(
+                            left.data_type(),
+                            right.data_type(),
+                        )
                 });
 
         if schemas_match {
@@ -109,7 +113,10 @@ impl TableRows {
             };
 
             let candidate = rows_schema.field(index);
-            if !data_types_compatible(candidate.data_type(), target_field.data_type()) {
+            if !DFSchema::datatype_is_logically_equal(
+                candidate.data_type(),
+                target_field.data_type(),
+            ) {
                 return Err(TableRowError::SchemaTypeMismatch {
                     field: target_field.name().clone(),
                     expected_type: target_field.data_type().clone(),
@@ -268,33 +275,6 @@ pub enum TableRowError {
         #[source]
         source: CheckInvariantsError,
     },
-}
-
-/// Compares two Arrow data types for structural compatibility, ignoring the inner
-/// field name of List/LargeList types. This allows schemas using different
-/// conventional names (e.g., "item" vs "element") for list elements to be treated
-/// as compatible.
-///
-/// TODO: Consider replacing with `DFSchema::datatype_is_logically_equal` when
-/// upgrading to DataFusion v53+. Note that method has broader semantics (e.g.,
-/// treats Dictionary<K,V> as equal to V) so evaluate whether that's acceptable.
-fn data_types_compatible(a: &DataType, b: &DataType) -> bool {
-    match (a, b) {
-        (DataType::List(a_field), DataType::List(b_field))
-        | (DataType::LargeList(a_field), DataType::LargeList(b_field)) => {
-            a_field.is_nullable() == b_field.is_nullable()
-                && data_types_compatible(a_field.data_type(), b_field.data_type())
-        }
-        (DataType::Struct(a_fields), DataType::Struct(b_fields)) => {
-            a_fields.len() == b_fields.len()
-                && a_fields.iter().zip(b_fields.iter()).all(|(af, bf)| {
-                    af.name() == bf.name()
-                        && af.is_nullable() == bf.is_nullable()
-                        && data_types_compatible(af.data_type(), bf.data_type())
-                })
-        }
-        _ => a == b,
-    }
 }
 
 #[cfg(test)]

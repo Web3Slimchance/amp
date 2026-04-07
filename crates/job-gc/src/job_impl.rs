@@ -56,7 +56,10 @@ pub async fn execute(ctx: Context, desc: JobDescriptor) -> Result<(), Error> {
                 ..
             } = manifest_row?;
 
-            let path = revision_path.child(file_name.as_str());
+            let path = revision_path
+                .as_object_store_path()
+                .clone()
+                .join(file_name.as_str());
             Ok::<_, Error>((file_id, path))
         })
         .try_collect()

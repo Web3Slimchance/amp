@@ -421,7 +421,7 @@ impl AmpClient {
         self.client.set_header("amp-resume", "");
         self.client.set_header("amp-stream", "");
 
-        let flight_info = result.map_err(Error::Arrow)?;
+        let flight_info = result.map_err(Error::Flight)?;
 
         // Eagerly decode schema from FlightInfo
         let schema = Arc::new(

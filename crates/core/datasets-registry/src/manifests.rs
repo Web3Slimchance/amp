@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use datasets_common::hash::Hash;
-use object_store::{ObjectStore, PutPayload, path::Path as ObjectStorePath};
+use object_store::{ObjectStore, ObjectStoreExt as _, PutPayload, path::Path as ObjectStorePath};
 
 /// Manages dataset manifest configurations with object store operations
 ///

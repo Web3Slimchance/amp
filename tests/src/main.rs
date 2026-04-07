@@ -62,6 +62,7 @@ use fs_err as fs;
 use futures::{StreamExt as _, TryStreamExt as _};
 use js_runtime::isolate_pool::IsolatePool;
 use monitoring::logging;
+use object_store::ObjectStoreExt as _;
 use tests::testlib::{
     build_info,
     fixtures::{

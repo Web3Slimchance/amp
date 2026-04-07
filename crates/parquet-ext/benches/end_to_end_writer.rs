@@ -535,7 +535,7 @@ fn writer_benchmarks(c: &mut Criterion) {
                         format!("{compression_name}/{schema_name}_{num_cols}cols_{num_rows}rows");
                     let props = WriterProperties::builder()
                         .set_compression(*compression)
-                        .set_max_row_group_size(max_row_group_size)
+                        .set_max_row_group_row_count(Some(max_row_group_size))
                         .build();
 
                     let input = BenchInput {

@@ -5,7 +5,6 @@ version.workspace = true
 license-file.workspace = true
 
 [features]
-gen-schema = ["dep:datafusion"]
 schemars = ["dep:schemars", "dep:serde_json", "datasets-common/schemars"]
 
 [dependencies]
@@ -24,7 +23,6 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 
-# Only for schema generation
-datafusion = { workspace = true, optional = true }
+datafusion.workspace = true
 schemars = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }

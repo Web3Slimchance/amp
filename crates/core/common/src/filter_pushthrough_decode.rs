@@ -538,8 +538,8 @@ mod tests {
 
     struct NoopOptimizerConfig;
     impl OptimizerConfig for NoopOptimizerConfig {
-        fn query_execution_start_time(&self) -> chrono::DateTime<chrono::Utc> {
-            chrono::Utc::now()
+        fn query_execution_start_time(&self) -> Option<chrono::DateTime<chrono::Utc>> {
+            Some(chrono::Utc::now())
         }
         fn alias_generator(&self) -> &Arc<datafusion::common::alias::AliasGenerator> {
             unimplemented!()

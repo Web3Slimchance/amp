@@ -4,7 +4,7 @@ use amp_data_store::{DataStore, file_name::FileName};
 use datafusion::parquet::{
     arrow::{arrow_reader::ArrowReaderOptions, async_reader::AsyncFileReader},
     errors::ParquetError,
-    file::metadata::{ParquetMetaData, ParquetMetaDataWriter},
+    file::metadata::{PageIndexPolicy, ParquetMetaData, ParquetMetaDataWriter},
 };
 use metadata_db::files::FooterBytes;
 use object_store::ObjectMeta;
@@ -175,6 +175,6 @@ async fn extract_parquet_metadata_from_file(
         .with_preload_column_index(true)
         .with_preload_offset_index(true);
 
-    let options = ArrowReaderOptions::default().with_page_index(true);
+    let options = ArrowReaderOptions::default().with_page_index_policy(PageIndexPolicy::Optional);
     reader.get_metadata(Some(&options)).await
 }

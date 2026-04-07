@@ -266,7 +266,12 @@ impl Collector {
                 } = manifest_row?;
 
                 // Use relative path (table path + filename), not the absolute URL path
-                let path = self.table.path().child(file_name.as_str());
+                let path = self
+                    .table
+                    .path()
+                    .as_object_store_path()
+                    .clone()
+                    .join(file_name.as_str());
                 Ok::<_, CollectorError>((file_id, path))
             })
             .try_collect()

@@ -112,7 +112,7 @@ impl PhyTablePath {
 
     /// Create a revision path by appending the given revision ID to this table path.
     pub fn with_revision(&self, revision_id: impl AsRef<Uuid>) -> PhyTableRevisionPath {
-        let path = self.0.child(revision_id.as_ref().to_string());
+        let path = self.0.clone().join(revision_id.as_ref().to_string());
         PhyTableRevisionPath(path)
     }
 

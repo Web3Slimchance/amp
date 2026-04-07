@@ -442,6 +442,9 @@ impl ToV8 for ScalarValue {
             ScalarValue::Decimal64(_, _, _) => Err(ToV8Error::UnsupportedType {
                 js_type: "fractional Decimal64".to_string(),
             }),
+            ScalarValue::RunEndEncoded(_, _, _) => Err(ToV8Error::UnsupportedType {
+                js_type: "RunEndEncoded".to_string(),
+            }),
         }
     }
 }

@@ -13,7 +13,7 @@ use datafusion::{
     error::DataFusionError,
     logical_expr::{
         ColumnarValue, ReturnFieldArgs, ScalarUDFImpl, Signature, Volatility,
-        simplify::{ExprSimplifyResult, SimplifyInfo},
+        simplify::{ExprSimplifyResult, SimplifyContext},
     },
     prelude::Expr,
     scalar::ScalarValue,
@@ -188,7 +188,7 @@ impl ScalarUDFImpl for EvmDecodeParams {
     fn simplify(
         &self,
         args: Vec<Expr>,
-        _info: &dyn SimplifyInfo,
+        _info: &SimplifyContext,
     ) -> datafusion::error::Result<ExprSimplifyResult> {
         Ok(ExprSimplifyResult::Original(args))
     }

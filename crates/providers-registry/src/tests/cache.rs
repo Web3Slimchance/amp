@@ -4,7 +4,7 @@ use amp_providers_common::{
     config::{ConfigHeaderWithNetwork, ProviderConfigRaw, TryIntoConfig},
     provider_name::ProviderName,
 };
-use object_store::{ObjectStore, memory::InMemory, path::Path};
+use object_store::{ObjectStore, ObjectStoreExt as _, memory::InMemory, path::Path};
 
 use crate::{ProviderConfigsStore, ProvidersRegistry};
 

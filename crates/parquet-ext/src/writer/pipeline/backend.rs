@@ -17,7 +17,10 @@ impl PipelineBackend {
         progress: Option<&Progress>,
     ) -> (EncoderExecutor, WriterInbox) {
         let num_workers = properties.num_workers;
-        let max_rows = properties.writer_properties.max_row_group_size();
+        let max_rows = properties
+            .writer_properties
+            .max_row_group_row_count()
+            .expect("max_row_group_row_count is always set by WriterProperties");
 
         let (writer_outbox, encoder_inbox) = properties.create_encoder_channel();
         let (encoder_outbox, writer_inbox) = properties.create_writer_channel();

@@ -13,7 +13,7 @@ solana-datasets = { path = ".." }
 # These dependencies are only included when the gen_schema_tables cfg flag is enabled
 [target.'cfg(gen_schema_tables)'.build-dependencies]
 datasets-common = { path = "../../../core/datasets-common" }
-datasets-raw = { path = "../../../core/datasets-raw", features = ["gen-schema"] }
+datasets-raw = { path = "../../../core/datasets-raw" }
 tokio = { workspace = true, features = ["macros", "rt"] }
 
 [lints.rust]

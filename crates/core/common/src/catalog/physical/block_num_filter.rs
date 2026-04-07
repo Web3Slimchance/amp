@@ -8,7 +8,6 @@ use std::sync::Arc;
 use datafusion::{
     common::{DFSchema, ScalarValue, tree_node::TreeNode},
     logical_expr::{
-        execution_props::ExecutionProps,
         interval_arithmetic::{Interval, NullableInterval},
         simplify::SimplifyContext,
     },
@@ -74,8 +73,7 @@ pub fn filters_maybe_satisfiable_for_range(
         interval,
     )];
 
-    let props = ExecutionProps::new();
-    let context = SimplifyContext::new(&props).with_schema(Arc::clone(schema));
+    let context = SimplifyContext::default().with_schema(Arc::clone(schema));
     let simplifier = ExprSimplifier::new(context).with_guarantees(guarantees);
 
     for filter in filters {

@@ -422,6 +422,7 @@ fn create_join(
         original.join_type,
         original.join_constraint,
         original.null_equality,
+        original.null_aware,
     )
     .map(LogicalPlan::Join)
 }

@@ -39,7 +39,7 @@ impl FileMetadata {
         // The location is the table path + filename, relative to the data store prefix.
         // The AmpReaderFactory's object_store has the data store prefix, so paths
         // should be like "dataset/table/revision_id/filename.parquet".
-        let location = table_path.child(file_name.as_str());
+        let location = table_path.clone().join(file_name.as_str());
 
         let parquet_meta: ParquetMeta = serde_json::from_value(metadata).map_err(FromRowError)?;
 
