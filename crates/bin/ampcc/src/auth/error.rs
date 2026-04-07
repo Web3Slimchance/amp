@@ -59,6 +59,6 @@ pub enum AuthError {
     #[error("Rate limited, retry after {retry_after} seconds")]
     RateLimited { retry_after: u64 },
     /// Generic HTTP Error occurred.
-    #[error("HTTP request failed: {0}")]
+    #[error("HTTP request failed")]
     HttpError(#[source] reqwest::Error),
 }

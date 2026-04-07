@@ -316,35 +316,35 @@ struct ListError(#[source] object_store::Error);
 #[derive(Debug, thiserror::Error)]
 enum LoadFileError {
     /// Failed to fetch file from the underlying store
-    #[error("Failed to fetch file from the object store: {source}")]
+    #[error("Failed to fetch file from the object store")]
     StoreFetchFailed {
         path: String,
         source: object_store::Error,
     },
 
     /// Failed to read bytes from the fetched file
-    #[error("Failed to read file bytes from the object store: {source}")]
+    #[error("Failed to read file bytes from the object store")]
     StoreReadFailed {
         path: String,
         source: object_store::Error,
     },
 
     /// File contains invalid UTF-8 content
-    #[error("Invalid UTF-8 content: {source}")]
+    #[error("Invalid UTF-8 content")]
     InvalidUtf8 {
         path: String,
         source: std::string::FromUtf8Error,
     },
 
     /// TOML parsing failed
-    #[error("Invalid TOML file format: {source}")]
+    #[error("Invalid TOML file format")]
     TomlParseError {
         path: String,
         source: toml::de::Error,
     },
 
     /// Invalid provider name (does not follow snake_case convention)
-    #[error("Invalid provider name '{name}': {source}")]
+    #[error("Invalid provider name '{name}'")]
     InvalidName {
         path: String,
         name: String,

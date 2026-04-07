@@ -318,7 +318,7 @@ pub enum ScheduleJobError {
     /// - Database query for existing jobs by dataset fails
     /// - Connection is lost during job lookup
     /// - Connection pool is exhausted
-    #[error("failed to check existing jobs: {0}")]
+    #[error("failed to check existing jobs")]
     CheckExistingJobs(#[source] metadata_db::Error),
 
     /// Failed to list active workers from the database
@@ -327,7 +327,7 @@ pub enum ScheduleJobError {
     /// - Worker heartbeat query fails
     /// - Connection is lost during worker lookup
     /// - Worker table is inaccessible
-    #[error("failed to list active workers: {0}")]
+    #[error("failed to list active workers")]
     ListActiveWorkers(#[source] metadata_db::Error),
 
     /// No workers available to schedule the job
@@ -362,7 +362,7 @@ pub enum ScheduleJobError {
     /// - Job insertion into database fails
     /// - Unique constraint violation on job ID
     /// - Connection is lost during job registration
-    #[error("failed to register job: {0}")]
+    #[error("failed to register job")]
     RegisterJob(#[source] metadata_db::Error),
 
     /// Failed to register job status in the metadata database
@@ -371,7 +371,7 @@ pub enum ScheduleJobError {
     /// - Job status insertion into database fails
     /// - Unique constraint violation on job ID
     /// - Connection is lost during job status registration
-    #[error("failed to register job status: {0}")]
+    #[error("failed to register job status")]
     RegisterJobStatus(#[source] metadata_db::Error),
 
     /// Failed to reschedule job status in the metadata database
@@ -379,7 +379,7 @@ pub enum ScheduleJobError {
     /// This occurs when:
     /// - Updating existing job status to SCHEDULED fails
     /// - Connection is lost during job status reschedule
-    #[error("failed to reschedule job status: {0}")]
+    #[error("failed to reschedule job status")]
     RescheduleJobStatus(#[source] metadata_db::Error),
 
     /// Failed to register job event in the metadata database
@@ -387,7 +387,7 @@ pub enum ScheduleJobError {
     /// This occurs when:
     /// - Job event insertion into database fails
     /// - Connection is lost during job event registration
-    #[error("failed to register job event: {0}")]
+    #[error("failed to register job event")]
     RegisterJobEvent(#[source] metadata_db::Error),
 
     /// Failed to send job notification to worker
@@ -396,7 +396,7 @@ pub enum ScheduleJobError {
     /// - PostgreSQL LISTEN/NOTIFY fails
     /// - Worker notification channel is unavailable
     /// - Connection is lost during notification
-    #[error("failed to notify worker: {0}")]
+    #[error("failed to notify worker")]
     NotifyWorker(#[source] metadata_db::Error),
 
     /// Failed to commit transaction for schedule operation
@@ -510,7 +510,7 @@ pub enum StopJobError {
     /// This occurs when:
     /// - Job event insertion into database fails
     /// - Connection is lost during job event registration
-    #[error("failed to register job event: {0}")]
+    #[error("failed to register job event")]
     RegisterJobEvent(#[source] metadata_db::Error),
 
     /// Failed to commit transaction for stop operation
@@ -790,7 +790,7 @@ pub enum NodeSelectorParseError {
     ///
     /// This occurs when the input ends with `*` but the prefix portion
     /// fails node ID validation rules.
-    #[error("invalid glob pattern: '{0}'")]
+    #[error("invalid glob pattern: ''")]
     InvalidGlob(#[source] InvalidGlobError),
 }
 

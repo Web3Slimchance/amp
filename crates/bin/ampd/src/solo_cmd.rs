@@ -267,15 +267,15 @@ async fn shutdown_signal() {
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// Failed to create the managed metadb directory inside the amp dir.
-    #[error("Failed to create amp metadb directory: {0}")]
+    #[error("Failed to create amp metadb directory")]
     AmpDirMetadb(#[source] amp_config::EnsureAmpMetadbDirectoryError),
 
     /// Failed to start managed PostgreSQL.
-    #[error("Failed to start PostgreSQL: {0}")]
+    #[error("Failed to start PostgreSQL")]
     PostgresStartup(#[source] metadata_db_postgres::PostgresError),
 
     /// Failed to load configuration from file.
-    #[error("Failed to load config: {0}")]
+    #[error("Failed to load config")]
     ConfigLoad(#[source] amp_config::LoadConfigError),
 
     /// Failed to load metadata database configuration.
@@ -291,7 +291,7 @@ pub enum Error {
     },
 
     /// Failed to initialize monitoring/telemetry.
-    #[error("Failed to initialize monitoring: {0}")]
+    #[error("Failed to initialize monitoring")]
     MonitoringInit(#[source] monitoring::telemetry::ExporterBuildError),
 
     /// Failed to connect to metadata database
@@ -304,40 +304,40 @@ pub enum Error {
     /// Failed to create data store
     ///
     /// This occurs when the data store cannot be created from the configured URL.
-    #[error("Failed to create data store: {0}")]
+    #[error("Failed to create data store")]
     DataStoreCreation(#[source] ObjectStoreCreationError),
 
     /// Failed to create providers store
     ///
     /// This occurs when the providers store cannot be created from the configured URL.
-    #[error("Failed to create providers store: {0}")]
+    #[error("Failed to create providers store")]
     ProvidersStoreCreation(#[source] ObjectStoreCreationError),
 
     /// Failed to create manifests store
     ///
     /// This occurs when the manifests store cannot be created from the configured URL.
-    #[error("Failed to create manifests store: {0}")]
+    #[error("Failed to create manifests store")]
     ManifestsStoreCreation(#[source] ObjectStoreCreationError),
 
     /// Failed to initialize the controller service (Admin API).
     ///
     /// This occurs during the initialization phase when attempting to bind and
     /// start the Admin API server.
-    #[error("Failed to initialize controller service: {0}")]
+    #[error("Failed to initialize controller service")]
     ServiceInit(#[source] controller::service::Error),
 
     /// Failed to start the query server (Arrow Flight RPC and/or JSON Lines).
     ///
     /// This occurs during the initialization phase when attempting to bind and
     /// start the query servers.
-    #[error("Failed to start server: {0}")]
+    #[error("Failed to start server")]
     ServerRun(#[source] server::service::InitError),
 
     /// Failed to initialize the worker service.
     ///
     /// This occurs during the worker initialization phase (registration, heartbeat
     /// setup, notification listener setup, or bootstrap).
-    #[error("Failed to initialize worker: {0}")]
+    #[error("Failed to initialize worker")]
     WorkerInit(#[source] amp_worker_service::service::InitError),
 
     /// Managed PostgreSQL exited unexpectedly.
@@ -345,26 +345,26 @@ pub enum Error {
     /// This occurs when the managed PostgreSQL process terminates while the solo
     /// command is still running. This is detected via the structured concurrency
     /// pattern — the postgres future is a `select!` branch in the solo command.
-    #[error("PostgreSQL exited: {0}")]
+    #[error("PostgreSQL exited")]
     PostgresExited(#[source] metadata_db_postgres::PostgresError),
 
     /// Controller service (Admin API) encountered a runtime error.
     ///
     /// This occurs after the Admin API server has started successfully but
     /// encounters an error during operation.
-    #[error("Controller runtime error: {0}")]
+    #[error("Controller runtime error")]
     ControllerRuntime(#[source] controller::service::ServerError),
 
     /// Worker encountered a runtime error.
     ///
     /// This occurs when the worker process encounters an error during operation.
-    #[error("Worker runtime error: {0}")]
+    #[error("Worker runtime error")]
     WorkerRuntime(#[source] amp_worker_service::service::RuntimeError),
 
     /// Query server encountered a runtime error.
     ///
     /// This occurs after the Arrow Flight RPC and/or JSON Lines servers have
     /// started successfully but encounter an error during operation.
-    #[error("Server runtime error: {0}")]
+    #[error("Server runtime error")]
     ServerRuntime(#[source] server::service::ServeError),
 }

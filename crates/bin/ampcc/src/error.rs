@@ -23,6 +23,6 @@ pub enum AmpccError {
     ///
     /// This wraps errors from the registry client when searching datasets.
     /// Includes the search term for context.
-    #[error("Failed to search datasets in registry with term '{0}'")]
+    #[error("Failed to search datasets in registry with term ''")]
     SearchRegistryDatasets(String, #[source] AmpRegistryError),
 }

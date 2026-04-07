@@ -373,7 +373,7 @@ pub enum DepAliasOrSelfRefError {
     /// "myDataset"    -> DependencyRef("myDataset")
     /// "d"            -> DependencyRef("d")
     /// ```
-    #[error("invalid dependency alias '{value}' in function schema: {source}")]
+    #[error("invalid dependency alias '{value}' in function schema")]
     InvalidDependencyAlias {
         /// The complete input string that failed parsing
         value: String,

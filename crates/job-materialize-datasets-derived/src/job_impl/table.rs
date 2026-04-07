@@ -344,14 +344,14 @@ pub enum MaterializeTableError {
     ///
     /// This occurs when the SQL string in the table's input definition
     /// cannot be parsed as valid SQL.
-    #[error("failed to parse SQL query: {0}")]
+    #[error("failed to parse SQL query")]
     ParseSql(#[source] ParseSqlError),
 
     /// Failed to resolve a dataset revision reference
     ///
     /// This occurs when looking up a dependency's revision (tag, hash, or version)
     /// in the dataset store fails.
-    #[error("failed to resolve revision: {0}")]
+    #[error("failed to resolve revision")]
     ResolveRevision(#[source] ResolveRevisionError),
 
     /// A dependency dataset was not found
@@ -365,14 +365,14 @@ pub enum MaterializeTableError {
     ///
     /// This occurs when extracting and resolving table references from the
     /// parsed SQL query fails.
-    #[error("failed to resolve table references: {0}")]
+    #[error("failed to resolve table references")]
     ResolveTableReferences(#[source] ResolveTableReferencesError<DepAliasOrSelfRefError>),
 
     /// Failed to create the physical catalog for query execution
     ///
     /// This occurs when building the physical catalog from the logical
     /// catalog fails.
-    #[error("failed to create physical catalog: {0}")]
+    #[error("failed to create physical catalog")]
     CreatePhysicalCatalog(#[source] physical_for_dump::CreateCatalogError),
 
     /// A self-ref table was not found among sibling tables
@@ -387,7 +387,7 @@ pub enum MaterializeTableError {
     /// This occurs when one of the parallel tasks spawned for materializing table data
     /// fails or panics. The fail-fast behavior ensures all other tasks are aborted
     /// when this happens.
-    #[error("parallel materialization task failed: {0}")]
+    #[error("parallel materialization task failed")]
     ParallelTaskFailed(#[source] TryWaitAllError<MaterializeTableSpawnError>),
 }
 
@@ -429,14 +429,14 @@ pub enum MaterializeTableSpawnError {
     ///
     /// This occurs when DataFusion cannot create an execution plan
     /// from the parsed SQL query.
-    #[error("failed to plan SQL query: {0}")]
+    #[error("failed to plan SQL query")]
     PlanSql(#[source] datafusion::error::DataFusionError),
 
     /// The query is not incremental and cannot be synced
     ///
     /// This occurs when the SQL query cannot be incrementalized,
     /// which is required for derived dataset syncing.
-    #[error("syncing table {table_name} is not supported: {source}")]
+    #[error("syncing table {table_name} is not supported")]
     NonIncrementalQuery {
         table_name: String,
         #[source]
@@ -447,27 +447,27 @@ pub enum MaterializeTableSpawnError {
     ///
     /// This occurs when determining the target end block for the
     /// materialization operation fails.
-    #[error("failed to resolve end block: {0}")]
+    #[error("failed to resolve end block")]
     ResolveEndBlock(#[source] ResolutionError),
 
     /// Failed to get the canonical chain from the physical table
     ///
     /// This occurs when querying the table's canonical chain for
     /// resume watermark calculation fails.
-    #[error("failed to get canonical chain: {0}")]
+    #[error("failed to get canonical chain")]
     CanonicalChain(#[source] CanonicalChainError),
 
     /// Failed to compute the earliest block from dependencies
     ///
     /// This occurs when snapshotting dependency tables to determine their
     /// earliest synced block fails.
-    #[error("failed to compute earliest block: {0}")]
+    #[error("failed to compute earliest block")]
     EarliestBlock(#[source] EarliestBlockError),
 
     /// Failed to execute the SQL query materialization operation
     ///
     /// This occurs when the inner `materialize_sql_query` function fails.
-    #[error("failed to materialize SQL query: {0}")]
+    #[error("failed to materialize SQL query")]
     MaterializeSqlQuery(#[source] MaterializeSqlQueryError),
 }
 

@@ -14,7 +14,7 @@ pub enum BatchingError {
     /// This occurs when the underlying transport (HTTP, WebSocket, IPC) encounters
     /// an error while sending the batch request or receiving the response. Common
     /// causes include network timeouts, connection drops, or RPC node errors.
-    #[error("RPC batch request failed: {0}")]
+    #[error("RPC batch request failed")]
     Request(#[source] BatchRequestError),
 
     /// Failed to acquire a permit from the rate limiter.
@@ -22,7 +22,7 @@ pub enum BatchingError {
     /// The extractor uses a semaphore-based rate limiter to prevent overwhelming
     /// the RPC endpoint. This error occurs when the semaphore is closed, typically
     /// indicating the extractor is shutting down.
-    #[error("rate limiter semaphore closed: {0}")]
+    #[error("rate limiter semaphore closed")]
     RateLimitAcquire(#[source] AcquireError),
 }
 
@@ -105,7 +105,7 @@ pub enum ToRowError {
     /// RPC responses may contain large numbers (U256 for gas, value, etc.) that
     /// must be converted to smaller storage types. This error occurs when a value
     /// exceeds the target type's range.
-    #[error("overflow in field {0}: {1}")]
+    #[error("overflow in field {0}")]
     Overflow(&'static str, #[source] OverflowSource),
 }
 
@@ -120,16 +120,16 @@ pub enum OverflowSource {
     ///
     /// This occurs when converting between Rust integer types (e.g., u64 to i64,
     /// u128 to u64) and the source value exceeds the target type's range.
-    #[error("{0}")]
-    Int(#[source] std::num::TryFromIntError),
+    #[error(transparent)]
+    Int(std::num::TryFromIntError),
 
     /// Overflow from big integer (U256) conversion.
     ///
     /// This occurs when converting Ethereum's 256-bit unsigned integers to smaller
     /// types like i128. Large values (e.g., token amounts, gas prices) may exceed
     /// the target type's maximum value.
-    #[error("{0}")]
-    BigInt(#[source] FromUintError<i128>),
+    #[error(transparent)]
+    BigInt(FromUintError<i128>),
 }
 
 /// Errors that occur when fetching block receipts during unbatched block streaming.
@@ -166,5 +166,5 @@ pub enum FetchReceiptsError {
 /// establishing a connection to an RPC endpoint. Common causes include
 /// invalid URLs, network connectivity issues, or authentication failures.
 #[derive(thiserror::Error, Debug)]
-#[error("provider error: {0}")]
+#[error("provider error")]
 pub struct ClientError(#[source] pub alloy::transports::TransportError);

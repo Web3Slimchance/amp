@@ -17,7 +17,7 @@ pub enum Error {
     /// - Connection failures
     /// - Network timeouts
     /// - DNS resolution failures
-    #[error("gRPC transport error: {0}")]
+    #[error("gRPC transport error")]
     Transport(#[source] tonic::transport::Error),
 
     /// gRPC status error returned by the server
@@ -26,41 +26,41 @@ pub enum Error {
     /// - Invalid queries
     /// - Server-side failures
     /// - Authentication/authorization failures
-    #[error("gRPC status error: {0}")]
+    #[error("gRPC status error")]
     Status(#[source] Box<tonic::Status>),
 
     /// Protocol-level error
     ///
     /// This occurs when the server violates protocol requirements, such as
     /// missing required fields in responses.
-    #[error("protocol error: {0}")]
+    #[error("protocol error")]
     Protocol(#[source] ProtocolError),
 
     /// Protocol invariant validation error
     ///
     /// This occurs when the server sends data that violates streaming protocol
     /// invariants, such as duplicate networks or non-consecutive blocks.
-    #[error("validation error: {0}")]
+    #[error("validation error")]
     Validation(#[source] ValidationError),
 
     /// Reorg handling error
     ///
     /// This occurs when a blockchain reorg cannot be handled within the current
     /// stream and requires reconnection or manual intervention.
-    #[error("reorg error: {0}")]
+    #[error("reorg error")]
     Reorg(#[source] ReorgError),
 
     /// State store persistence error
     ///
     /// This occurs when reading or writing stream state fails, typically due to
     /// database or filesystem issues.
-    #[error("state store error: {0}")]
+    #[error("state store error")]
     StateStore(#[source] StateStoreError),
 
     /// Batch serialization/deserialization error
     ///
     /// This occurs when converting RecordBatches to/from Arrow IPC format fails.
-    #[error("serialization error: {0}")]
+    #[error("serialization error")]
     Serialization(#[source] SerializationError),
 
     /// Arrow Flight error
@@ -70,7 +70,7 @@ pub enum Error {
     /// - Schema mismatches
     /// - Invalid Arrow IPC format
     /// - Protocol-level failures
-    #[error("Arrow Flight error: {0}")]
+    #[error("Arrow Flight error")]
     Flight(#[source] FlightError),
 
     /// Arrow data decoding error
@@ -79,14 +79,14 @@ pub enum Error {
     /// - Corrupted data in transit
     /// - Schema mismatches
     /// - Invalid Arrow IPC format
-    #[error("Arrow error: {0}")]
+    #[error("Arrow error")]
     Arrow(#[source] ArrowError),
 
     /// JSON deserialization error
     ///
     /// This occurs when deserializing JSON metadata fails, typically when parsing
     /// the app_metadata field from FlightData.
-    #[error("JSON deserialization error: {0}")]
+    #[error("JSON deserialization error")]
     Json(#[source] serde_json::Error),
 }
 
@@ -297,7 +297,7 @@ pub enum SerializationError {
     /// This occurs when initializing a StreamWriter fails, typically due to:
     /// - Invalid schema
     /// - Memory allocation failures
-    #[error("failed to create batch writer: {0}")]
+    #[error("failed to create batch writer")]
     WriterCreation(#[source] ArrowError),
 
     /// Failed to write batch to Arrow IPC format
@@ -305,7 +305,7 @@ pub enum SerializationError {
     /// This occurs when writing a RecordBatch to the IPC stream fails, typically due to:
     /// - Memory allocation failures
     /// - Schema incompatibilities
-    #[error("failed to write batch: {0}")]
+    #[error("failed to write batch")]
     BatchWrite(#[source] ArrowError),
 
     /// Failed to finalize Arrow IPC writer
@@ -313,7 +313,7 @@ pub enum SerializationError {
     /// This occurs when finishing the StreamWriter fails, typically due to:
     /// - I/O errors
     /// - Incomplete writes
-    #[error("failed to finish batch writer: {0}")]
+    #[error("failed to finish batch writer")]
     WriterFinish(#[source] ArrowError),
 
     /// Failed to create Arrow IPC reader for batch deserialization
@@ -321,7 +321,7 @@ pub enum SerializationError {
     /// This occurs when initializing a StreamReader fails, typically due to:
     /// - Corrupted IPC data
     /// - Invalid Arrow format
-    #[error("failed to create batch reader: {0}")]
+    #[error("failed to create batch reader")]
     ReaderCreation(#[source] ArrowError),
 
     /// Empty batch stream encountered
@@ -336,7 +336,7 @@ pub enum SerializationError {
     /// This occurs when reading a RecordBatch from the IPC stream fails, typically due to:
     /// - Corrupted data
     /// - Schema mismatches
-    #[error("failed to read batch: {0}")]
+    #[error("failed to read batch")]
     BatchRead(#[source] ArrowError),
 }
 
@@ -353,20 +353,20 @@ pub enum StateStoreError {
     ///
     /// This occurs when LMDB operations fail during state persistence.
     #[cfg(feature = "lmdb")]
-    #[error("LMDB error: {0}")]
+    #[error("LMDB error")]
     Lmdb(#[source] LmdbError),
 
     /// PostgreSQL storage error
     ///
     /// This occurs when PostgreSQL operations fail during state persistence.
     #[cfg(feature = "postgres")]
-    #[error("PostgreSQL error: {0}")]
+    #[error("PostgreSQL error")]
     Postgres(#[source] PostgresError),
 
     /// Batch serialization error during storage
     ///
     /// This occurs when serializing batches for storage fails.
-    #[error("serialization error: {0}")]
+    #[error("serialization error")]
     Serialization(#[source] SerializationError),
 }
 
@@ -381,7 +381,7 @@ pub enum LmdbError {
     /// - Permission issues
     /// - Disk full
     /// - Invalid path
-    #[error("failed to create LMDB directory: {0}")]
+    #[error("failed to create LMDB directory")]
     DirectoryCreation(#[source] std::io::Error),
 
     /// Failed to open LMDB environment
@@ -390,7 +390,7 @@ pub enum LmdbError {
     /// - Corrupted database files
     /// - Incompatible LMDB versions
     /// - Insufficient memory
-    #[error("failed to open LMDB environment: {0}")]
+    #[error("failed to open LMDB environment")]
     EnvOpen(#[source] heed::Error),
 
     /// Failed to create LMDB write transaction
@@ -398,7 +398,7 @@ pub enum LmdbError {
     /// This occurs when beginning a write transaction fails, typically due to:
     /// - Database lock contention
     /// - Resource exhaustion
-    #[error("failed to create LMDB write transaction: {0}")]
+    #[error("failed to create LMDB write transaction")]
     WriteTransactionBegin(#[source] heed::Error),
 
     /// Failed to create LMDB read transaction
@@ -406,7 +406,7 @@ pub enum LmdbError {
     /// This occurs when beginning a read transaction fails, typically due to:
     /// - Database lock contention
     /// - Resource exhaustion
-    #[error("failed to create LMDB read transaction: {0}")]
+    #[error("failed to create LMDB read transaction")]
     ReadTransactionBegin(#[source] heed::Error),
 
     /// Failed to create LMDB database
@@ -415,7 +415,7 @@ pub enum LmdbError {
     /// typically due to:
     /// - Maximum database count exceeded
     /// - Transaction errors
-    #[error("failed to create LMDB database: {0}")]
+    #[error("failed to create LMDB database")]
     DatabaseCreation(#[source] heed::Error),
 
     /// Failed to commit LMDB transaction
@@ -424,7 +424,7 @@ pub enum LmdbError {
     /// - Disk I/O errors
     /// - Disk full
     /// - Database corruption
-    #[error("failed to commit LMDB transaction: {0}")]
+    #[error("failed to commit LMDB transaction")]
     TransactionCommit(#[source] heed::Error),
 
     /// Failed to read state from LMDB
@@ -432,7 +432,7 @@ pub enum LmdbError {
     /// This occurs when reading the state snapshot from LMDB fails, typically due to:
     /// - Database corruption
     /// - Transaction errors
-    #[error("failed to read state from LMDB: {0}")]
+    #[error("failed to read state from LMDB")]
     StateRead(#[source] heed::Error),
 
     /// Failed to write state to LMDB
@@ -440,7 +440,7 @@ pub enum LmdbError {
     /// This occurs when writing the state snapshot to LMDB fails, typically due to:
     /// - Serialization errors
     /// - Transaction errors
-    #[error("failed to write state to LMDB: {0}")]
+    #[error("failed to write state to LMDB")]
     StateWrite(#[source] heed::Error),
 
     /// Failed to write batch to LMDB
@@ -448,7 +448,7 @@ pub enum LmdbError {
     /// This occurs when storing a serialized batch in LMDB fails, typically due to:
     /// - Disk full
     /// - Transaction errors
-    #[error("failed to write batch to LMDB: {0}")]
+    #[error("failed to write batch to LMDB")]
     BatchWrite(#[source] heed::Error),
 
     /// Failed to read batch from LMDB
@@ -456,7 +456,7 @@ pub enum LmdbError {
     /// This occurs when loading a batch from LMDB fails, typically due to:
     /// - Missing key
     /// - Database corruption
-    #[error("failed to read batch from LMDB: {0}")]
+    #[error("failed to read batch from LMDB")]
     BatchRead(#[source] heed::Error),
 
     /// Failed to create LMDB iterator
@@ -464,7 +464,7 @@ pub enum LmdbError {
     /// This occurs when creating an iterator over LMDB keys fails, typically due to:
     /// - Transaction errors
     /// - Database corruption
-    #[error("failed to create LMDB iterator: {0}")]
+    #[error("failed to create LMDB iterator")]
     IteratorCreation(#[source] heed::Error),
 
     /// Failed to iterate LMDB batches
@@ -472,7 +472,7 @@ pub enum LmdbError {
     /// This occurs when iterating over batch keys fails, typically due to:
     /// - Database corruption
     /// - Transaction errors
-    #[error("failed to iterate LMDB batches: {0}")]
+    #[error("failed to iterate LMDB batches")]
     BatchIteration(#[source] heed::Error),
 
     /// Failed to delete batch from LMDB
@@ -480,7 +480,7 @@ pub enum LmdbError {
     /// This occurs during pruning when deleting an old batch fails, typically due to:
     /// - Transaction errors
     /// - Database corruption
-    #[error("failed to delete batch from LMDB: {0}")]
+    #[error("failed to delete batch from LMDB")]
     BatchDelete(#[source] heed::Error),
 
     /// Invalid transaction ID key length in LMDB
@@ -501,7 +501,7 @@ pub enum PostgresError {
     /// - Missing migration files
     /// - Database permission issues
     /// - Schema conflicts
-    #[error("failed to run PostgreSQL migrations: {0}")]
+    #[error("failed to run PostgreSQL migrations")]
     MigrationFailed(#[source] sqlx::migrate::MigrateError),
 
     /// Failed to initialize PostgreSQL state
@@ -509,7 +509,7 @@ pub enum PostgresError {
     /// This occurs when inserting the initial state row fails, typically due to:
     /// - Database connection errors
     /// - Permission issues
-    #[error("failed to initialize PostgreSQL state: {0}")]
+    #[error("failed to initialize PostgreSQL state")]
     StateInitialization(#[source] sqlx::Error),
 
     /// Failed to advance next transaction ID in PostgreSQL
@@ -517,7 +517,7 @@ pub enum PostgresError {
     /// This occurs when updating the next transaction ID fails, typically due to:
     /// - Database connection errors
     /// - Transaction conflicts
-    #[error("failed to advance next transaction ID in PostgreSQL: {0}")]
+    #[error("failed to advance next transaction ID in PostgreSQL")]
     AdvanceNext(#[source] sqlx::Error),
 
     /// Stream not found in PostgreSQL
@@ -532,7 +532,7 @@ pub enum PostgresError {
     /// This occurs during reorg handling when deleting watermarks fails, typically due to:
     /// - Database connection errors
     /// - Transaction conflicts
-    #[error("failed to truncate buffer in PostgreSQL: {0}")]
+    #[error("failed to truncate buffer in PostgreSQL")]
     BufferTruncate(#[source] sqlx::Error),
 
     /// Failed to begin PostgreSQL transaction
@@ -540,7 +540,7 @@ pub enum PostgresError {
     /// This occurs when starting a database transaction fails, typically due to:
     /// - Connection pool exhaustion
     /// - Database unavailability
-    #[error("failed to begin PostgreSQL transaction: {0}")]
+    #[error("failed to begin PostgreSQL transaction")]
     TransactionBegin(#[source] sqlx::Error),
 
     /// Failed to commit PostgreSQL transaction
@@ -549,7 +549,7 @@ pub enum PostgresError {
     /// - Connection loss
     /// - Constraint violations
     /// - Serialization failures
-    #[error("failed to commit PostgreSQL transaction: {0}")]
+    #[error("failed to commit PostgreSQL transaction")]
     TransactionCommit(#[source] sqlx::Error),
 
     /// Failed to delete pruned entries from PostgreSQL
@@ -558,7 +558,7 @@ pub enum PostgresError {
     /// typically due to:
     /// - Database connection errors
     /// - Transaction conflicts
-    #[error("failed to delete pruned entries from PostgreSQL: {0}")]
+    #[error("failed to delete pruned entries from PostgreSQL")]
     PrunedEntriesDelete(#[source] sqlx::Error),
 
     /// Failed to serialize block ranges for PostgreSQL
@@ -566,7 +566,7 @@ pub enum PostgresError {
     /// This occurs when serializing BlockRanges to JSON fails, typically due to:
     /// - Memory allocation failures
     /// - Invalid data structures
-    #[error("failed to serialize block ranges for PostgreSQL: {0}")]
+    #[error("failed to serialize block ranges for PostgreSQL")]
     BlockRangesSerialization(#[source] serde_json::Error),
 
     /// Failed to insert buffer entry into PostgreSQL
@@ -575,7 +575,7 @@ pub enum PostgresError {
     /// typically due to:
     /// - Database connection errors
     /// - Constraint violations
-    #[error("failed to insert buffer entry into PostgreSQL: {0}")]
+    #[error("failed to insert buffer entry into PostgreSQL")]
     BufferEntryInsert(#[source] sqlx::Error),
 
     /// Failed to load next transaction ID from PostgreSQL
@@ -583,7 +583,7 @@ pub enum PostgresError {
     /// This occurs when querying the next transaction ID fails, typically due to:
     /// - Database connection errors
     /// - Missing state row
-    #[error("failed to load next transaction ID from PostgreSQL: {0}")]
+    #[error("failed to load next transaction ID from PostgreSQL")]
     NextTransactionIdLoad(#[source] sqlx::Error),
 
     /// Failed to load buffer entries from PostgreSQL
@@ -591,7 +591,7 @@ pub enum PostgresError {
     /// This occurs when querying watermark buffer entries fails, typically due to:
     /// - Database connection errors
     /// - Query timeouts
-    #[error("failed to load buffer entries from PostgreSQL: {0}")]
+    #[error("failed to load buffer entries from PostgreSQL")]
     BufferEntriesLoad(#[source] sqlx::Error),
 
     /// Failed to deserialize block ranges from PostgreSQL
@@ -599,6 +599,6 @@ pub enum PostgresError {
     /// This occurs when deserializing BlockRanges from JSON fails, typically due to:
     /// - Database corruption
     /// - Schema version mismatches
-    #[error("failed to deserialize block ranges from PostgreSQL: {0}")]
+    #[error("failed to deserialize block ranges from PostgreSQL")]
     BlockRangesDeserialization(#[source] serde_json::Error),
 }

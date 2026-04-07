@@ -269,7 +269,7 @@ pub enum TableRowError {
     /// or invalid block ranges.
     ///
     /// The source error provides specific details about which invariant was violated.
-    #[error("malformed table {table}: {source}")]
+    #[error("malformed table {table}")]
     Invariants {
         table: String,
         #[source]

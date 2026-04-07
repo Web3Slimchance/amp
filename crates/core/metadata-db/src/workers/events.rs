@@ -45,7 +45,7 @@ where
 #[derive(Debug, thiserror::Error)]
 pub enum NotifSendError {
     /// The notification payload serialization failed
-    #[error("payload serialization failed: {0}")]
+    #[error("payload serialization failed")]
     SerializationFailed(#[source] serde_json::Error),
 
     /// An error occurred while sending the notification
@@ -132,7 +132,7 @@ pub enum NotifRecvError {
     Database(sqlx::Error),
 
     /// The notification payload deserialization failed
-    #[error("payload deserialization failed: {0}")]
+    #[error("payload deserialization failed")]
     DeserializationFailed(#[source] serde_json::Error),
 }
 

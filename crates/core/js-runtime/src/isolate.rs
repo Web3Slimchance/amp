@@ -25,7 +25,7 @@ pub enum Error {
     ///
     /// This wraps the full exception details including message, position, and stack trace
     /// from the V8 engine.
-    #[error("exception in script: {0}")]
+    #[error("exception in script")]
     Exception(#[source] Box<ExceptionMessage>),
     /// A string passed to V8 exceeded the maximum supported length
     ///
@@ -46,12 +46,12 @@ pub enum Error {
     ///
     /// This occurs when the JS function returns a value that cannot be represented
     /// as the requested Rust type `R` in `invoke<R>`.
-    #[error("error converting return value: {0}")]
+    #[error("error converting return value")]
     ConvertReturnValue(#[source] Box<FromV8Error>),
     /// Failed to convert a Rust parameter to a V8 value before calling the JS function
     ///
     /// The `usize` field indicates the zero-based index of the parameter that failed.
-    #[error("error converting param at index {0}")]
+    #[error("error converting param at index")]
     ConvertParam(usize, #[source] ToV8Error),
     /// The JS invocation panicked inside the isolate thread
     ///
@@ -62,7 +62,7 @@ pub enum Error {
     /// Failed to acquire an isolate from the pool
     ///
     /// This occurs when the isolate pool is exhausted or has been closed.
-    #[error("isolate pool error: {0}")]
+    #[error("isolate pool error")]
     PoolError(#[source] deadpool::unmanaged::PoolError),
 }
 

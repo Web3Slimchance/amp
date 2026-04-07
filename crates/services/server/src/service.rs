@@ -199,7 +199,7 @@ pub enum InitError {
     /// This occurs when:
     /// - DataFusion session configuration is invalid
     /// - Query execution pool initialization fails
-    #[error("failed to create query environment: {0}")]
+    #[error("failed to create query environment")]
     ExecEnv(#[source] DataFusionError),
 
     /// Failed to initialize Flight server
@@ -207,7 +207,7 @@ pub enum InitError {
     /// This occurs when:
     /// - TCP listener fails to bind to the specified address
     /// - Local address cannot be retrieved from the listener
-    #[error("failed to initialize Flight server: {0}")]
+    #[error("failed to initialize Flight server")]
     Flight(#[source] FlightInitError),
 
     /// Failed to initialize JSONL server
@@ -215,7 +215,7 @@ pub enum InitError {
     /// This occurs when:
     /// - TCP listener fails to bind to the specified address
     /// - Local address cannot be retrieved from the listener
-    #[error("failed to initialize JSONL server: {0}")]
+    #[error("failed to initialize JSONL server")]
     Jsonl(#[source] JsonlInitError),
 }
 
@@ -229,7 +229,7 @@ pub enum FlightInitError {
     /// - The port requires elevated privileges (e.g., port < 1024)
     /// - The address is not available on this system
     /// - Network interface is not configured
-    #[error("failed to bind Flight server to {addr}: {source}")]
+    #[error("failed to bind Flight server to {addr}")]
     Bind {
         addr: SocketAddr,
         source: std::io::Error,
@@ -240,7 +240,7 @@ pub enum FlightInitError {
     /// This occurs when:
     /// - Socket state is invalid after binding
     /// - System call to retrieve address fails
-    #[error("failed to get Flight server local address: {0}")]
+    #[error("failed to get Flight server local address")]
     LocalAddr(#[source] std::io::Error),
 }
 
@@ -254,7 +254,7 @@ pub enum JsonlInitError {
     /// - The port requires elevated privileges (e.g., port < 1024)
     /// - The address is not available on this system
     /// - Network interface is not configured
-    #[error("failed to bind JSONL server to {addr}: {source}")]
+    #[error("failed to bind JSONL server to {addr}")]
     Bind {
         addr: SocketAddr,
         source: std::io::Error,
@@ -265,7 +265,7 @@ pub enum JsonlInitError {
     /// This occurs when:
     /// - Socket state is invalid after binding
     /// - System call to retrieve address fails
-    #[error("failed to get JSONL server local address: {0}")]
+    #[error("failed to get JSONL server local address")]
     LocalAddr(#[source] std::io::Error),
 }
 

@@ -150,7 +150,7 @@ pub enum RuntimeError {
     /// status in the metadata database, so its failure is a fatal error.
     ///
     /// See [`HeartbeatTaskError`] for specific heartbeat failure modes.
-    #[error("heartbeat task died {0}")]
+    #[error("heartbeat task died")]
     HeartbeatTaskDied(#[source] HeartbeatTaskError),
 
     /// Error handling a job notification.
@@ -160,7 +160,7 @@ pub enum RuntimeError {
     /// metadata and spawning or aborting jobs.
     ///
     /// See [`NotificationError`] for specific notification handling failure modes.
-    #[error("notification handling error: {0}")]
+    #[error("notification handling error")]
     NotificationHandling(#[source] NotificationError),
 
     /// Error handling a job result.
@@ -169,7 +169,7 @@ pub enum RuntimeError {
     /// Result handling involves updating the job's status in the metadata database.
     ///
     /// See [`JobResultError`] for specific job result handling failure modes.
-    #[error("job result handling error: {0}")]
+    #[error("job result handling error")]
     JobResultHandling(#[source] JobResultError),
 
     /// Reconciliation error.
@@ -179,7 +179,7 @@ pub enum RuntimeError {
     /// database. Reconciliation helps recover from missed notifications.
     ///
     /// See [`ReconcileError`] for specific reconciliation failure modes.
-    #[error("reconciliation error: {0}")]
+    #[error("reconciliation error")]
     Reconciliation(#[source] ReconcileError),
 }
 
@@ -207,14 +207,14 @@ pub enum HeartbeatTaskError {
     /// - Database connection loss
     /// - Database query execution errors
     /// - Network connectivity issues
-    #[error("heartbeat update failed: {0}")]
+    #[error("heartbeat update failed")]
     UpdateFailed(#[source] metadata_db::Error),
 
     /// Heartbeat task panicked.
     ///
     /// This occurs when the heartbeat task encounters an unexpected panic, indicating
     /// a critical bug in the heartbeat implementation or a severe system issue.
-    #[error("heartbeat task panicked: {0}")]
+    #[error("heartbeat task panicked")]
     Panicked(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
 
@@ -237,7 +237,7 @@ pub enum SpawnJobError {
     /// - Database connection failures
     /// - Database query execution errors
     /// - Job already in a terminal state (completed, failed, stopped)
-    #[error("failed to update job status to RUNNING: {0}")]
+    #[error("failed to update job status to RUNNING")]
     StatusUpdateFailed(#[source] metadata_db::Error),
 
     /// Failed to get latest job descriptor.
@@ -247,7 +247,7 @@ pub enum SpawnJobError {
     /// Common causes include:
     /// - Database connection failures
     /// - Database query execution errors
-    #[error("failed to get latest job descriptor: {0}")]
+    #[error("failed to get latest job descriptor")]
     GetLatestJobDescriptorFailed(#[source] metadata_db::Error),
 
     /// Failed to dispatch the job descriptor to a handler.
@@ -270,7 +270,7 @@ pub enum SpawnJobError {
 /// - Database query execution errors
 /// - Job already in a terminal state
 #[derive(Debug, thiserror::Error)]
-#[error("failed to update job status to STOPPING: {0}")]
+#[error("failed to update job status to STOPPING")]
 pub struct AbortJobError(#[source] pub metadata_db::Error);
 
 /// Errors that can occur during job creation.
@@ -291,7 +291,7 @@ pub enum JobCreationError {
     /// - Database connection failures
     /// - Job ID not found in the `physical_tables` table
     /// - Database query execution errors
-    #[error("failed to fetch output locations: {0}")]
+    #[error("failed to fetch output locations")]
     OutputLocationsFetchFailed(#[source] metadata_db::Error),
 
     /// Dataset not found in the dataset store.
@@ -306,7 +306,7 @@ pub enum JobCreationError {
     /// This occurs when the dataset store fails to retrieve or construct the dataset,
     /// which may be due to manifest parsing errors, missing dependencies, or other
     /// dataset-specific initialization failures.
-    #[error("failed to get dataset: {0}")]
+    #[error("failed to get dataset")]
     DatasetFetchFailed(#[source] Box<dyn std::error::Error + Send + Sync>),
 
     /// Table not found in dataset.
@@ -327,7 +327,7 @@ pub enum JobCreationError {
     /// - Invalid table metadata
     /// - Incompatible table schema
     /// - Storage configuration errors
-    #[error("failed to create physical table: {0}")]
+    #[error("failed to create physical table")]
     PhysicalTableCreationFailed(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
 
@@ -348,7 +348,7 @@ pub enum NotificationError {
     /// - Invalid JSON in the notification payload
     /// - Missing required fields in the notification
     /// - Schema version mismatch between sender and receiver
-    #[error("failed to deserialize notification: {0}")]
+    #[error("failed to deserialize notification")]
     DeserializationFailed(#[source] metadata_db::workers::WorkerNotifRecvError),
 
     /// Notification stream closed unexpectedly.
@@ -407,7 +407,7 @@ pub enum StartActionError {
     /// - Database connection failures
     /// - Database query execution errors
     /// - Timeout while waiting for query results
-    #[error("failed to load job from database: {0}")]
+    #[error("failed to load job from database")]
     JobLoadFailed(#[source] metadata_db::Error),
 
     /// Job not found in the database.
@@ -445,7 +445,7 @@ pub enum JobResultError {
     /// - Database connection failures during status update
     /// - Database query execution errors
     /// - Concurrent status updates by other processes
-    #[error("failed to mark job {job_id} as COMPLETED: {source}")]
+    #[error("failed to mark job {job_id} as COMPLETED")]
     MarkCompletedFailed {
         job_id: JobId,
         source: metadata_db::Error,
@@ -461,7 +461,7 @@ pub enum JobResultError {
     /// - Database connection failures during status update
     /// - Database query execution errors
     /// - Concurrent status updates by other processes
-    #[error("failed to mark job {job_id} as FAILED: {source}")]
+    #[error("failed to mark job {job_id} as FAILED")]
     MarkFailedFailed {
         job_id: JobId,
         source: metadata_db::Error,
@@ -477,7 +477,7 @@ pub enum JobResultError {
     /// - Database connection failures during status update
     /// - Database query execution errors
     /// - Concurrent status updates by other processes
-    #[error("failed to mark job {job_id} as STOPPED: {source}")]
+    #[error("failed to mark job {job_id} as STOPPED")]
     MarkStoppedFailed {
         job_id: JobId,
         source: metadata_db::Error,
@@ -505,7 +505,7 @@ pub enum ReconcileError {
     /// - Database connection failures during the query
     /// - Database query execution errors
     /// - Timeout while waiting for query results
-    #[error("failed to fetch active jobs: {0}")]
+    #[error("failed to fetch active jobs")]
     FetchActiveJobsFailed(#[source] metadata_db::Error),
 
     /// Failed to spawn a job during reconciliation.

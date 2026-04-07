@@ -268,7 +268,7 @@ fn sort_tables_by_dependencies(
 #[derive(Debug, thiserror::Error)]
 pub enum SortTablesByDependenciesError {
     /// Failed to resolve table references from SQL query
-    #[error("Failed to resolve table references in table '{table_name}': {source}")]
+    #[error("Failed to resolve table references in table '{table_name}'")]
     ResolveTableReferences {
         table_name: TableName,
         #[source]

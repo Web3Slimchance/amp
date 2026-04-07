@@ -1,3 +1,5 @@
+use std::error::Error;
+
 use amp_client_admin::{self as client, datasets::RegisterError};
 use datasets_common::{
     fqn::FullyQualifiedName, name::Name, namespace::Namespace, version::Version,
@@ -252,11 +254,11 @@ async fn register_with_nonexistent_column_fails() {
         result.is_err(),
         "registration should fail with nonexistent column"
     );
+    let err = result.expect_err("registration should fail with nonexistent column");
+    let source = err.source().expect("error should have a source");
     assert!(
-        result
-            .unwrap_err()
-            .to_string()
-            .contains("No field named bloock_num")
+        source.to_string().contains("No field named bloock_num"),
+        "source should mention the nonexistent column, got: {source}"
     )
 }
 
@@ -277,15 +279,13 @@ async fn register_with_type_mismatch_fails() {
         .await;
 
     //* Then
+    let err = result.expect_err("registration should fail with type mismatch");
+    let source = err.source().expect("error should have a source");
     assert!(
-        result.is_err(),
-        "registration should fail with type mismatch"
-    );
-    assert!(
-        result
-            .unwrap_err()
+        source
             .to_string()
-            .contains("Cannot coerce arithmetic expression")
+            .contains("Cannot coerce arithmetic expression"),
+        "source should mention the type mismatch, got: {source}"
     )
 }
 
@@ -310,15 +310,13 @@ async fn register_with_unsupported_sql_feature_fails() {
         .await;
 
     //* Then
+    let err = result.expect_err("registration should fail with unsupported SQL feature");
+    let source = err.source().expect("error should have a source");
     assert!(
-        result.is_err(),
-        "registration should fail with unsupported SQL feature"
-    );
-    assert!(
-        result
-            .unwrap_err()
+        source
             .to_string()
-            .contains("feature is not implemented: Unsupported ast node Pivot")
+            .contains("feature is not implemented: Unsupported ast node Pivot"),
+        "source should mention the unsupported feature, got: {source}"
     )
 }
 

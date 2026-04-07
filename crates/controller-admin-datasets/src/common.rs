@@ -112,7 +112,7 @@ pub enum InterTableDepError {
     ///
     /// This occurs when tables reference each other in a cycle (e.g., table_a references
     /// table_b which references table_a). Inter-table dependencies must form a DAG.
-    #[error("Cyclic dependency detected among inter-table references: {0}")]
+    #[error("Cyclic dependency detected among inter-table references")]
     CyclicDependency(#[source] CyclicDepError<TableName>),
 }
 
@@ -517,7 +517,7 @@ pub enum ManifestValidationError {
     /// - The provided SQL query has invalid syntax
     /// - Multiple statements provided (only single statement allowed)
     /// - Query parsing fails for other reasons
-    #[error("Invalid SQL query for table '{table_name}': {source}")]
+    #[error("Invalid SQL query for table '{table_name}'")]
     InvalidTableSql {
         /// The table whose SQL query is invalid
         table_name: TableName,
@@ -526,7 +526,7 @@ pub enum ManifestValidationError {
     },
 
     /// Failed to resolve table references from SQL query
-    #[error("Failed to resolve table references in table '{table_name}': {source}")]
+    #[error("Failed to resolve table references in table '{table_name}'")]
     TableReferenceResolution {
         /// The table whose SQL query contains unresolvable table references
         table_name: TableName,
@@ -535,7 +535,7 @@ pub enum ManifestValidationError {
     },
 
     /// Failed to resolve function references from SQL query
-    #[error("Failed to resolve function references in table '{table_name}': {source}")]
+    #[error("Failed to resolve function references in table '{table_name}'")]
     FunctionReferenceResolution {
         /// The table whose SQL query contains unresolvable function references
         table_name: TableName,
@@ -548,7 +548,7 @@ pub enum ManifestValidationError {
     /// This occurs when resolving a dependency reference fails due to:
     /// - Invalid reference format
     /// - Storage backend errors when reading the dependency
-    #[error("Failed to resolve dependency '{alias}' ({reference}): {source}")]
+    #[error("Failed to resolve dependency '{alias}' ({reference})")]
     DependencyResolution {
         /// The dependency alias used in the manifest
         alias: String,
@@ -574,7 +574,7 @@ pub enum ManifestValidationError {
     /// This occurs when fetching the dataset definition for a dependency fails during
     /// start_block validation. The dataset reference was resolved successfully, but
     /// loading the actual dataset from the store failed.
-    #[error("Failed to fetch dependency '{alias}' for start_block validation: {source}")]
+    #[error("Failed to fetch dependency '{alias}' for start_block validation")]
     FetchDependencyDataset {
         /// The dependency alias that failed to load
         alias: String,
@@ -598,7 +598,7 @@ pub enum ManifestValidationError {
     /// Only dataset-qualified tables are supported (e.g., `dataset.table`).
     /// Catalog-qualified tables (e.g., `catalog.schema.table`) are not supported.
     /// This error occurs during SQL parsing when a 3-part table reference is detected.
-    #[error("Catalog-qualified table reference in table '{table_name}': {source}")]
+    #[error("Catalog-qualified table reference in table '{table_name}'")]
     CatalogQualifiedTableInSql {
         /// The table whose SQL query contains a catalog-qualified table reference
         table_name: TableName,
@@ -610,7 +610,7 @@ pub enum ManifestValidationError {
     ///
     /// Table name does not conform to SQL identifier rules (must start with letter/underscore,
     /// contain only alphanumeric/underscore/dollar, and be <= 63 bytes).
-    #[error("Invalid table name in SQL query: {0}")]
+    #[error("Invalid table name in SQL query")]
     InvalidTableName(#[source] ResolveTableReferencesError<DepAliasOrSelfRefError>),
 
     /// Dependency alias not found
@@ -657,7 +657,7 @@ pub enum ManifestValidationError {
     /// - Replace outer joins with inner joins
     /// - Remove sorting, limiting, and window functions
     /// - Ensure queries only use incremental operations (projection, filter, inner join, union)
-    #[error("Table '{table_name}' contains non-incremental SQL: {source}")]
+    #[error("Table '{table_name}' contains non-incremental SQL")]
     NonIncrementalSql {
         /// The table whose SQL query contains non-incremental operations
         table_name: TableName,
@@ -673,7 +673,7 @@ pub enum ManifestValidationError {
     /// - References to non-existent tables or columns
     /// - Type mismatches in expressions
     /// - Unsupported SQL features
-    #[error("Failed to plan query for table '{table_name}': {source}")]
+    #[error("Failed to plan query for table '{table_name}'")]
     SqlPlanningError {
         /// The table whose SQL query failed to plan
         table_name: TableName,

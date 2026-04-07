@@ -38,7 +38,7 @@ pub enum Error {
     /// - Migration syntax errors
     ///
     /// Migration failures are usually fatal and require manual intervention.
-    #[error("Error running migrations: {0}")]
+    #[error("Error running migrations")]
     Migration(#[source] sqlx::migrate::MigrateError),
 
     /// Database query execution failed
@@ -57,7 +57,7 @@ pub enum Error {
     ///
     /// Use `is_retryable()` to determine if the error should be retried.
     /// Use `is_foreign_key_violation()` to detect missing referenced entities.
-    #[error("Error executing database query: {0}")]
+    #[error("Error executing database query")]
     Database(#[source] sqlx::Error),
 
     /// Failed to send job notification via PostgreSQL NOTIFY
@@ -72,7 +72,7 @@ pub enum Error {
     ///
     /// Workers use LISTEN/NOTIFY for real-time job coordination. Notification failures
     /// may delay job processing but workers will eventually reconcile via polling.
-    #[error("Error sending job notification: {0}")]
+    #[error("Error sending job notification")]
     JobNotificationSend(#[source] crate::workers::events::NotifSendError),
 
     /// Failed to receive job notification via PostgreSQL LISTEN
@@ -86,7 +86,7 @@ pub enum Error {
     /// - Malformed notification payload (deserialization error)
     ///
     /// This error typically indicates the LISTEN connection needs to be re-established.
-    #[error("Error receiving job notification: {0}")]
+    #[error("Error receiving job notification")]
     JobNotificationRecv(#[source] crate::workers::events::NotifRecvError),
 
     /// Failed to send location notification via PostgreSQL NOTIFY
@@ -102,7 +102,7 @@ pub enum Error {
     /// Location notifications inform query servers about new physical table locations.
     /// Notification failures may delay catalog updates but servers will eventually
     /// discover new locations via polling.
-    #[error("Error sending location notification: {0}")]
+    #[error("Error sending location notification")]
     LocationNotificationSend(#[source] LocationNotifSendError),
 
     /// Multiple active physical table locations found for a manifest/table combination
@@ -133,7 +133,7 @@ pub enum Error {
     ///
     /// This typically indicates corrupted data in the database or a bug in path
     /// generation code.
-    #[error("Error parsing URL: {0}")]
+    #[error("Error parsing URL")]
     UrlParse(#[source] url::ParseError),
 
     /// Failed to update job status
@@ -148,7 +148,7 @@ pub enum Error {
     /// - Database connection error during update
     ///
     /// See `JobStatusUpdateError` for specific transition validation errors.
-    #[error("Job status update error: {0}")]
+    #[error("Job status update error")]
     JobStatusUpdate(#[source] crate::job_status::JobStatusUpdateError),
 
     /// A job event detail was not provided for a status that requires one.

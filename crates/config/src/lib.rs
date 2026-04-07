@@ -158,7 +158,7 @@ pub fn load_config(
 #[derive(Debug, thiserror::Error)]
 pub enum LoadConfigError {
     /// Failed to read the config file or canonicalize its path.
-    #[error("IO error at {path}: {source}")]
+    #[error("IO error at {path}")]
     Io {
         /// The config file path that could not be read.
         path: PathBuf,
@@ -167,7 +167,7 @@ pub enum LoadConfigError {
         source: std::io::Error,
     },
     /// Failed to parse the TOML config file via Figment.
-    #[error("Config parse error at {path}: {source}")]
+    #[error("Config parse error at {path}")]
     Figment {
         /// The config file path that failed to parse.
         path: PathBuf,
@@ -176,7 +176,7 @@ pub enum LoadConfigError {
         source: config_file::LoadConfigFileError,
     },
     /// A directory path could not be resolved to a valid object store URL.
-    #[error("Invalid object store URL at {path}: {source}")]
+    #[error("Invalid object store URL at {path}")]
     InvalidObjectStoreUrl {
         /// The config file path containing the invalid URL.
         path: PathBuf,
@@ -383,7 +383,7 @@ pub fn ensure_amp_metadb_directory(amp_dir: &Path) -> Result<(), EnsureAmpMetadb
 
 /// Failed to create the `.amp/` root directory.
 #[derive(Debug, thiserror::Error)]
-#[error("Failed to create amp directory {path}: {source}")]
+#[error("Failed to create amp directory {path}")]
 pub struct EnsureAmpDirRootError {
     /// The `.amp/` directory path that could not be created.
     pub path: PathBuf,
@@ -394,7 +394,7 @@ pub struct EnsureAmpDirRootError {
 
 /// Failed to create a base subdirectory within `.amp/`.
 #[derive(Debug, thiserror::Error)]
-#[error("Failed to create subdirectory {path}: {source}")]
+#[error("Failed to create subdirectory {path}")]
 pub struct EnsureAmpBaseDirectoriesError {
     /// The subdirectory path that could not be created.
     pub path: PathBuf,
@@ -405,7 +405,7 @@ pub struct EnsureAmpBaseDirectoriesError {
 
 /// Failed to create the `.amp/metadb/` directory.
 #[derive(Debug, thiserror::Error)]
-#[error("Failed to create metadb directory {path}: {source}")]
+#[error("Failed to create metadb directory {path}")]
 pub struct EnsureAmpMetadbDirectoryError {
     /// The metadb directory path that could not be created.
     pub path: PathBuf,

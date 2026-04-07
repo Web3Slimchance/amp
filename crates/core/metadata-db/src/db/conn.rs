@@ -283,10 +283,10 @@ impl crate::_priv::Sealed for &mut Connection {}
 #[derive(Debug, thiserror::Error)]
 pub enum ConnError {
     /// Failed to establish database connection.
-    #[error("Error connecting to metadata db: {0}")]
+    #[error("Error connecting to metadata db")]
     ConnectionError(#[source] sqlx::Error),
 
     /// Failed to run database migrations.
-    #[error("Error running migrations: {0}")]
+    #[error("Error running migrations")]
     MigrationFailed(#[source] MigrateError),
 }

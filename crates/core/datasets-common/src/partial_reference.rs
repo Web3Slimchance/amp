@@ -179,15 +179,15 @@ impl std::str::FromStr for PartialReference {
 #[derive(Debug, thiserror::Error)]
 pub enum PartialReferenceError {
     /// The namespace component is invalid
-    #[error("invalid namespace in partial reference: {0}")]
+    #[error("invalid namespace in partial reference")]
     InvalidNamespace(#[source] NamespaceError),
 
     /// The name component is invalid
-    #[error("invalid name in partial reference: {0}")]
+    #[error("invalid name in partial reference")]
     InvalidName(#[source] NameError),
 
     /// The revision component is invalid
-    #[error("invalid revision in partial reference: {0}")]
+    #[error("invalid revision in partial reference")]
     InvalidRevision(#[source] RevisionParseError),
 }
 

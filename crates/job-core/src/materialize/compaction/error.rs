@@ -36,7 +36,7 @@ pub enum CompactorError {
     /// - Logic errors in chain building algorithm
     ///
     /// This error prevents compaction from proceeding as there's no valid merge plan.
-    #[error("failed to build canonical chain: {0}")]
+    #[error("failed to build canonical chain")]
     CanonicalChain(#[source] SnapshotError),
 
     /// Failed to create compaction writer
@@ -75,7 +75,7 @@ pub enum CompactorError {
     ///
     /// A write failure leaves the compaction incomplete. The partial output file
     /// should be cleaned up, and source files remain unchanged.
-    #[error("failed to write to parquet file: {0}")]
+    #[error("failed to write to parquet file")]
     FileWrite(#[source] ParquetFileWriterCloseError),
 
     /// Failed to read/stream data from Parquet files
@@ -93,7 +93,7 @@ pub enum CompactorError {
     ///
     /// Read failures prevent compaction from completing. Source files should be
     /// investigated for corruption or consistency issues.
-    #[error("failed to stream parquet file: {0}")]
+    #[error("failed to stream parquet file")]
     FileStream(#[source] DataFusionError),
 
     /// Task join error during compaction
@@ -109,7 +109,7 @@ pub enum CompactorError {
     /// - Out of memory causing task termination
     ///
     /// This is typically a fatal error indicating either a bug or system resource issue.
-    #[error("compaction task join error: {0}")]
+    #[error("compaction task join error")]
     Join(#[source] JoinError),
 
     /// Failed to update GC manifest in metadata database
@@ -168,7 +168,7 @@ pub enum CompactorError {
     ///
     /// If this fails, the compacted file exists in storage but is not registered
     /// in the metadata database. The file is orphaned and may need manual cleanup.
-    #[error("failed to commit file metadata: {0}")]
+    #[error("failed to commit file metadata")]
     MetadataCommit(#[source] metadata_db::Error),
 }
 

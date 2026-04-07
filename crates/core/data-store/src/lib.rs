@@ -1279,7 +1279,7 @@ pub enum RegisterAndActivatePhysicalTableError {
     /// - Database connection lost during update
     /// - Lock timeout on physical_table_revisions row
     /// - Database constraint violation
-    #[error("Failed to mark table revision as active: {0}")]
+    #[error("Failed to mark table revision as active")]
     MarkActive(#[source] metadata_db::Error),
 
     /// No physical table found with the given location ID

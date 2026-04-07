@@ -391,7 +391,7 @@ enum Error {
     /// - Request JSON is malformed or missing required fields
     /// - JSON deserialization fails
     /// - Request body cannot be parsed
-    #[error("Invalid payload format: {source}")]
+    #[error("Invalid payload format")]
     InvalidPayloadFormat {
         /// The rejection details from Axum's JSON extractor
         source: JsonRejection,
@@ -410,7 +410,7 @@ enum Error {
     /// - The provided SQL query has invalid syntax
     /// - Unsupported SQL features are used
     /// - Query parsing fails for other reasons
-    #[error("Invalid SQL query for table '{table_name}': {source}")]
+    #[error("Invalid SQL query for table '{table_name}'")]
     InvalidTableSql {
         /// The table name that contains the invalid SQL
         table_name: TableName,
@@ -423,7 +423,7 @@ enum Error {
     ///
     /// This occurs when a table's SQL uses operations that cannot be processed incrementally
     /// (e.g., aggregations, sorts, limits, outer joins, window functions, distinct).
-    #[error("Table '{table_name}' contains non-incremental SQL: {source}")]
+    #[error("Table '{table_name}' contains non-incremental SQL")]
     NonIncrementalQuery {
         /// The table whose SQL query contains non-incremental operations
         table_name: TableName,
@@ -441,7 +441,7 @@ enum Error {
     /// Catalog-qualified tables (e.g., `catalog.schema.table`) are not supported.
     ///
     /// This occurs during SQL parsing when a 3-part table reference is detected.
-    #[error("Catalog-qualified table reference in table '{table_name}': {source}")]
+    #[error("Catalog-qualified table reference in table '{table_name}'")]
     CatalogQualifiedTableInSql {
         /// The table whose SQL query contains a catalog-qualified table reference
         table_name: TableName,
@@ -452,7 +452,7 @@ enum Error {
     /// Table name in SQL reference has invalid format.
     ///
     /// This occurs when a table name extracted from SQL does not conform to identifier rules.
-    #[error("Invalid table name in table '{table_name}': {source}")]
+    #[error("Invalid table name in table '{table_name}'")]
     InvalidTableName {
         /// The table whose SQL query contains an invalid table name
         table_name: TableName,
@@ -464,7 +464,7 @@ enum Error {
     ///
     /// This occurs when resolving table references from a parsed SQL statement fails
     /// for reasons other than catalog qualification or invalid table names.
-    #[error("Failed to extract table references from table '{table_name}': {source}")]
+    #[error("Failed to extract table references from table '{table_name}'")]
     TableReferenceResolution {
         /// The table whose SQL query failed reference extraction
         table_name: TableName,
@@ -535,7 +535,7 @@ enum Error {
     ///
     /// This occurs when SQL planning fails for a table query during schema
     /// inference (e.g., invalid references, type mismatches).
-    #[error("Failed to plan SQL for table '{table_name}': {source}")]
+    #[error("Failed to plan SQL for table '{table_name}'")]
     SchemaPlanInference {
         /// The table name that failed schema inference
         table_name: TableName,

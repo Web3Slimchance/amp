@@ -45,7 +45,7 @@ pub enum ParseSqlError {
     /// This occurs when the provided SQL query has invalid syntax or uses
     /// unsupported SQL features. The underlying DataFusion parser error
     /// provides details about the syntax issue.
-    #[error("SQL syntax error: {0}")]
+    #[error("SQL syntax error")]
     InvalidSyntax(#[source] datafusion::error::DataFusionError),
 
     /// Multiple SQL statements found
@@ -224,11 +224,11 @@ where
 #[derive(Debug, thiserror::Error)]
 pub enum ResolveTableReferencesError<E = std::convert::Infallible> {
     /// Table reference contains an invalid identifier
-    #[error("Invalid identifier in table reference: {0}")]
+    #[error("Invalid identifier in table reference")]
     InvalidIdentifier(#[source] DataFusionError),
 
     /// Table reference has unsupported format
-    #[error("Unsupported table reference format (expected 1-3 parts): {0}")]
+    #[error("Unsupported table reference format (expected 1-3 parts)")]
     UnsupportedTableReferenceFormat(#[source] DataFusionError),
 
     /// Table name has invalid format
@@ -240,7 +240,7 @@ pub enum ResolveTableReferencesError<E = std::convert::Infallible> {
     },
 
     /// Schema name has invalid format
-    #[error("Invalid schema format in reference '{table_ref}': {source}")]
+    #[error("Invalid schema format in reference '{table_ref}'")]
     InvalidSchemaFormat {
         table_ref: String,
         #[source]

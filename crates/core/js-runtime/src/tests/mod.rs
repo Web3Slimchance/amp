@@ -1,4 +1,4 @@
-use std::{iter, sync::Arc};
+use std::{error::Error as _, iter, sync::Arc};
 
 use datafusion::{
     arrow::{
@@ -36,9 +36,10 @@ fn throws() {
         .invoke::<()>("test.js", TEST_JS, "throws", iter::empty())
         .unwrap_err();
 
+    assert_eq!(err.to_string(), "exception in script");
     assert_eq!(
-        err.to_string(),
-        "exception in script: Uncaught: Error: test exception\n --> test.js:6:2-3\n  throw new Error(\"test exception\")\n  ^\n\n\nStack trace:\nError: test exception\n    at throws (test.js:6:9)\n"
+        err.source().expect("should have source").to_string(),
+        "Uncaught: Error: test exception\n --> test.js:6:2-3\n  throw new Error(\"test exception\")\n  ^\n\n\nStack trace:\nError: test exception\n    at throws (test.js:6:9)\n"
     );
 }
 

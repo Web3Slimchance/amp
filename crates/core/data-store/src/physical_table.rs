@@ -255,7 +255,7 @@ pub enum PhyTableRevisionPathParseError {
     /// - Empty segments (consecutive slashes like `foo//bar`)
     /// - Invalid characters in path segments
     /// - Malformed path encoding
-    #[error("invalid physical table revision path: {0}")]
+    #[error("invalid physical table revision path")]
     Invalid(#[source] object_store::path::Error),
 }
 

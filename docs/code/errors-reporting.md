@@ -19,12 +19,13 @@ scope: "global"
    - [4. Wrap Source Errors to Provide Context](#4-wrap-source-errors-to-provide-context)
    - [5. Avoid `#[from]` Attribute and `From` Implementations](#5-avoid-from-attribute-and-from-implementations)
    - [6. Always Use `#[source]` Attribute](#6-always-use-source-attribute)
-   - [7. Closure Parameter Naming Convention](#7-closure-parameter-naming-convention)
-   - [8. One Variant Per Error Source](#8-one-variant-per-error-source)
-   - [9. One Error Enum Per Fallible Function](#9-one-error-enum-per-fallible-function)
-   - [10. No Unused Error Variants](#10-no-unused-error-variants)
-   - [11. Error Documentation Template](#11-error-documentation-template)
-   - [12. Avoid `BoxError` and `Box<dyn Error>`](#12-avoid-boxerror-and-boxdyn-error)
+   - [7. Do Not Embed Source Errors in Display Format Strings](#7-do-not-embed-source-errors-in-display-format-strings)
+   - [8. Closure Parameter Naming Convention](#8-closure-parameter-naming-convention)
+   - [9. One Variant Per Error Source](#9-one-variant-per-error-source)
+   - [10. One Error Enum Per Fallible Function](#10-one-error-enum-per-fallible-function)
+   - [11. No Unused Error Variants](#11-no-unused-error-variants)
+   - [12. Error Documentation Template](#12-error-documentation-template)
+   - [13. Avoid `BoxError` and `Box<dyn Error>`](#13-avoid-boxerror-and-boxdyn-error)
 3. [Complete Example](#-complete-example)
 4. [Checklist](#-checklist)
 5. [Rationale](#-rationale)
@@ -280,7 +281,55 @@ pub enum MyError {
 
 **Recommendation:** When using named fields, **prefer naming the error field `source`** to avoid redundancy. If you use a different field name, you **MUST** annotate it with `#[source]`.
 
-### 7. Closure Parameter Naming Convention
+### 7. Do Not Embed Source Errors in Display Format Strings
+
+**MANDATORY**: When a field has `#[source]`, do **NOT** reference it in the `#[error("...")]` format string via `{0}`, `{1}`, or `{source}`. The source error's message is already accessible through the `.source()` chain and will be included by error chain formatters (`error_with_causes`, `logging::error_source`, `ErrorResponse::from`).
+
+Including the source in both the format string and the `.source()` chain causes **duplicated messages** in logs and error responses.
+
+```rust
+// ✅ CORRECT - Error message describes only this level's context
+#[derive(Debug, thiserror::Error)]
+pub enum MyError {
+    #[error("Failed to connect to metadata database")]
+    MetadataDbConnection(#[source] metadata_db::Error),
+
+    #[error("Failed to create data store")]
+    DataStoreCreation(#[source] ObjectStoreCreationError),
+}
+
+// ✅ CORRECT - Named fields: context fields are included, source is not
+#[derive(Debug, thiserror::Error)]
+#[error("Invalid address for {name}")]
+pub struct InvalidAddrError {
+    pub name: String,
+    #[source]
+    pub source: std::net::AddrParseError,
+}
+
+// ❌ WRONG - Source embedded via {0}, duplicates the source chain
+#[derive(Debug, thiserror::Error)]
+pub enum MyError {
+    #[error("Failed to connect to metadata database: {0}")]
+    MetadataDbConnection(#[source] metadata_db::Error),
+}
+// Produces: "Failed to connect to metadata database: <source msg> | Caused by: <source msg>"
+
+// ❌ WRONG - Named source field embedded, duplicates the source chain
+#[derive(Debug, thiserror::Error)]
+#[error("Invalid address for {name}: {source}")]
+pub struct InvalidAddrError {
+    pub name: String,
+    #[source]
+    pub source: std::net::AddrParseError,
+}
+```
+
+**Why?** Error chain formatters walk `.source()` to build the full message. If the source is already embedded in the wrapper's `Display`, it appears twice:
+- Once in the wrapper's `Display` (via `{0}` or `{source}`)
+- Again when the chain formatter appends `.source().to_string()`
+
+### 8. Closure Parameter Naming Convention
 
 **ALWAYS** name the closure parameter in `.map_err()` as `err`, **NEVER** shortened to `e`, unless there's a naming conflict/shadowing.
 
@@ -301,7 +350,7 @@ metadata_db::some_operation(&self.db)
     .map_err(|e| MyError::Database(e))?;
 ```
 
-### 8. One Variant Per Error Source
+### 9. One Variant Per Error Source
 
 **NEVER** reuse the same error variant for multiple error sources. Each variant should describe a single, specific error condition.
 
@@ -330,7 +379,7 @@ pub enum LinkManifestError {
 }
 ```
 
-### 9. One Error Enum Per Fallible Function
+### 10. One Error Enum Per Fallible Function
 
 **Prefer** one error type per fallible function or closely related operation. Only reuse error types when functions share **ALL** error variants.
 
@@ -380,7 +429,7 @@ pub enum SharedError {
 }
 ```
 
-### 10. No Unused Error Variants
+### 11. No Unused Error Variants
 
 **MANDATORY**: Every error variant **MUST** be actually used in code. Remove unused variants immediately.
 
@@ -409,7 +458,7 @@ pub enum GetManifestError {
 }
 ```
 
-### 11. Error Documentation Template
+### 12. Error Documentation Template
 
 **MANDATORY**: Document each error variant following this template:
 
@@ -465,7 +514,7 @@ pub enum LinkManifestError {
 }
 ```
 
-### 12. Avoid `BoxError` and `Box<dyn Error>`
+### 13. Avoid `BoxError` and `Box<dyn Error>`
 
 **DO NOT** use `BoxError`, `Box<dyn Error>`, or similar type erasure in production code. These are **ONLY** acceptable for rapid prototyping.
 
@@ -632,6 +681,7 @@ Before committing error handling code, verify:
 - [ ] All underlying errors are wrapped with domain-specific variants
 - [ ] No `#[from]` attributes or `From` implementations (unless explicitly required)
 - [ ] All wrapped errors use `#[source]` attribute
+- [ ] Source fields are NOT referenced in `#[error("...")]` format strings (no `{0}`, `{source}` when `#[source]` is present)
 - [ ] Closure parameters in `.map_err()` are named `err` (not `e`)
 - [ ] Each error variant is used for a single, distinct error source
 - [ ] One error type per function (or shared only when all variants are common)

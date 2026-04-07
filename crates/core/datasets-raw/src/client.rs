@@ -14,10 +14,10 @@ use crate::rows::Rows;
 #[derive(Debug, thiserror::Error)]
 pub enum BlockStreamError {
     /// Transient error that may succeed on retry (e.g., network timeouts, rate limits).
-    #[error("Recoverable error: {0}")]
+    #[error("Recoverable error")]
     Recoverable(#[source] RecoverableError),
     /// Permanent error that should abort the stream (e.g., invalid data, out-of-range blocks).
-    #[error("Fatal error: {0}")]
+    #[error("Fatal error")]
     Fatal(#[source] FatalError),
 }
 

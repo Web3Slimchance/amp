@@ -44,7 +44,7 @@ pub enum CollectorError {
     ///
     /// Object store errors are often transient and retryable. Permanent failures
     /// may indicate configuration or permission issues.
-    #[error("object store error: {0}")]
+    #[error("object store error")]
     ObjectStore(#[source] ObjectStoreError),
 
     /// Failed to stream file metadata from database
@@ -61,7 +61,7 @@ pub enum CollectorError {
     ///
     /// This prevents garbage collection from proceeding as the list of deletable
     /// files cannot be determined.
-    #[error("failed to stream file metadata: {0}")]
+    #[error("failed to stream file metadata")]
     FileStream(#[source] amp_data_store::StreamExpiredGcFilesError),
 
     /// Task join error during garbage collection
@@ -77,7 +77,7 @@ pub enum CollectorError {
     /// - Out of memory causing task termination
     ///
     /// This is typically a fatal error indicating either a bug or system resource issue.
-    #[error("garbage collection task join error: {0}")]
+    #[error("garbage collection task join error")]
     Join(#[source] JoinError),
 
     /// Failed to delete file metadata records
@@ -154,7 +154,7 @@ pub enum CollectorError {
     /// - Path exceeds maximum length limits
     ///
     /// This indicates a mismatch between stored paths and object store requirements.
-    #[error("path error: {0}")]
+    #[error("path error")]
     Path(#[source] PathError),
 
     /// Multiple errors occurred during collection

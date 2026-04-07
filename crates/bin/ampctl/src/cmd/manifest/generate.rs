@@ -321,7 +321,7 @@ pub enum Error {
     /// This occurs when the generated manifest structure cannot be serialized to JSON,
     /// which may happen if the manifest contains invalid data or if there are internal
     /// serialization issues.
-    #[error("Failed to serialize manifest: {0}")]
+    #[error("Failed to serialize manifest")]
     Serialization(#[source] serde_json::Error),
 
     /// Failed to write the manifest output.
@@ -332,6 +332,6 @@ pub enum Error {
     /// - Disk space issues
     /// - Invalid file path
     /// - Closed or broken output stream
-    #[error("Failed to write output: {0}")]
+    #[error("Failed to write output")]
     WriteOutput(#[source] std::io::Error),
 }

@@ -130,33 +130,33 @@ pub enum Error {
     /// Failed to create data store
     ///
     /// This occurs when the data store cannot be created from the configured URL.
-    #[error("Failed to create data store: {0}")]
+    #[error("Failed to create data store")]
     DataStoreCreation(#[source] ObjectStoreCreationError),
 
     /// Failed to create providers store
     ///
     /// This occurs when the providers store cannot be created from the configured URL.
-    #[error("Failed to create providers store: {0}")]
+    #[error("Failed to create providers store")]
     ProvidersStoreCreation(#[source] ObjectStoreCreationError),
 
     /// Failed to create manifests store
     ///
     /// This occurs when the manifests store cannot be created from the configured URL.
-    #[error("Failed to create manifests store: {0}")]
+    #[error("Failed to create manifests store")]
     ManifestsStoreCreation(#[source] ObjectStoreCreationError),
 
     /// Failed to start the query server.
     ///
     /// This occurs during the initialization phase when attempting to bind and
     /// start the Arrow Flight RPC and/or JSON Lines servers.
-    #[error("Failed to start server: {0}")]
+    #[error("Failed to start server")]
     ServerStart(#[source] server::service::InitError),
 
     /// Query server encountered a runtime error.
     ///
     /// This occurs after the servers have started successfully but encounter
     /// an error during operation.
-    #[error("Server runtime error: {0}")]
+    #[error("Server runtime error")]
     ServerRuntime(#[source] server::service::ServeError),
 }
 

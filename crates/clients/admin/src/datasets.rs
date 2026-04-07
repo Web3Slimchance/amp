@@ -1522,7 +1522,7 @@ pub enum RegisterError {
     /// This occurs when:
     /// - SQL queries are invalid
     /// - SQL queries reference datasets not declared in dependencies
-    #[error("dependency validation error: {0}")]
+    #[error("dependency validation error")]
     ManifestValidationError(#[source] ApiError),
 
     /// Failed to register manifest in the system (500, MANIFEST_REGISTRATION_ERROR)
@@ -1557,7 +1557,7 @@ pub enum RegisterError {
     /// This occurs when:
     /// - The manifest string provided to the client is not valid JSON
     /// - The manifest cannot be parsed before sending to server
-    #[error("invalid manifest JSON: {0}")]
+    #[error("invalid manifest JSON")]
     InvalidManifestJson(#[source] serde_json::Error),
 
     /// Network or connection error
@@ -2207,7 +2207,7 @@ pub enum ListJobsError {
     ListJobsError(#[source] ApiError),
 
     /// Network or connection error
-    #[error("network error: {0}")]
+    #[error("network error")]
     NetworkError(#[source] reqwest::Error),
 
     /// Failed to deserialize success response
@@ -2215,7 +2215,7 @@ pub enum ListJobsError {
     /// This occurs when:
     /// - Response JSON doesn't match expected JobsResponse schema
     /// - Response is not valid JSON
-    #[error("failed to deserialize response: {0}")]
+    #[error("failed to deserialize response")]
     DeserializationError(#[source] reqwest::Error),
 
     /// API error returned by the server (catch-all for unrecognized error codes)

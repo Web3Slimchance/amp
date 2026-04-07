@@ -530,7 +530,7 @@ pub enum SqlError {
 #[derive(Debug, thiserror::Error)]
 enum StatementToPlanError {
     /// DataFusion failed to convert the SQL statement into a logical plan
-    #[error("failed to convert SQL statement to logical plan: {0}")]
+    #[error("failed to convert SQL statement to logical plan")]
     StatementToPlan(#[source] DataFusionError),
 
     /// Query uses underscore-prefixed column aliases which are reserved
@@ -646,7 +646,7 @@ pub enum ExecuteAndConcatError {
 /// This occurs when a query references a table that is not registered
 /// in the current query context's catalog.
 #[derive(Debug, thiserror::Error)]
-#[error("table not found: {0}")]
+#[error("table not found")]
 pub struct TableNotFoundError(pub TableReference);
 
 /// Failed to compute common block ranges across referenced tables

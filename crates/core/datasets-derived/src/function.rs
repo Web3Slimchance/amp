@@ -97,7 +97,7 @@ pub enum JsUdfTypeError {
     },
 
     /// A field within a Struct has an unsupported type.
-    #[error("field '{name}' has an unsupported type: {source}")]
+    #[error("field '{name}' has an unsupported type")]
     UnsupportedFieldType {
         /// Field name
         name: String,
@@ -111,7 +111,7 @@ pub enum JsUdfTypeError {
     UnsupportedOutputType(ArrowDataType),
 
     /// A list element type is unsupported.
-    #[error("list element has an unsupported type: {0}")]
+    #[error("list element has an unsupported type")]
     UnsupportedListElement(#[source] Box<JsUdfTypeError>),
 }
 

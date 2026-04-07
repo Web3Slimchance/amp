@@ -218,7 +218,7 @@ pub enum SlotConversionError {
     /// (e.g., using `getTransaction`) and encounters an error, such as network issues, RPC node unavailability,
     /// or unexpected RPC response formats. This may indicate issues with the RPC communication or changes in the
     /// JSON-RPC API.
-    #[error("fetching transaction details for tx {tx_id} in slot {slot}: {source}")]
+    #[error("fetching transaction details for tx {tx_id} in slot {slot}")]
     FetchingTransactionDetails {
         slot: u64,
         tx_id: String,
@@ -350,7 +350,7 @@ pub enum OldFaithfulStreamError {
     /// Base58 encoding is commonly used in Solana for addresses and other identifiers.
     /// This error occurs when a string that is expected to be Base58-encoded cannot be
     /// decoded, indicating invalid input data.
-    #[error("failed to decode Base58 string {0}")]
+    #[error("failed to decode Base58 string")]
     DecodeBase58(#[source] bs58::decode::Error),
 
     /// Failed to convert a byte buffer to an array of fixed size.
@@ -424,13 +424,13 @@ pub enum CarReaderError {
     ///
     /// This can occur due to network issues, file corruption, or other problems when
     /// accessing the CAR file.
-    #[error("IO error: {0}")]
+    #[error("IO error")]
     Io(#[source] std::io::Error),
     /// Reqwest error when connecting to or reading from the CAR file.
     ///
     /// This can occur due to network issues, timeouts, or other problems when making
     /// HTTP requests to access the CAR file.
-    #[error("Reqwest error: {0}")]
+    #[error("Reqwest error")]
     Reqwest(#[source] reqwest::Error),
     /// The server responded with an HTTP error status code when trying to access the CAR file.
     ///

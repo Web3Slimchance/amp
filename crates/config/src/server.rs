@@ -44,7 +44,7 @@ impl ServerAddrs {
 
 /// A service address string could not be parsed as a [`SocketAddr`].
 #[derive(Debug, thiserror::Error)]
-#[error("Invalid address for {name}: {source}")]
+#[error("Invalid address for {name}")]
 pub struct InvalidAddrError {
     /// The config field name (e.g. `"flight_addr"`).
     pub name: String,

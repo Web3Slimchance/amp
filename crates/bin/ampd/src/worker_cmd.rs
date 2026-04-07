@@ -100,19 +100,19 @@ pub enum Error {
     /// Failed to create data store
     ///
     /// This occurs when the data store cannot be created from the configured URL.
-    #[error("Failed to create data store: {0}")]
+    #[error("Failed to create data store")]
     DataStoreCreation(#[source] ObjectStoreCreationError),
 
     /// Failed to create providers store
     ///
     /// This occurs when the providers store cannot be created from the configured URL.
-    #[error("Failed to create providers store: {0}")]
+    #[error("Failed to create providers store")]
     ProvidersStoreCreation(#[source] ObjectStoreCreationError),
 
     /// Failed to create manifests store
     ///
     /// This occurs when the manifests store cannot be created from the configured URL.
-    #[error("Failed to create manifests store: {0}")]
+    #[error("Failed to create manifests store")]
     ManifestsStoreCreation(#[source] ObjectStoreCreationError),
 
     /// Worker initialization failed.
@@ -125,7 +125,7 @@ pub enum Error {
     /// Worker runtime error.
     ///
     /// This occurs during the worker's main event loop after successful initialization.
-    #[error("Worker runtime error: {0}")]
+    #[error("Worker runtime error")]
     Runtime(#[source] amp_worker_service::service::RuntimeError),
 }
 

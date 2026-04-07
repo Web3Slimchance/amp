@@ -12,14 +12,14 @@ pub enum BatchingError {
     ///
     /// Occurs when the underlying HTTP/WS/IPC transport returns an error for a
     /// batched JSON-RPC request.
-    #[error("RPC batch request failed: {0}")]
+    #[error("RPC batch request failed")]
     Request(#[source] BatchRequestError),
 
     /// Failed to acquire a permit from the rate limiter.
     ///
     /// Occurs when the concurrency-limiting semaphore has been closed, typically
     /// during shutdown.
-    #[error("rate limiter semaphore closed: {0}")]
+    #[error("rate limiter semaphore closed")]
     RateLimitAcquire(#[source] AcquireError),
 }
 
@@ -97,7 +97,7 @@ pub enum ToRowError {
     ///
     /// Occurs when an RPC numeric value (e.g., `U256`, `u64`) does not fit
     /// into the target column type (e.g., `i128`, `u32`).
-    #[error("overflow in field {0}: {1}")]
+    #[error("overflow in field {0}")]
     Overflow(&'static str, #[source] OverflowSource),
 }
 
@@ -111,15 +111,15 @@ pub enum OverflowSource {
     ///
     /// Occurs when a `TryFrom` conversion between standard integer types fails
     /// (e.g., `u64` to `u32`).
-    #[error("{0}")]
-    Int(#[source] std::num::TryFromIntError),
+    #[error(transparent)]
+    Int(std::num::TryFromIntError),
 
     /// Overflow from big integer (U256) conversion.
     ///
     /// Occurs when a `U256` value does not fit into the target `i128` column
     /// type.
-    #[error("{0}")]
-    BigInt(#[source] FromUintError<i128>),
+    #[error(transparent)]
+    BigInt(FromUintError<i128>),
 }
 
 /// Errors that occur when fetching block receipts during unbatched block streaming.
@@ -159,7 +159,7 @@ pub enum ClientError {
     /// Transport-level error (WebSocket/IPC connection failure).
     ///
     /// Occurs when the underlying transport cannot be established.
-    #[error("provider error: {0}")]
+    #[error("provider error")]
     Transport(#[source] alloy::transports::TransportError),
 
     /// HTTP client build failure.

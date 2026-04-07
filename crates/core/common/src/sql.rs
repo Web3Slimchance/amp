@@ -337,14 +337,14 @@ pub enum TableReferenceConversionError<E = std::convert::Infallible> {
     ///
     /// This occurs when a table name extracted from a DataFusion table reference
     /// does not conform to identifier rules.
-    #[error("Invalid table name: {0}")]
+    #[error("Invalid table name")]
     InvalidTableName(#[source] datasets_common::table_name::TableNameError),
 
     /// Schema name has invalid format
     ///
     /// This occurs when a schema name cannot be parsed into the target type `T`.
     /// The underlying error from `T::FromStr` provides the specific validation failure.
-    #[error("Invalid schema format: {0}")]
+    #[error("Invalid schema format")]
     InvalidSchemaFormat(#[source] E),
 
     /// Table reference is catalog-qualified (not supported)
@@ -380,7 +380,7 @@ pub enum ResolveTableReferencesError<E = std::convert::Infallible> {
     /// -- May fail if parser encounters unexpected identifier format
     /// SELECT * FROM `invalid~identifier`
     /// ```
-    #[error("Invalid identifier in table reference: {0}")]
+    #[error("Invalid identifier in table reference")]
     InvalidIdentifier(#[source] DataFusionError),
 
     /// Table reference has unsupported format
@@ -400,7 +400,7 @@ pub enum ResolveTableReferencesError<E = std::convert::Infallible> {
     /// ```sql
     /// SELECT * FROM a.b.c.d  -- 4 parts - unsupported
     /// ```
-    #[error("Unsupported table reference format (expected 1-3 parts): {0}")]
+    #[error("Unsupported table reference format (expected 1-3 parts)")]
     UnsupportedTableReferenceFormat(#[source] DataFusionError),
 
     /// Table name has invalid format
@@ -433,7 +433,7 @@ pub enum ResolveTableReferencesError<E = std::convert::Infallible> {
     /// When using the default `String` type, this error will never occur as the conversion
     /// is infallible. When using a custom validated schema type, this error occurs if the
     /// schema name fails validation according to the type's `FromStr` implementation.
-    #[error("Invalid schema format in reference '{table_ref}': {source}")]
+    #[error("Invalid schema format in reference '{table_ref}'")]
     InvalidSchemaFormat {
         table_ref: String,
         #[source]
@@ -742,7 +742,7 @@ pub enum ResolveFunctionReferencesError<E = std::convert::Infallible> {
     /// - Function name exceeds 255 bytes
     ///
     /// Valid function name format: `[a-zA-Z_][a-zA-Z0-9_$]*` (max 255 bytes)
-    #[error("Invalid function name '{function}': {source}")]
+    #[error("Invalid function name '{function}'")]
     InvalidFunctionName {
         function: String,
         #[source]
@@ -758,7 +758,7 @@ pub enum ResolveFunctionReferencesError<E = std::convert::Infallible> {
     /// When using the default `String` type, this error will never occur as the conversion
     /// is infallible. When using a custom validated schema type, this error occurs if the
     /// schema name fails validation according to the type's `FromStr` implementation.
-    #[error("Invalid schema format in function reference '{function_ref}': {source}")]
+    #[error("Invalid schema format in function reference '{function_ref}'")]
     InvalidSchemaFormat {
         function_ref: String,
         #[source]
@@ -770,7 +770,7 @@ pub enum ResolveFunctionReferencesError<E = std::convert::Infallible> {
     /// This occurs when a catalog name in a catalog-qualified function reference cannot be
     /// parsed into the target type. Similar to `InvalidSchemaFormat` but for the catalog part
     /// of a 3-part reference like `catalog.schema.function`.
-    #[error("Invalid catalog format in function reference '{function_ref}': {source}")]
+    #[error("Invalid catalog format in function reference '{function_ref}'")]
     InvalidCatalogFormat {
         function_ref: String,
         #[source]

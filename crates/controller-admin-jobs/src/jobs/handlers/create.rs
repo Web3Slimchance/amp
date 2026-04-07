@@ -195,7 +195,7 @@ pub struct CreateJobResponse {
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// Invalid request body
-    #[error("invalid request body: {0}")]
+    #[error("invalid request body")]
     InvalidBody(#[source] JsonRejection),
 
     /// Scheduler error

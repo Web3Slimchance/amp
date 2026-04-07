@@ -38,7 +38,7 @@ impl ControllerAddrs {
 
 /// The admin API address string could not be parsed as a [`SocketAddr`].
 #[derive(Debug, thiserror::Error)]
-#[error("Invalid admin_api_addr: {source}")]
+#[error("Invalid admin_api_addr")]
 pub struct InvalidAddrError {
     /// The underlying parse error.
     #[source]

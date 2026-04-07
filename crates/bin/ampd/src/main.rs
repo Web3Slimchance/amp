@@ -297,15 +297,15 @@ async fn main_inner() -> Result<(), Error> {
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// Failed to determine current working directory.
-    #[error("Failed to determine current directory: {0}")]
+    #[error("Failed to determine current directory")]
     CurrentDir(#[source] std::io::Error),
 
     /// Failed to create amp directory root.
-    #[error("Failed to create amp directory root: {0}")]
+    #[error("Failed to create amp directory root")]
     AmpDirRoot(#[source] amp_config::EnsureAmpDirRootError),
 
     /// Failed to create amp base directories.
-    #[error("Failed to create amp base directories: {0}")]
+    #[error("Failed to create amp base directories")]
     AmpBaseDirs(#[source] amp_config::EnsureAmpBaseDirectoriesError),
 
     /// Config path exists but is not a file.
@@ -317,7 +317,7 @@ pub enum Error {
     MissingConfigPath,
 
     /// Failed to load configuration.
-    #[error("Failed to load config: {0}")]
+    #[error("Failed to load config")]
     LoadConfig(#[source] config::LoadError),
 
     /// Missing required metadata database configuration.
@@ -327,31 +327,31 @@ pub enum Error {
     MissingMetadataDbConfig,
 
     /// Failed to initialize monitoring/telemetry.
-    #[error("Failed to initialize monitoring: {0}")]
+    #[error("Failed to initialize monitoring")]
     Monitoring(#[source] monitoring::telemetry::ExporterBuildError),
 
     /// Failed to parse worker node ID.
-    #[error("Invalid worker node ID: {0}")]
+    #[error("Invalid worker node ID")]
     ParseNodeId(#[source] NodeIdParseError),
 
     /// Solo command failed.
-    #[error("Solo command failed: {0}")]
+    #[error("Solo command failed")]
     Solo(#[source] solo_cmd::Error),
 
     /// Server command failed.
-    #[error("Server command failed: {0}")]
+    #[error("Server command failed")]
     Server(#[source] server_cmd::Error),
 
     /// Worker command failed.
-    #[error("Worker command failed: {0}")]
+    #[error("Worker command failed")]
     Worker(#[source] worker_cmd::Error),
 
     /// Controller command failed.
-    #[error("Controller command failed: {0}")]
+    #[error("Controller command failed")]
     Controller(#[source] controller_cmd::Error),
 
     /// Migrate command failed.
-    #[error("Migrate command failed: {0}")]
+    #[error("Migrate command failed")]
     Migrate(#[source] migrate_cmd::Error),
 }
 

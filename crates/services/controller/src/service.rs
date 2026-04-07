@@ -119,7 +119,7 @@ pub enum Error {
     /// - The port requires elevated privileges (e.g., port < 1024)
     /// - The address is not available on this system
     /// - Network interface is not configured
-    #[error("failed to bind to {addr}: {source}")]
+    #[error("failed to bind to {addr}")]
     TcpBind {
         addr: SocketAddr,
         #[source]
@@ -131,7 +131,7 @@ pub enum Error {
     /// This occurs when:
     /// - Socket state is invalid after binding
     /// - System call to retrieve address fails
-    #[error("failed to get local address: {0}")]
+    #[error("failed to get local address")]
     LocalAddr(#[source] std::io::Error),
 
     /// Failed to build OpenTelemetry metrics layer
@@ -140,7 +140,7 @@ pub enum Error {
     /// - Metrics configuration is invalid
     /// - Meter provider initialization fails
     /// - OpenTelemetry setup encounters an error
-    #[error("failed to build metrics layer: {0}")]
+    #[error("failed to build metrics layer")]
     MetricsLayer(#[source] opentelemetry_instrumentation_tower::Error),
 }
 

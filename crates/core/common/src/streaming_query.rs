@@ -995,7 +995,7 @@ pub enum StreamingQueryExecutionError {
     ///
     /// This occurs when the streaming query task panics or is cancelled unexpectedly.
     /// The JoinError contains information about why the task failed to complete.
-    #[error("streaming task failed to join: {0}")]
+    #[error("streaming task failed to join")]
     StreamingTaskFailedToJoin(#[source] JoinError),
 
     /// Streaming task join timed out
@@ -1009,43 +1009,43 @@ pub enum StreamingQueryExecutionError {
     /// Failed to create an exec context
     ///
     /// This occurs when the exec context cannot be created.
-    #[error("failed to create exec context: {0}")]
+    #[error("failed to create exec context")]
     CreateExecContext(#[source] crate::context::exec::CreateContextError),
 
     /// Failed to get the next microbatch range
     ///
     /// This occurs when the next microbatch range cannot be found.
-    #[error("failed to get next microbatch range: {0}")]
+    #[error("failed to get next microbatch range")]
     NextMicrobatchRange(#[source] NextMicrobatchRangeError),
 
     /// Failed to attach the plan to the query context
     ///
     /// This occurs when the plan cannot be attached to the query context.
-    #[error("failed to attach the plan to the query context: {0}")]
+    #[error("failed to attach the plan to the query context")]
     AttachPlan(#[source] crate::detached_logical_plan::AttachPlanError),
 
     /// Failed to incrementalize the plan
     ///
     /// This occurs when the plan cannot be incrementalized.
-    #[error("failed to incrementalize the plan: {0}")]
+    #[error("failed to incrementalize the plan")]
     IncrementalizePlan(#[source] DataFusionError),
 
     /// Failed to unproject the special block num column
     ///
     /// This occurs when the special block num column cannot be unprojected.
-    #[error("failed to unproject the special block num column: {0}")]
+    #[error("failed to unproject the special block num column")]
     UnprojectWatermarkColumn(#[source] DataFusionError),
 
     /// Failed to execute the plan
     ///
     /// This occurs when the plan cannot be executed.
-    #[error("failed to execute the plan: {0}")]
+    #[error("failed to execute the plan")]
     ExecutePlan(#[source] crate::context::exec::ExecutePlanError),
 
     /// Failed to stream item
     ///
     /// This occurs when the item cannot be streamed.
-    #[error("failed to stream item: {0}")]
+    #[error("failed to stream item")]
     StreamItem(#[source] DataFusionError),
 }
 
@@ -1077,25 +1077,25 @@ pub enum NextMicrobatchRangeError {
     /// Failed to create an exec context
     ///
     /// This occurs when the exec context cannot be created.
-    #[error("failed to create exec context: {0}")]
+    #[error("failed to create exec context")]
     CreateExecContext(#[source] crate::context::exec::CreateContextError),
 
     /// Failed to get the latest source watermark
     ///
     /// This occurs when the latest source watermark cannot be found.
-    #[error("failed to get latest source watermark: {0}")]
+    #[error("failed to get latest source watermark")]
     LatestSrcWatermark(#[source] LatestSrcWatermarkError),
 
     /// Failed to get the next microbatch start
     ///
     /// This occurs when the next microbatch start cannot be found.
-    #[error("failed to get next microbatch start: {0}")]
+    #[error("failed to get next microbatch start")]
     NextMicrobatchStart(#[source] NextMicrobatchStartError),
 
     /// Failed to get the next microbatch end
     ///
     /// This occurs when the next microbatch end cannot be found.
-    #[error("failed to get next microbatch end: {0}")]
+    #[error("failed to get next microbatch end")]
     NextMicrobatchEnd(#[source] NextMicrobatchEndError),
 }
 
@@ -1107,19 +1107,19 @@ pub enum NextMicrobatchStartError {
     /// Failed to fetch the blocks table
     ///
     /// This occurs when the blocks table cannot be fetched.
-    #[error("failed to fetch the blocks table: {0}")]
+    #[error("failed to fetch the blocks table")]
     BlocksTableFetch(#[source] BlocksTableFetchError),
 
     /// Failed to check if the blocks table contains the watermark
     ///
     /// This occurs when the blocks table cannot be checked if it contains the watermark.
-    #[error("failed to check if the blocks table contains the watermark: {0}")]
+    #[error("failed to check if the blocks table contains the watermark")]
     BlocksTableContains(#[source] BlocksTableContainsError),
 
     /// Failed to get the reorg base
     ///
     /// This occurs when the reorg base cannot be found.
-    #[error("failed to get the reorg base: {0}")]
+    #[error("failed to get the reorg base")]
     ReorgBase(#[source] ReorgBaseError),
 }
 
@@ -1127,7 +1127,7 @@ pub enum NextMicrobatchStartError {
 ///
 /// This occurs when the blocks table cannot be fetched.
 #[derive(Debug, thiserror::Error)]
-#[error("failed to fetch the blocks table: {0}")]
+#[error("failed to fetch the blocks table")]
 pub struct NextMicrobatchEndError(#[source] BlocksTableFetchError);
 
 /// Failed to get the latest source watermark
@@ -1135,7 +1135,7 @@ pub struct NextMicrobatchEndError(#[source] BlocksTableFetchError);
 /// This error is returned by `latest_src_watermark()` when checking if blocks
 /// are present in the blocks table fails.
 #[derive(Debug, thiserror::Error)]
-#[error("failed to get latest source watermark: {0}")]
+#[error("failed to get latest source watermark")]
 pub struct LatestSrcWatermarkError(#[source] BlocksTableContainsError);
 
 /// Errors that occur when finding the reorg base block
@@ -1146,25 +1146,25 @@ pub enum ReorgBaseError {
     /// Failed to create an exec context
     ///
     /// This occurs when the exec context cannot be created.
-    #[error("failed to create exec context: {0}")]
+    #[error("failed to create exec context")]
     CreateExecContext(#[source] crate::context::exec::CreateContextError),
 
     /// Failed to fetch the blocks table
     ///
     /// This occurs when the blocks table cannot be fetched.
-    #[error("failed to fetch the blocks table: {0}")]
+    #[error("failed to fetch the blocks table")]
     BlocksTableFetch(#[source] BlocksTableFetchError),
 
     /// Failed to check if the blocks table contains the watermark
     ///
     /// This occurs when the blocks table cannot be checked if it contains the watermark.
-    #[error("failed to check if the blocks table contains the watermark: {0}")]
+    #[error("failed to check if the blocks table contains the watermark")]
     BlocksTableContains(#[source] BlocksTableContainsError),
 
     /// Failed to get the canonical chain
     ///
     /// This occurs when the canonical chain cannot be found.
-    #[error("failed to get the canonical chain: {0}")]
+    #[error("failed to get the canonical chain")]
     CanonicalChain(#[source] CanonicalChainError),
 }
 
@@ -1172,7 +1172,7 @@ pub enum ReorgBaseError {
 ///
 /// This error type is used by `StreamingQuery::blocks_table_contains()`.
 #[derive(Debug, thiserror::Error)]
-#[error("failed to fetch the blocks table: {0}")]
+#[error("failed to fetch the blocks table")]
 pub struct BlocksTableContainsError(#[source] BlocksTableFetchError);
 
 /// Errors that occur when fetching block data from the blocks table
@@ -1183,25 +1183,25 @@ pub enum BlocksTableFetchError {
     /// Failed to parse the SQL
     ///
     /// This occurs when the SQL cannot be parsed.
-    #[error("failed to parse the SQL: {0}")]
+    #[error("failed to parse the SQL")]
     ParseSql(#[source] crate::sql::ParseSqlError),
 
     /// Failed to plan the SQL
     ///
     /// This occurs when the SQL cannot be planned.
-    #[error("failed to plan the SQL: {0}")]
+    #[error("failed to plan the SQL")]
     PlanSql(#[source] crate::context::exec::SqlError),
 
     /// Failed to execute the SQL
     ///
     /// This occurs when the SQL cannot be executed.
-    #[error("failed to execute the SQL: {0}")]
+    #[error("failed to execute the SQL")]
     ExecuteSql(#[source] crate::context::exec::ExecuteAndConcatError),
 
     /// Failed to extract a hash value from query results
     ///
     /// This occurs when the hash value cannot be found.
-    #[error("failed to extract hash value: {0}")]
+    #[error("failed to extract hash value")]
     ExtractHash(#[source] GetHashValueError),
 }
 
@@ -1221,7 +1221,7 @@ pub enum GetHashValueError {
     /// Failed to downcast the column
     ///
     /// This occurs when the column cannot be downcast.
-    #[error("failed to downcast the column: {0}")]
+    #[error("failed to downcast the column")]
     Downcast(#[source] DataFusionError),
 
     /// Blocks table missing block hash value
@@ -1241,7 +1241,7 @@ pub enum GetHashValueError {
     ///
     /// This occurs when a hash value in the blocks table is expected to be Base58-encoded
     /// (e.g., for Solana) but fails to decode properly.
-    #[error("invalid Base58 hash value: {0}")]
+    #[error("invalid Base58 hash value")]
     InvalidBase58HashValue(#[source] bs58::decode::Error),
 }
 

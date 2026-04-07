@@ -149,7 +149,7 @@ pub enum Error {
     /// The path parameters are invalid
     ///
     /// This occurs when the job ID or event ID cannot be parsed from the URL path.
-    #[error("invalid path parameters: {source}")]
+    #[error("invalid path parameters")]
     InvalidPath {
         #[source]
         source: PathRejection,

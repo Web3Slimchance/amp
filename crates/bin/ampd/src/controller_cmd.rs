@@ -96,32 +96,32 @@ pub enum Error {
     /// Failed to create data store
     ///
     /// This occurs when the data store cannot be created from the configured URL.
-    #[error("Failed to create data store: {0}")]
+    #[error("Failed to create data store")]
     DataStoreCreation(#[source] ObjectStoreCreationError),
 
     /// Failed to create providers store
     ///
     /// This occurs when the providers store cannot be created from the configured URL.
-    #[error("Failed to create providers store: {0}")]
+    #[error("Failed to create providers store")]
     ProvidersStoreCreation(#[source] ObjectStoreCreationError),
 
     /// Failed to create manifests store
     ///
     /// This occurs when the manifests store cannot be created from the configured URL.
-    #[error("Failed to create manifests store: {0}")]
+    #[error("Failed to create manifests store")]
     ManifestsStoreCreation(#[source] ObjectStoreCreationError),
 
     /// Failed to initialize the controller service (Admin API)
     ///
     /// This occurs during the initialization phase when attempting to bind and
     /// start the Admin API server.
-    #[error("Failed to initialize controller service: {0}")]
+    #[error("Failed to initialize controller service")]
     ServiceInit(#[source] controller::service::Error),
 
     /// Controller service (Admin API) encountered a runtime error
     ///
     /// This occurs after the Admin API server has started successfully but
     /// encounters an error during operation.
-    #[error("Controller runtime error: {0}")]
+    #[error("Controller runtime error")]
     Runtime(#[source] controller::service::ServerError),
 }

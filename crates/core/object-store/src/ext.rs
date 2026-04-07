@@ -75,7 +75,7 @@ pub enum ObjectStoreExtError {
     /// This error occurs when calling `.get()` on the object store.
     /// Common causes: network timeouts, permission denied, file not found,
     /// service unavailable, or authentication token expiry.
-    #[error("failed to get object: {0}")]
+    #[error("failed to get object")]
     ObjectStoreGet(#[source] object_store::Error),
 
     /// Error reading object bytes after successful retrieval.
@@ -83,7 +83,7 @@ pub enum ObjectStoreExtError {
     /// This error occurs when calling `.bytes()` on a retrieved object.
     /// Common causes: network interruption during download, corrupted data,
     /// or timeout while streaming the object content.
-    #[error("failed to read object bytes: {0}")]
+    #[error("failed to read object bytes")]
     ObjectStoreBytes(#[source] object_store::Error),
 }
 

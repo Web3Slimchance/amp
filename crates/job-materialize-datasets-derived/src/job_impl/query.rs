@@ -333,45 +333,45 @@ enum MaterializeSqlQueryErrorKind {
     /// Failed to spawn the streaming query execution
     ///
     /// This occurs when initializing the streaming query executor fails.
-    #[error("failed to spawn streaming query: {0}")]
+    #[error("failed to spawn streaming query")]
     StreamingQuerySpawn(#[source] common::streaming_query::SpawnError),
 
     /// Failed to create the parquet file writer
     ///
     /// This occurs when initializing the parquet writer for output files fails.
-    #[error("failed to create parquet file writer: {0}")]
+    #[error("failed to create parquet file writer")]
     CreateParquetFileWriter(#[source] ParquetError),
 
     /// Failed to write a record batch to the parquet file
     ///
     /// This occurs when writing query result batches to the parquet file fails.
-    #[error("failed to write batch: {0}")]
+    #[error("failed to write batch")]
     WriteBatch(#[source] ParquetError),
 
     /// Failed to close and finalize the parquet file
     ///
     /// This occurs when closing the parquet writer and finalizing the file fails.
-    #[error("failed to close file: {0}")]
+    #[error("failed to close file")]
     CloseFile(#[source] ParquetFileWriterCloseError),
 
     /// Failed to commit file metadata to the database
     ///
     /// This occurs when registering the written parquet file's metadata
     /// in the metadata database fails.
-    #[error("failed to commit metadata: {0}")]
+    #[error("failed to commit metadata")]
     CommitMetadata(#[source] CommitMetadataError),
 
     /// Failed to run the compactor after writing a file
     ///
     /// This occurs when the compactor task fails after a successful file write.
-    #[error("failed to run compactor: {0}")]
+    #[error("failed to run compactor")]
     Compactor(#[source] AmpCompactorTaskError),
 
     /// Failed to receive the next message from the streaming query
     ///
     /// This occurs when the streaming query execution encounters an error
     /// while producing result batches.
-    #[error("failed to get next message: {0}")]
+    #[error("failed to get next message")]
     StreamingQuery(#[source] MessageStreamError),
 }
 
@@ -473,7 +473,7 @@ mod tests {
 
         //* Then
         assert_eq!(
-            msg, "failed to create parquet file writer: Parquet error: test",
+            msg, "failed to create parquet file writer",
             "should delegate to kind Display"
         );
     }
@@ -491,7 +491,7 @@ mod tests {
 
         //* Then
         assert_eq!(
-            msg, "failed to create parquet file writer: Parquet error: test",
+            msg, "failed to create parquet file writer",
             "block range should not affect Display output"
         );
     }

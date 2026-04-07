@@ -90,7 +90,7 @@ impl LocationNotifListener {
 #[derive(Debug, thiserror::Error)]
 pub enum LocationNotifRecvError {
     /// The notification payload parsing failed
-    #[error("Invalid LocationId '{payload}': {source}")]
+    #[error("Invalid LocationId '{payload}'")]
     PayloadParsingFailed {
         payload: String,
         source: Box<dyn std::error::Error + Send + Sync>,

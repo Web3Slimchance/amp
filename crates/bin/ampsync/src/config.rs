@@ -164,7 +164,7 @@ pub struct TableMapping {
 /// Errors from building table mappings.
 #[derive(Debug, thiserror::Error)]
 pub enum TableMappingError {
-    #[error("Source table name '{source}' is not a valid identifier: {source_err}")]
+    #[error("Source table name '{source}' is not a valid identifier")]
     InvalidSourceTable {
         source: String,
         #[source]
@@ -172,7 +172,7 @@ pub enum TableMappingError {
     },
 
     #[error(
-        "Destination table name '{destination}' (derived from source '{source}') is not a valid identifier: {source_err}"
+        "Destination table name '{destination}' (derived from source '{source}') is not a valid identifier"
     )]
     InvalidDestinationTable {
         source: String,
@@ -181,7 +181,7 @@ pub enum TableMappingError {
         source_err: sql::ValidateIdentifierError,
     },
 
-    #[error("Table suffix '{suffix}' is not a valid identifier fragment: {source}")]
+    #[error("Table suffix '{suffix}' is not a valid identifier fragment")]
     InvalidSuffix {
         suffix: String,
         #[source]

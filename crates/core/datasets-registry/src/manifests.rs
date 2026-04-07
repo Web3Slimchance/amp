@@ -121,22 +121,22 @@ where
 
 /// Error when storing manifest in object store
 #[derive(Debug, thiserror::Error)]
-#[error("Failed to put manifest in object store: {0}")]
+#[error("Failed to put manifest in object store")]
 pub struct StoreError(#[source] pub object_store::Error);
 
 /// Errors specific to manifest retrieval operations
 #[derive(Debug, thiserror::Error)]
 pub enum GetError {
     /// Failed to get manifest object from object store
-    #[error("Failed to get manifest object from object store: {0}")]
+    #[error("Failed to get manifest object from object store")]
     ObjectStoreGet(#[source] object_store::Error),
 
     /// Failed to read manifest bytes from object store
-    #[error("Failed to read manifest bytes from object store: {0}")]
+    #[error("Failed to read manifest bytes from object store")]
     ObjectStoreReadBytes(#[source] object_store::Error),
 
     /// Failed to decode manifest content as UTF-8
-    #[error("Failed to decode manifest content as UTF-8: {0}")]
+    #[error("Failed to decode manifest content as UTF-8")]
     Utf8Error(#[source] std::string::FromUtf8Error),
 }
 
@@ -248,5 +248,5 @@ impl AsRef<[u8]> for ManifestContent {
 
 /// JSON parsing error when deserializing manifest content
 #[derive(Debug, thiserror::Error)]
-#[error("JSON parsing error: {0}")]
+#[error("JSON parsing error")]
 pub struct ManifestParseError(#[source] pub serde_json::Error);

@@ -142,7 +142,7 @@ pub enum Error {
     ///
     /// This occurs when the path parameter cannot be parsed as a valid `JobId`
     /// (e.g., negative numbers or non-integer values).
-    #[error("invalid job ID: {source}")]
+    #[error("invalid job ID")]
     InvalidId {
         #[source]
         source: PathRejection,
