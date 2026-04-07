@@ -85,6 +85,11 @@ pub(crate) async fn read_and_decode_slot<R: tokio::io::AsyncRead + Unpin>(
         }
     };
 
+    if block.entries.is_empty() {
+        tracing::warn!(slot = block.slot, "block has no entries, skipping");
+        return Ok(None);
+    }
+
     let mut transactions = Vec::new();
     let mut transaction_metas = Vec::new();
 
