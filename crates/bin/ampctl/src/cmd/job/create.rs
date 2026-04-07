@@ -5,7 +5,7 @@
 use amp_client_admin::jobs::{CreateError, CreateJobRequest};
 use monitoring::logging;
 
-use crate::args::GlobalArgs;
+use crate::args::{GlobalArgs, retry_strategy::RetryStrategyArgs};
 
 /// Create a new job via the admin API.
 #[tracing::instrument(skip_all, fields(admin_url = %global.admin_url))]
@@ -13,11 +13,13 @@ pub async fn run(Args { global, kind }: Args) -> Result<(), Error> {
     let client = global.build_client().map_err(Error::ClientBuildError)?;
 
     let request = match kind {
-        JobKind::Gc(gc_args) => CreateJobRequest::Gc {
-            location_id: gc_args.location_id,
-            // TODO: Accept retry_strategy from args
-            retry_strategy: None,
-        },
+        JobKind::Gc(gc_args) => {
+            let retry_strategy = gc_args.retry.resolve().map_err(Error::RetryStrategy)?;
+            CreateJobRequest::Gc {
+                location_id: gc_args.location_id,
+                retry_strategy,
+            }
+        }
     };
 
     tracing::debug!("Creating job via admin API");
@@ -43,6 +45,13 @@ pub enum Error {
     /// Error creating job via admin API
     #[error("failed to create job")]
     CreateError(#[source] CreateError),
+
+    /// Retry strategy CLI arguments failed validation
+    ///
+    /// This occurs when the combination of `--retry-*` flags is invalid,
+    /// such as missing required flags or conflicting options.
+    #[error("invalid retry strategy arguments")]
+    RetryStrategy(#[source] crate::args::retry_strategy::ResolveError),
 
     /// Failed to serialize result to JSON
     #[error("failed to serialize result to JSON")]
@@ -72,6 +81,9 @@ pub enum JobKind {
 pub struct GcArgs {
     /// The location ID of the physical table revision to garbage collect
     pub location_id: i64,
+
+    #[command(flatten)]
+    pub retry: RetryStrategyArgs,
 }
 
 /// Result of a job creation operation.

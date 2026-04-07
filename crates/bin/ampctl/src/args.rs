@@ -1,5 +1,7 @@
 //! Shared command-line arguments for ampctl commands.
 
+pub mod retry_strategy;
+
 use clap::builder::TypedValueParser;
 use url::Url;
 

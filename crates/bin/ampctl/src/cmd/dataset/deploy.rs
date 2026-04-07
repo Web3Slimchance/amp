@@ -19,7 +19,7 @@ use amp_client_admin::{datasets::NodeSelector, end_block::EndBlock};
 use amp_job_core::job_id::JobId;
 use datasets_common::reference::Reference;
 
-use crate::args::GlobalArgs;
+use crate::args::{GlobalArgs, retry_strategy::RetryStrategyArgs};
 
 /// Command-line arguments for the `dep-dataset` command.
 #[derive(Debug, clap::Args)]
@@ -74,6 +74,9 @@ pub struct Args {
     /// Defaults to false if not specified.
     #[arg(long)]
     pub verify: bool,
+
+    #[command(flatten)]
+    pub retry: RetryStrategyArgs,
 }
 
 /// Deploy a dataset to start syncing blockchain data.
@@ -92,15 +95,19 @@ pub async fn run(
         parallelism,
         worker_id,
         verify,
+        retry,
     }: Args,
 ) -> Result<(), Error> {
+    let retry_strategy = retry.resolve().map_err(Error::RetryStrategy)?;
+
     tracing::debug!(
         %dataset_ref,
         ?end_block,
         %parallelism,
         ?worker_id,
         %verify,
-        "Deploying dataset"
+        ?retry_strategy,
+        "dataset deployment requested"
     );
 
     let job_id = deploy_dataset(
@@ -110,6 +117,7 @@ pub async fn run(
         parallelism,
         worker_id,
         verify,
+        retry_strategy,
     )
     .await?;
     let result = DeployResult { job_id };
@@ -122,7 +130,7 @@ pub async fn run(
 ///
 /// POSTs to the versioned `/datasets/{namespace}/{name}/versions/{version}/deploy` endpoint
 /// and returns the job ID.
-#[tracing::instrument(skip_all, fields(%dataset_ref, ?end_block, %parallelism, ?worker_id, %verify))]
+#[tracing::instrument(skip_all, fields(%dataset_ref, ?end_block, %parallelism, ?worker_id, %verify, ?retry_strategy))]
 async fn deploy_dataset(
     global: &GlobalArgs,
     dataset_ref: &Reference,
@@ -130,12 +138,19 @@ async fn deploy_dataset(
     parallelism: u16,
     worker_id: Option<NodeSelector>,
     verify: bool,
+    retry_strategy: Option<amp_job_core::retry_strategy::RetryStrategy>,
 ) -> Result<JobId, Error> {
     let client = global.build_client().map_err(Error::ClientBuild)?;
     let job_id = client
         .datasets()
-        // TODO: Accept retry strategy
-        .deploy(dataset_ref, end_block, parallelism, worker_id, verify, None)
+        .deploy(
+            dataset_ref,
+            end_block,
+            parallelism,
+            worker_id,
+            verify,
+            retry_strategy,
+        )
         .await
         .map_err(Error::Deploy)?;
 
@@ -169,6 +184,13 @@ pub enum Error {
     /// Deployment error from the client
     #[error("deployment failed")]
     Deploy(#[source] amp_client_admin::datasets::DeployError),
+
+    /// Retry strategy CLI arguments failed validation
+    ///
+    /// This occurs when the combination of `--retry-*` flags is invalid,
+    /// such as missing required flags or conflicting options.
+    #[error("invalid retry strategy arguments")]
+    RetryStrategy(#[source] crate::args::retry_strategy::ResolveError),
 
     /// Failed to serialize result to JSON
     #[error("failed to serialize result to JSON")]
