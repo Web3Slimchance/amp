@@ -1,8 +1,12 @@
 //! Integration tests for PostgresStateStore
 
-use std::collections::VecDeque;
+use std::{
+    collections::VecDeque,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 use alloy::primitives::BlockHash;
+use metadata_db_postgres::PostgresBuilder;
 
 use crate::{
     BlockRange,
@@ -10,14 +14,50 @@ use crate::{
     transactional::Commit,
 };
 
+/// A temporary PostgreSQL instance for tests.
+struct TestDb {
+    handle: metadata_db_postgres::service::Handle,
+    _task: tokio::task::JoinHandle<Result<(), metadata_db_postgres::PostgresError>>,
+}
+
+impl TestDb {
+    async fn new() -> Self {
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let data_dir =
+            std::env::temp_dir().join(format!("amp-test-flight-{}-{}", std::process::id(), id,));
+        let (handle, service) = PostgresBuilder::new(data_dir)
+            .locale("C")
+            .encoding("UTF8")
+            .start()
+            .await
+            .expect("Failed to start PostgreSQL for test");
+        let task = tokio::spawn(service);
+        Self {
+            handle,
+            _task: task,
+        }
+    }
+
+    fn connection_url(&self) -> &str {
+        self.handle.url()
+    }
+}
+
+impl Drop for TestDb {
+    fn drop(&mut self) {
+        self._task.abort();
+    }
+}
+
 /// Helper function to create a test store with a temporary database.
-async fn create_test_store(temp_db: &pgtemp::PgTempDB) -> PostgresStateStore {
+async fn create_test_store(test_db: &TestDb) -> PostgresStateStore {
     let stream_id = format!("test-stream-{}", uuid::Uuid::new_v4());
 
     // Create pool and run migrations
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(5)
-        .connect(&temp_db.connection_uri())
+        .connect(test_db.connection_url())
         .await
         .expect("Failed to connect to test database");
 
@@ -44,8 +84,8 @@ fn create_test_ranges(start: u64, end: u64, network: &str) -> Vec<BlockRange> {
 #[tokio::test]
 async fn load_with_default_state_returns_empty_snapshot() {
     //* Given
-    let temp_db = pgtemp::PgTempDB::new();
-    let store = create_test_store(&temp_db).await;
+    let test_db = TestDb::new().await;
+    let store = create_test_store(&test_db).await;
 
     //* When
     let snapshot = store
@@ -68,8 +108,8 @@ async fn load_with_default_state_returns_empty_snapshot() {
 #[tokio::test]
 async fn advance_with_new_transaction_id_updates_next() {
     //* Given
-    let temp_db = pgtemp::PgTempDB::new();
-    let mut store = create_test_store(&temp_db).await;
+    let test_db = TestDb::new().await;
+    let mut store = create_test_store(&test_db).await;
 
     //* When
     store
@@ -88,8 +128,8 @@ async fn advance_with_new_transaction_id_updates_next() {
 #[tokio::test]
 async fn advance_multiple_times_updates_to_latest() {
     //* Given
-    let temp_db = pgtemp::PgTempDB::new();
-    let mut store = create_test_store(&temp_db).await;
+    let test_db = TestDb::new().await;
+    let mut store = create_test_store(&test_db).await;
 
     //* When
     store
@@ -116,8 +156,8 @@ async fn advance_multiple_times_updates_to_latest() {
 #[tokio::test]
 async fn commit_with_insert_adds_watermark_to_buffer() {
     //* Given
-    let temp_db = pgtemp::PgTempDB::new();
-    let mut store = create_test_store(&temp_db).await;
+    let test_db = TestDb::new().await;
+    let mut store = create_test_store(&test_db).await;
     let ranges = create_test_ranges(0, 10, "eth");
 
     let commit = Commit {
@@ -144,8 +184,8 @@ async fn commit_with_insert_adds_watermark_to_buffer() {
 #[tokio::test]
 async fn commit_with_multiple_inserts_adds_all_watermarks() {
     //* Given
-    let temp_db = pgtemp::PgTempDB::new();
-    let mut store = create_test_store(&temp_db).await;
+    let test_db = TestDb::new().await;
+    let mut store = create_test_store(&test_db).await;
     let ranges1 = create_test_ranges(0, 10, "eth");
     let ranges2 = create_test_ranges(11, 20, "eth");
     let ranges3 = create_test_ranges(21, 30, "eth");
@@ -173,8 +213,8 @@ async fn commit_with_multiple_inserts_adds_all_watermarks() {
 #[tokio::test]
 async fn commit_with_prune_removes_watermarks() {
     //* Given
-    let temp_db = pgtemp::PgTempDB::new();
-    let mut store = create_test_store(&temp_db).await;
+    let test_db = TestDb::new().await;
+    let mut store = create_test_store(&test_db).await;
     let ranges = create_test_ranges(0, 10, "eth");
 
     // First insert three watermarks
@@ -219,8 +259,8 @@ async fn commit_with_prune_removes_watermarks() {
 #[tokio::test]
 async fn truncate_removes_watermarks() {
     //* Given
-    let temp_db = pgtemp::PgTempDB::new();
-    let mut store = create_test_store(&temp_db).await;
+    let test_db = TestDb::new().await;
+    let mut store = create_test_store(&test_db).await;
     let ranges = create_test_ranges(0, 10, "eth");
 
     // First insert three watermarks
@@ -257,8 +297,8 @@ async fn truncate_removes_watermarks() {
 #[tokio::test]
 async fn commit_with_insert_and_prune_applies_both_operations() {
     //* Given
-    let temp_db = pgtemp::PgTempDB::new();
-    let mut store = create_test_store(&temp_db).await;
+    let test_db = TestDb::new().await;
+    let mut store = create_test_store(&test_db).await;
     let ranges = create_test_ranges(0, 10, "eth");
 
     // First insert two watermarks
@@ -300,8 +340,8 @@ async fn commit_with_insert_and_prune_applies_both_operations() {
 #[tokio::test]
 async fn commit_and_truncate_applies_both_operations() {
     //* Given
-    let temp_db = pgtemp::PgTempDB::new();
-    let mut store = create_test_store(&temp_db).await;
+    let test_db = TestDb::new().await;
+    let mut store = create_test_store(&test_db).await;
     let ranges = create_test_ranges(0, 10, "eth");
 
     // First insert four watermarks
@@ -350,13 +390,13 @@ async fn commit_and_truncate_applies_both_operations() {
 #[tokio::test]
 async fn load_from_different_store_instance_sees_committed_state() {
     //* Given
-    let temp_db = pgtemp::PgTempDB::new();
+    let test_db = TestDb::new().await;
     let stream_id = format!("test-stream-{}", uuid::Uuid::new_v4());
 
     // Create pool and run migrations once
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(5)
-        .connect(&temp_db.connection_uri())
+        .connect(test_db.connection_url())
         .await
         .expect("Failed to connect to test database");
 
@@ -406,14 +446,14 @@ async fn load_from_different_store_instance_sees_committed_state() {
 #[tokio::test]
 async fn different_stream_ids_maintain_independent_state() {
     //* Given
-    let temp_db = pgtemp::PgTempDB::new();
+    let test_db = TestDb::new().await;
     let stream_id1 = "stream-1";
     let stream_id2 = "stream-2";
 
     // Create pool and run migrations once
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(5)
-        .connect(&temp_db.connection_uri())
+        .connect(test_db.connection_url())
         .await
         .expect("Failed to connect to test database");
 
@@ -466,8 +506,8 @@ async fn different_stream_ids_maintain_independent_state() {
 #[tokio::test]
 async fn commit_with_empty_operations_succeeds() {
     //* Given
-    let temp_db = pgtemp::PgTempDB::new();
-    let mut store = create_test_store(&temp_db).await;
+    let test_db = TestDb::new().await;
+    let mut store = create_test_store(&test_db).await;
 
     let empty_commit = Commit {
         insert: vec![],
@@ -487,8 +527,8 @@ async fn commit_with_empty_operations_succeeds() {
 #[tokio::test]
 async fn advance_and_commit_preserve_order() {
     //* Given
-    let temp_db = pgtemp::PgTempDB::new();
-    let mut store = create_test_store(&temp_db).await;
+    let test_db = TestDb::new().await;
+    let mut store = create_test_store(&test_db).await;
     let ranges = create_test_ranges(0, 10, "eth");
 
     //* When

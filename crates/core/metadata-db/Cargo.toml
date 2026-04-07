@@ -25,5 +25,5 @@ tracing.workspace = true
 url.workspace = true
 
 [dev-dependencies]
-pgtemp.workspace = true
+metadata-db-postgres = { path = "../../services/metadata-db-postgres" }
 tokio = { workspace = true, features = ["macros", "test-util"] }

@@ -1,7 +1,10 @@
 use std::{
     any::Any,
     collections::{BTreeMap, BTreeSet},
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 use amp_data_store::{
@@ -54,7 +57,43 @@ use datasets_raw::dataset::Table as DatasetTable;
 use js_runtime::isolate_pool::IsolatePool;
 use metadata_db::{config::DEFAULT_POOL_MAX_CONNECTIONS, physical_table_revision::LocationId};
 use object_store::{ObjectStore, memory::InMemory};
-use pgtemp::PgTempDB;
+
+/// A temporary PostgreSQL instance for tests.
+struct TestDb {
+    handle: metadata_db_postgres::service::Handle,
+    _task: tokio::task::JoinHandle<Result<(), metadata_db_postgres::PostgresError>>,
+}
+
+impl TestDb {
+    async fn new() -> Self {
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let data_dir =
+            std::env::temp_dir().join(format!("amp-test-common-{}-{}", std::process::id(), id,));
+        let (handle, service) = metadata_db_postgres::PostgresBuilder::new(data_dir)
+            .locale("C")
+            .encoding("UTF8")
+            .start()
+            .await
+            .expect("Failed to start PostgreSQL for test");
+        let task = tokio::spawn(service);
+        Self {
+            handle,
+            _task: task,
+        }
+    }
+
+    fn connection_url(&self) -> &str {
+        self.handle.url()
+    }
+}
+
+impl Drop for TestDb {
+    fn drop(&mut self) {
+        self._task.abort();
+    }
+}
+
 type RequestLog = Arc<Mutex<Vec<String>>>;
 type TableCatalogFixture = (Arc<MockTableCatalogProvider>, RequestLog, RequestLog);
 type FuncCatalogFixture = (Arc<MockFuncCatalogProvider>, RequestLog, RequestLog);
@@ -373,9 +412,9 @@ async fn statement_to_schema_with_catalog_qualified_function_for_unresolved_sche
 #[tokio::test]
 async fn exec_statement_to_plan_with_qualified_function_uses_async_pre_resolution_flow() {
     //* Given
-    let temp_db = PgTempDB::new();
+    let test_db = TestDb::new().await;
     let metadata_db = metadata_db::connect_pool_with_retry(
-        &temp_db.connection_uri(),
+        test_db.connection_url(),
         DEFAULT_POOL_MAX_CONNECTIONS,
     )
     .await
@@ -475,9 +514,9 @@ async fn exec_statement_to_plan_with_qualified_function_uses_async_pre_resolutio
 #[tokio::test]
 async fn exec_statement_to_plan_with_overlapping_async_and_physical_tables_succeeds() {
     //* Given
-    let temp_db = PgTempDB::new();
+    let test_db = TestDb::new().await;
     let metadata_db = metadata_db::connect_pool_with_retry(
-        &temp_db.connection_uri(),
+        test_db.connection_url(),
         DEFAULT_POOL_MAX_CONNECTIONS,
     )
     .await

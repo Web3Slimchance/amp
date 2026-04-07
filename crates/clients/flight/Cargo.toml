@@ -38,6 +38,6 @@ uuid = { workspace = true, optional = true }
 heed = { version = "0.22", optional = true }
 
 [dev-dependencies]
-pgtemp.workspace = true
+metadata-db-postgres = { path = "../../services/metadata-db-postgres" }
 tempfile.workspace = true
 uuid = { workspace = true, features = ["v4"] }

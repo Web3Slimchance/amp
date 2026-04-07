@@ -3,12 +3,12 @@
 use std::pin::pin;
 
 use futures::stream::StreamExt;
-use pgtemp::PgTempDB;
 use tokio::time::{Duration, timeout};
 
 use crate::{
     db::Connection,
     jobs::JobId,
+    tests::helpers::TestDb,
     workers::{WorkerNodeId, events},
 };
 
@@ -22,8 +22,8 @@ struct TestJobPayload {
 #[tokio::test]
 async fn send_and_receive_start_notification() {
     //* Given
-    let temp_db = PgTempDB::new();
-    let mut conn = Connection::connect_with_retry(&temp_db.connection_uri())
+    let test_db = TestDb::new().await;
+    let mut conn = Connection::connect_with_retry(test_db.connection_url())
         .await
         .expect("Failed to connect to metadata db");
     conn.run_migrations()
@@ -34,7 +34,7 @@ async fn send_and_receive_start_notification() {
     let job_id = JobId::from_i64_unchecked(1i64);
 
     // Create listener for this specific worker
-    let listener = events::listen_url(&temp_db.connection_uri(), worker_id.to_owned())
+    let listener = events::listen_url(test_db.connection_url(), worker_id.to_owned())
         .await
         .expect("Failed to create listener");
     let mut stream = std::pin::pin!(listener.into_stream::<TestJobPayload>());
@@ -62,8 +62,8 @@ async fn send_and_receive_start_notification() {
 #[tokio::test]
 async fn send_and_receive_stop_notification() {
     //* Given
-    let temp_db = PgTempDB::new();
-    let mut conn = Connection::connect_with_retry(&temp_db.connection_uri())
+    let test_db = TestDb::new().await;
+    let mut conn = Connection::connect_with_retry(test_db.connection_url())
         .await
         .expect("Failed to connect to metadata db");
     conn.run_migrations()
@@ -73,7 +73,7 @@ async fn send_and_receive_stop_notification() {
     let worker_id = WorkerNodeId::from_ref_unchecked("test-worker-stop");
     let job_id = JobId::from_i64_unchecked(2i64);
 
-    let listener = events::listen_url(&temp_db.connection_uri(), worker_id.to_owned())
+    let listener = events::listen_url(test_db.connection_url(), worker_id.to_owned())
         .await
         .expect("Failed to create listener");
     let mut stream = pin!(listener.into_stream::<TestJobPayload>());
@@ -101,8 +101,8 @@ async fn send_and_receive_stop_notification() {
 #[tokio::test]
 async fn multiple_listeners_receive_same_notification() {
     //* Given
-    let temp_db = PgTempDB::new();
-    let mut conn = Connection::connect_with_retry(&temp_db.connection_uri())
+    let test_db = TestDb::new().await;
+    let mut conn = Connection::connect_with_retry(test_db.connection_url())
         .await
         .expect("Failed to connect to metadata db");
     conn.run_migrations()
@@ -113,12 +113,12 @@ async fn multiple_listeners_receive_same_notification() {
     let job_id = JobId::from_i64_unchecked(4i64);
 
     // Create multiple listeners both listening for the same worker
-    let listener1 = events::listen_url(&temp_db.connection_uri(), worker_id.to_owned())
+    let listener1 = events::listen_url(test_db.connection_url(), worker_id.to_owned())
         .await
         .expect("Failed to create listener 1");
     let mut stream1 = std::pin::pin!(listener1.into_stream::<TestJobPayload>());
 
-    let listener2 = events::listen_url(&temp_db.connection_uri(), worker_id.to_owned())
+    let listener2 = events::listen_url(test_db.connection_url(), worker_id.to_owned())
         .await
         .expect("Failed to create listener 2");
     let mut stream2 = std::pin::pin!(listener2.into_stream::<TestJobPayload>());
@@ -155,8 +155,8 @@ async fn multiple_listeners_receive_same_notification() {
 #[tokio::test]
 async fn listener_stream_yields_notifications() {
     //* Given
-    let temp_db = PgTempDB::new();
-    let mut conn = Connection::connect_with_retry(&temp_db.connection_uri())
+    let test_db = TestDb::new().await;
+    let mut conn = Connection::connect_with_retry(test_db.connection_url())
         .await
         .expect("Failed to connect to metadata db");
     conn.run_migrations()
@@ -167,7 +167,7 @@ async fn listener_stream_yields_notifications() {
     let job_id1 = JobId::from_i64_unchecked(5i64);
     let job_id2 = JobId::from_i64_unchecked(6i64);
 
-    let listener = events::listen_url(&temp_db.connection_uri(), worker_id.to_owned())
+    let listener = events::listen_url(test_db.connection_url(), worker_id.to_owned())
         .await
         .expect("Failed to create listener");
     let mut stream = std::pin::pin!(listener.into_stream::<TestJobPayload>());
@@ -212,8 +212,8 @@ async fn listener_stream_yields_notifications() {
 #[tokio::test]
 async fn notification_not_received_before_listen() {
     //* Given
-    let temp_db = PgTempDB::new();
-    let mut conn = Connection::connect_with_retry(&temp_db.connection_uri())
+    let test_db = TestDb::new().await;
+    let mut conn = Connection::connect_with_retry(test_db.connection_url())
         .await
         .expect("Failed to connect to metadata db");
     conn.run_migrations()
@@ -233,7 +233,7 @@ async fn notification_not_received_before_listen() {
         .expect("Failed to send notification");
 
     // Now create the listener (after the notification was sent)
-    let listener = events::listen_url(&temp_db.connection_uri(), worker_id.to_owned())
+    let listener = events::listen_url(test_db.connection_url(), worker_id.to_owned())
         .await
         .expect("Failed to create listener");
     let mut stream = std::pin::pin!(listener.into_stream::<TestJobPayload>());

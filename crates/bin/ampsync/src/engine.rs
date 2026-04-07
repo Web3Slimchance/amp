@@ -749,17 +749,58 @@ impl Engine {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
+
     use arrow_array::{Int32Array, Int64Array};
     use arrow_schema::{DataType, Field, Schema};
 
     use super::*;
 
+    /// A temporary PostgreSQL instance for tests.
+    struct TestDb {
+        handle: metadata_db_postgres::service::Handle,
+        _task: tokio::task::JoinHandle<Result<(), metadata_db_postgres::PostgresError>>,
+    }
+
+    impl TestDb {
+        async fn new() -> Self {
+            static COUNTER: AtomicU64 = AtomicU64::new(0);
+            let id = COUNTER.fetch_add(1, AtomicOrdering::Relaxed);
+            let data_dir = std::env::temp_dir().join(format!(
+                "amp-test-ampsync-{}-{}",
+                std::process::id(),
+                id,
+            ));
+            let (handle, service) = metadata_db_postgres::PostgresBuilder::new(data_dir)
+                .locale("C")
+                .encoding("UTF8")
+                .start()
+                .await
+                .expect("Failed to start PostgreSQL for test");
+            let task = tokio::spawn(service);
+            Self {
+                handle,
+                _task: task,
+            }
+        }
+
+        fn connection_url(&self) -> &str {
+            self.handle.url()
+        }
+    }
+
+    impl Drop for TestDb {
+        fn drop(&mut self) {
+            self._task.abort();
+        }
+    }
+
     #[tokio::test]
     async fn test_create_table() {
-        let _pg = pgtemp::PgTempDB::new();
+        let test_db = TestDb::new().await;
         let pool = sqlx::postgres::PgPoolOptions::new()
             .max_connections(5)
-            .connect(&_pg.connection_uri())
+            .connect(test_db.connection_url())
             .await
             .unwrap();
         let engine = Engine::new(pool);
@@ -784,10 +825,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_insert_and_delete() {
-        let _pg = pgtemp::PgTempDB::new();
+        let test_db = TestDb::new().await;
         let pool = sqlx::postgres::PgPoolOptions::new()
             .max_connections(5)
-            .connect(&_pg.connection_uri())
+            .connect(test_db.connection_url())
             .await
             .unwrap();
         let engine = Engine::new(pool);
@@ -845,10 +886,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_idempotency() {
-        let _pg = pgtemp::PgTempDB::new();
+        let test_db = TestDb::new().await;
         let pool = sqlx::postgres::PgPoolOptions::new()
             .max_connections(5)
-            .connect(&_pg.connection_uri())
+            .connect(test_db.connection_url())
             .await
             .unwrap();
         let engine = Engine::new(pool);
@@ -1005,10 +1046,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_batch_chunking_large_batch() {
-        let _pg = pgtemp::PgTempDB::new();
+        let test_db = TestDb::new().await;
         let pool = sqlx::postgres::PgPoolOptions::new()
             .max_connections(5)
-            .connect(&_pg.connection_uri())
+            .connect(test_db.connection_url())
             .await
             .unwrap();
         let engine = Engine::new(pool);

@@ -1,6 +1,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use pgtemp::PgTempDB;
+use metadata_db_postgres::PostgresBuilder;
+use tokio::task::JoinHandle;
 
 use crate::{
     config::DEFAULT_POOL_MAX_CONNECTIONS,
@@ -29,14 +30,55 @@ pub fn raw_descriptor(value: &serde_json::Value) -> EventDetail<'static> {
     EventDetail::from_value(value)
 }
 
+/// A temporary PostgreSQL instance for tests.
+///
+/// Wraps [`PostgresBuilder`] to provide the same ergonomics as the old `PgTempDB`.
+/// The instance is shut down when dropped.
+pub struct TestDb {
+    handle: metadata_db_postgres::service::Handle,
+    _task: JoinHandle<Result<(), metadata_db_postgres::PostgresError>>,
+}
+
+impl TestDb {
+    /// Start a new temporary PostgreSQL instance.
+    pub async fn new() -> Self {
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let data_dir =
+            std::env::temp_dir().join(format!("amp-test-{}-{}", std::process::id(), id,));
+        let (handle, service) = PostgresBuilder::new(data_dir)
+            .locale("C")
+            .encoding("UTF8")
+            .start()
+            .await
+            .expect("Failed to start PostgreSQL for test");
+        let task = tokio::spawn(service);
+        Self {
+            handle,
+            _task: task,
+        }
+    }
+
+    /// Connection URL for this instance.
+    pub fn connection_url(&self) -> &str {
+        self.handle.url()
+    }
+}
+
+impl Drop for TestDb {
+    fn drop(&mut self) {
+        self._task.abort();
+    }
+}
+
 /// Set up a test database with a single registered worker ([`TEST_WORKER_ID`]).
 ///
 /// Returns the temp DB handle (must be kept alive) and the connection pool.
 /// Use [`TEST_WORKER_ID`] to reference the pre-registered worker.
-pub async fn setup_test_db() -> (PgTempDB, crate::MetadataDb) {
-    let temp_db = PgTempDB::new();
+pub async fn setup_test_db() -> (TestDb, crate::MetadataDb) {
+    let test_db = TestDb::new().await;
     let conn =
-        crate::connect_pool_with_retry(&temp_db.connection_uri(), DEFAULT_POOL_MAX_CONNECTIONS)
+        crate::connect_pool_with_retry(test_db.connection_url(), DEFAULT_POOL_MAX_CONNECTIONS)
             .await
             .expect("Failed to connect to metadata db");
 
@@ -45,7 +87,7 @@ pub async fn setup_test_db() -> (PgTempDB, crate::MetadataDb) {
         .await
         .expect("Failed to register worker");
 
-    (temp_db, conn)
+    (test_db, conn)
 }
 
 /// Helper to register a job with its event and status in a single transaction.

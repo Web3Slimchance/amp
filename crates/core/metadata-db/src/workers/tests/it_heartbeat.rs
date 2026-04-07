@@ -2,10 +2,9 @@
 
 use std::time::Duration;
 
-use pgtemp::PgTempDB;
-
 use crate::{
     db::Connection,
+    tests::helpers::TestDb,
     workers::{self, WorkerInfo, WorkerNodeId},
 };
 
@@ -15,8 +14,8 @@ const TEST_ACTIVE_INTERVAL: Duration = Duration::from_secs(1);
 #[tokio::test]
 async fn new_worker_is_active_on_registration() {
     //* Given
-    let temp_db = PgTempDB::new();
-    let mut conn = Connection::connect_with_retry(&temp_db.connection_uri())
+    let test_db = TestDb::new().await;
+    let mut conn = Connection::connect_with_retry(test_db.connection_url())
         .await
         .expect("Failed to connect to metadata db");
     conn.run_migrations()
@@ -44,8 +43,8 @@ async fn new_worker_is_active_on_registration() {
 #[tokio::test]
 async fn reregistration_updates_heartbeat() {
     //* Given
-    let temp_db = PgTempDB::new();
-    let mut conn = Connection::connect_with_retry(&temp_db.connection_uri())
+    let test_db = TestDb::new().await;
+    let mut conn = Connection::connect_with_retry(test_db.connection_url())
         .await
         .expect("Failed to connect to metadata db");
     conn.run_migrations()
@@ -86,8 +85,8 @@ async fn reregistration_updates_heartbeat() {
 #[tokio::test]
 async fn heartbeat_update_maintains_activity() {
     //* Given
-    let temp_db = PgTempDB::new();
-    let mut conn = Connection::connect_with_retry(&temp_db.connection_uri())
+    let test_db = TestDb::new().await;
+    let mut conn = Connection::connect_with_retry(test_db.connection_url())
         .await
         .expect("Failed to connect to metadata db");
     conn.run_migrations()
@@ -125,8 +124,8 @@ async fn heartbeat_update_maintains_activity() {
 #[tokio::test]
 async fn worker_is_inactive_after_interval() {
     //* Given
-    let temp_db = PgTempDB::new();
-    let mut conn = Connection::connect_with_retry(&temp_db.connection_uri())
+    let test_db = TestDb::new().await;
+    let mut conn = Connection::connect_with_retry(test_db.connection_url())
         .await
         .expect("Failed to connect to metadata db");
     conn.run_migrations()
@@ -169,8 +168,8 @@ async fn worker_is_inactive_after_interval() {
 #[tokio::test]
 async fn heartbeat_on_unknown_worker_is_noop() {
     //* Given
-    let temp_db = PgTempDB::new();
-    let mut conn = Connection::connect_with_retry(&temp_db.connection_uri())
+    let test_db = TestDb::new().await;
+    let mut conn = Connection::connect_with_retry(test_db.connection_url())
         .await
         .expect("Failed to connect to metadata db");
     conn.run_migrations()
@@ -200,8 +199,8 @@ async fn heartbeat_on_unknown_worker_is_noop() {
 #[tokio::test]
 async fn active_workers_empty_when_none_registered() {
     //* Given
-    let temp_db = PgTempDB::new();
-    let mut conn = Connection::connect_with_retry(&temp_db.connection_uri())
+    let test_db = TestDb::new().await;
+    let mut conn = Connection::connect_with_retry(test_db.connection_url())
         .await
         .expect("Failed to connect to metadata db");
     conn.run_migrations()
@@ -224,8 +223,8 @@ async fn active_workers_empty_when_none_registered() {
 #[tokio::test]
 async fn registration_conflict_updates_timestamp() {
     //* Given
-    let temp_db = PgTempDB::new();
-    let mut conn = Connection::connect_with_retry(&temp_db.connection_uri())
+    let test_db = TestDb::new().await;
+    let mut conn = Connection::connect_with_retry(test_db.connection_url())
         .await
         .expect("Failed to connect to metadata db");
     conn.run_migrations()
