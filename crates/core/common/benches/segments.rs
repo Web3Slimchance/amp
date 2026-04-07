@@ -37,7 +37,6 @@ fn test_segment(range: BlockRange) -> Segment {
         FileId::try_from(1i64).expect("FileId::MIN is 1"),
         object,
         vec![range],
-        None,
     )
 }
 
