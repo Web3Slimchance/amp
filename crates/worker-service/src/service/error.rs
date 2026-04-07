@@ -249,6 +249,14 @@ pub enum SpawnJobError {
     /// - Database query execution errors
     #[error("failed to get latest job descriptor: {0}")]
     GetLatestJobDescriptorFailed(#[source] metadata_db::Error),
+
+    /// Failed to dispatch the job descriptor to a handler.
+    ///
+    /// This occurs when the job descriptor cannot be routed to a registered
+    /// handler, either because the kind tag is unrecognizable or the full
+    /// descriptor fails deserialization.
+    #[error("failed to dispatch job descriptor")]
+    DispatchFailed(#[source] amp_worker_core::job_router::DispatchError),
 }
 
 /// Errors that can occur when aborting a job.

@@ -7,7 +7,7 @@ use common::{datasets_cache::DatasetsCache, udfs::eth_call::EthCallUdfsCache};
 use futures::TryStreamExt as _;
 use js_runtime::isolate_pool::IsolatePool;
 use metadata_db::{
-    Error as MetadataDbError, MetadataDb, NotificationMultiplexerHandle, notification_multiplexer,
+    Error as MetadataDbError, MetadataDb, notification_multiplexer,
     workers::WorkerNotifListener as NotifListener,
 };
 use monitoring::{logging, telemetry::metrics::Meter};
@@ -16,7 +16,7 @@ use tokio_util::task::AbortOnDropHandle;
 use tracing::instrument;
 
 mod error;
-mod job_impl;
+pub(crate) mod job_ctx;
 mod job_set;
 
 use amp_job_core::{
@@ -25,8 +25,16 @@ use amp_job_core::{
     job_id::JobId,
     status::JobStatus,
 };
+use amp_job_gc::{job_impl as gc_job, job_kind::JOB_KIND as GC_KIND};
+use amp_job_materialize_datasets_derived::{
+    job_impl as materialize_derived_job, job_kind::JOB_KIND as MATERIALIZE_DERIVED_KIND,
+};
+use amp_job_materialize_datasets_raw::{
+    job_impl as materialize_raw_job, job_kind::JOB_KIND as MATERIALIZE_RAW_KIND,
+};
 use amp_worker_core::{
     job_ledger::{Job, JobLedger, JobNotification},
+    job_router::{JobDispatcher, JobRouter},
     node_id::NodeId,
 };
 
@@ -35,7 +43,10 @@ pub use self::error::{
     JobResultError, NotificationError, ReconcileError, RuntimeError, SpawnJobError,
     StartActionError,
 };
-use self::job_set::{JobSet, JoinError as JobSetJoinError};
+use self::{
+    job_ctx::WorkerJobCtx,
+    job_set::{JobSet, JoinError as JobSetJoinError},
+};
 use crate::{build_info::BuildInfo, config::Config};
 
 /// Frequency on which to send a heartbeat.
@@ -118,22 +129,26 @@ pub async fn new(
         .await
         .map_err(InitError::BootstrapFetchScheduledJobs)?;
 
+    // Build the job router and bind the worker context
+    let job_ctx = WorkerJobCtx {
+        config,
+        metadata_db: metadata_db.clone(),
+        datasets_cache,
+        ethcall_udfs_cache,
+        data_store,
+        notification_multiplexer,
+        meter,
+        event_emitter,
+        isolate_pool,
+    };
+    let dispatcher = JobRouter::new()
+        .route(GC_KIND, gc_job::execute)
+        .route(MATERIALIZE_RAW_KIND, materialize_raw_job::execute)
+        .route(MATERIALIZE_DERIVED_KIND, materialize_derived_job::execute)
+        .with_state(job_ctx);
+
     // Create the worker instance with pre-constructed dependencies
-    let mut worker = Worker::new(
-        node_id,
-        ledger,
-        WorkerJobCtx {
-            config,
-            metadata_db: metadata_db.clone(),
-            datasets_cache,
-            ethcall_udfs_cache,
-            data_store,
-            notification_multiplexer,
-            meter,
-            event_emitter,
-            isolate_pool,
-        },
-    );
+    let mut worker = Worker::new(node_id, ledger, dispatcher);
 
     // Spawn all scheduled jobs
     for job in scheduled_jobs {
@@ -239,35 +254,21 @@ pub async fn new(
     Ok(fut)
 }
 
-/// Worker job context parameters
-#[derive(Clone)]
-pub(crate) struct WorkerJobCtx {
-    pub config: Config,
-    pub metadata_db: MetadataDb,
-    pub data_store: DataStore,
-    pub datasets_cache: DatasetsCache,
-    pub ethcall_udfs_cache: EthCallUdfsCache,
-    pub isolate_pool: IsolatePool,
-    pub notification_multiplexer: Arc<NotificationMultiplexerHandle>,
-    pub meter: Option<Meter>,
-    pub event_emitter: Arc<dyn EventEmitter>,
-}
-
-pub struct Worker {
+struct Worker {
     node_id: NodeId,
     ledger: JobLedger,
-    job_ctx: WorkerJobCtx,
+    dispatcher: JobDispatcher<WorkerJobCtx>,
     job_set: JobSet,
 }
 
 impl Worker {
     /// Create a new worker instance
     #[must_use]
-    pub(crate) fn new(node_id: NodeId, ledger: JobLedger, job_ctx: WorkerJobCtx) -> Self {
+    fn new(node_id: NodeId, ledger: JobLedger, dispatcher: JobDispatcher<WorkerJobCtx>) -> Self {
         Self {
             node_id,
             ledger,
-            job_ctx,
+            dispatcher,
             job_set: JobSet::default(),
         }
     }
@@ -464,7 +465,7 @@ async fn build_error_detail(
     stack_trace: Vec<String>,
     error_details: serde_json::Map<String, serde_json::Value>,
     ledger: &JobLedger,
-    job_id: amp_job_core::job_id::JobId,
+    job_id: JobId,
 ) -> metadata_db::job_events::EventDetail<'static> {
     let (attempt_result, job_desc_result) = tokio::join!(
         ledger.get_attempt_count(job_id),
@@ -641,26 +642,15 @@ impl Worker {
             .get_latest_job_descriptor(job_id)
             .await
             .map_err(SpawnJobError::GetLatestJobDescriptorFailed)?;
-        let job_desc = match job_desc {
-            Some(desc) => desc,
-            None => {
-                tracing::warn!(job_id = %job_id, "no job descriptor found, skipping job");
-                return Ok(());
-            }
-        };
-        let job_desc = match serde_json::from_str(job_desc.as_str()) {
-            Ok(desc) => desc,
-            Err(err) => {
-                tracing::warn!(%job_id, %err, "unknown job descriptor, skipping job");
-                return Ok(());
-            }
+        let Some(job_desc) = job_desc else {
+            tracing::warn!(job_id = %job_id, "no job descriptor found, skipping job");
+            return Ok(());
         };
 
-        // Note: sync.started/completed/failed events are now emitted per-table from
-        // the dump layer where table names are known, ensuring partition key consistency
-        // with sync.progress events.
-
-        let job_fut = job_impl::new(self.job_ctx.clone(), job_desc, job_id);
+        let job_fut = self
+            .dispatcher
+            .dispatch(job_desc.as_str(), job_id)
+            .map_err(SpawnJobError::DispatchFailed)?;
 
         self.job_set.spawn(job_id, job_fut);
 

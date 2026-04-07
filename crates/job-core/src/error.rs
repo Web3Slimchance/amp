@@ -7,6 +7,52 @@
 //! - **Structured details** ([`ErrorDetailsProvider`], [`ErrorDetailPayload`]): attaching
 //!   key-value context to errors so failure information is persisted as structured JSONB.
 
+/// Type-erased job error for heterogeneous job dispatch.
+///
+/// All concrete job error types implement [`Error`], so they can be boxed into
+/// this type at the dispatch boundary without a wrapper enum.
+pub type JobError = Box<dyn Error>;
+
+/// Object-safe supertrait combining all job error capabilities.
+///
+/// Automatically implemented for any type satisfying the bounds, enabling
+/// `Box<dyn JobError>` as an erased error type for heterogeneous job dispatch.
+///
+/// `Box<dyn JobError>` itself implements [`std::error::Error`], [`RetryableErrorExt`],
+/// [`JobErrorExt`], and [`ErrorDetailsProvider`] by delegating through the vtable,
+/// so it can be used seamlessly wherever those traits are expected.
+pub trait Error: JobErrorExt + ErrorDetailsProvider + Send {}
+
+impl<T: JobErrorExt + ErrorDetailsProvider + Send> Error for T {}
+
+impl std::error::Error for Box<dyn Error> {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        (**self).source()
+    }
+}
+
+impl RetryableErrorExt for Box<dyn Error> {
+    fn is_retryable(&self) -> bool {
+        (**self).is_retryable()
+    }
+}
+
+impl JobErrorExt for Box<dyn Error> {
+    fn error_code(&self) -> &'static str {
+        (**self).error_code()
+    }
+}
+
+impl ErrorDetailsProvider for Box<dyn Error> {
+    fn error_details(&self) -> serde_json::Map<String, serde_json::Value> {
+        (**self).error_details()
+    }
+
+    fn detail_source(&self) -> Option<&dyn ErrorDetailsProvider> {
+        (**self).detail_source()
+    }
+}
+
 /// Extension trait for classifying errors as retryable or fatal.
 ///
 /// The primary method is [`is_retryable`](RetryableErrorExt::is_retryable), which returns `true`

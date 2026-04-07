@@ -11,6 +11,7 @@ chrono.workspace = true
 metadata-db = { path = "../core/metadata-db" }
 monitoring = { path = "../core/monitoring" }
 serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 

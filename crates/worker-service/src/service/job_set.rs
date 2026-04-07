@@ -3,10 +3,11 @@ use std::{
     future::Future,
 };
 
-use amp_job_core::{error::RetryableErrorExt, job_id::JobId};
+use amp_job_core::{
+    error::{JobError, RetryableErrorExt},
+    job_id::JobId,
+};
 use tokio::task::{AbortHandle, Id as TaskId, JoinError as TokioJoinError, JoinSet};
-
-use super::job_impl::JobError;
 
 /// A collection of jobs that are spawned and managed by a [`Worker`].
 ///
@@ -97,9 +98,9 @@ impl JobSet {
             // The job returned an error
             Ok(Err(err)) => {
                 let join_err = if err.is_retryable() {
-                    JoinError::FailedRecoverable(Box::new(err))
+                    JoinError::FailedRecoverable(err)
                 } else {
-                    JoinError::FailedFatal(Box::new(err))
+                    JoinError::FailedFatal(err)
                 };
                 (job_id, Err(join_err))
             }
@@ -118,10 +119,10 @@ impl JobSet {
 pub enum JoinError {
     /// The job failed with a recoverable error
     #[error("Job failed with a recoverable error: {0}")]
-    FailedRecoverable(Box<JobError>),
+    FailedRecoverable(JobError),
     /// The job failed with a fatal error
     #[error("Job failed with a fatal error: {0}")]
-    FailedFatal(Box<JobError>),
+    FailedFatal(JobError),
     /// The job was aborted
     #[error("Job was aborted")]
     Aborted,

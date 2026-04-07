@@ -14,7 +14,6 @@ amp-job-materialize-datasets-raw = { path = "../job-materialize-datasets-raw" }
 amp-worker-core = { path = "../worker-core" }
 backon.workspace = true
 common = { path = "../core/common" }
-datasets-common = { path = "../core/datasets-common" }
 futures.workspace = true
 js-runtime = { path = "../core/js-runtime" }
 metadata-db = { path = "../core/metadata-db" }

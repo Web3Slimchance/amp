@@ -10,5 +10,4 @@
 
 pub mod build_info;
 pub mod config;
-pub mod job;
 pub mod service;

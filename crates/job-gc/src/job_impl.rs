@@ -9,7 +9,10 @@ use amp_data_store::{
     DeleteFileMetadataByIdsError, DeleteFilesStreamError, GetRevisionByLocationIdError,
     physical_table::PhyTableRevisionPath, retryable::RetryableErrorExt as _,
 };
-use amp_job_core::error::{ErrorDetailsProvider, RetryableErrorExt};
+use amp_job_core::{
+    error::{ErrorDetailsProvider, RetryableErrorExt},
+    job_id::JobId,
+};
 use futures::{StreamExt as _, TryStreamExt as _, stream};
 use metadata_db::{files::FileId, gc::GcManifestRow};
 use object_store::{Error as ObjectStoreError, path::Path};
@@ -26,8 +29,17 @@ use crate::{job_ctx::Context, job_descriptor::JobDescriptor, metrics::GcMetrics}
 ///
 /// Metadata is deleted before physical files. If the process crashes between steps 3 and 4,
 /// orphaned files may remain in storage but no dangling metadata references will exist.
-#[tracing::instrument(skip_all, err, fields(location_id = %desc.location_id, table_ref))]
-pub async fn execute(ctx: Context, desc: JobDescriptor) -> Result<(), Error> {
+#[tracing::instrument(
+    name = "gc_job",
+    skip_all,
+    err,
+    fields(
+        job_id = %job_id,
+        location_id = %desc.location_id,
+        table_ref = tracing::field::Empty
+    )
+)]
+pub async fn execute(ctx: Context, desc: JobDescriptor, job_id: JobId) -> Result<(), Error> {
     let location_id = desc.location_id;
 
     // Look up the revision to get its storage path

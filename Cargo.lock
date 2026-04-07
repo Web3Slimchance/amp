@@ -1569,6 +1569,7 @@ dependencies = [
  "metadata-db",
  "monitoring",
  "serde",
+ "serde_json",
  "thiserror 2.0.18",
  "tracing",
 ]
@@ -1586,7 +1587,6 @@ dependencies = [
  "amp-worker-core",
  "backon",
  "common",
- "datasets-common",
  "futures",
  "js-runtime",
  "metadata-db",

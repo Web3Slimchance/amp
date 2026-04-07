@@ -6,6 +6,7 @@
 use std::time::Duration;
 
 use amp_data_store::DataStore;
+use amp_job_core::job_id::JobId;
 use amp_job_gc::{job_ctx::Context, job_descriptor::JobDescriptor};
 use futures::TryStreamExt;
 use metadata_db::{
@@ -25,6 +26,7 @@ use crate::testlib::fixtures::MetadataDb as MetadataDbFixture;
 async fn gc_deletes_expired_files() {
     //* Given
     let ctx = GcTestCtx::setup("gc_deletes_expired").await;
+    let job_id = JobId::try_from(1_i64).expect("job id should be valid");
 
     let revision_path = "test_ns/test_dataset/aaaaaaaaaa/test_table";
     let location_id = ctx.register_revision(revision_path).await;
@@ -70,7 +72,7 @@ async fn gc_deletes_expired_files() {
     tokio::time::sleep(Duration::from_secs(2)).await;
 
     //* When
-    amp_job_gc::job_impl::execute(ctx.gc_context(), JobDescriptor { location_id })
+    amp_job_gc::job_impl::execute(ctx.gc_context(), JobDescriptor { location_id }, job_id)
         .await
         .expect("GC execution failed");
 
@@ -101,12 +103,13 @@ async fn gc_deletes_expired_files() {
 async fn gc_with_no_expired_files_is_a_noop() {
     //* Given
     let ctx = GcTestCtx::setup("gc_noop").await;
+    let job_id = JobId::try_from(1_i64).expect("job id should be valid");
 
     let revision_path = "test_ns/test_dataset/aaaaaaaaaa/test_table";
     let location_id = ctx.register_revision(revision_path).await;
 
     //* When
-    amp_job_gc::job_impl::execute(ctx.gc_context(), JobDescriptor { location_id })
+    amp_job_gc::job_impl::execute(ctx.gc_context(), JobDescriptor { location_id }, job_id)
         .await
         .expect("GC execution should succeed with no expired files");
 
@@ -117,13 +120,14 @@ async fn gc_with_no_expired_files_is_a_noop() {
 async fn gc_with_nonexistent_location_returns_error() {
     //* Given
     let ctx = GcTestCtx::setup("gc_nonexistent").await;
+    let job_id = JobId::try_from(1_i64).expect("job id should be valid");
 
     let desc = JobDescriptor {
         location_id: LocationId::try_from(999999i64).unwrap(),
     };
 
     //* When
-    let result = amp_job_gc::job_impl::execute(ctx.gc_context(), desc).await;
+    let result = amp_job_gc::job_impl::execute(ctx.gc_context(), desc, job_id).await;
 
     //* Then
     assert!(result.is_err(), "should fail with LocationNotFound");

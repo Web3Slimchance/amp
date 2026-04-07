@@ -4,6 +4,7 @@
 //! This crate provides the common vocabulary types for job management
 //! without pulling in worker-specific dependencies.
 
+pub mod ctx;
 pub mod error;
 pub mod events;
 pub mod job_id;
