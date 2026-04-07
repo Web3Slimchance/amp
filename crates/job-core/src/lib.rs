@@ -14,3 +14,4 @@ pub mod materialize;
 pub mod proto;
 pub mod retry_strategy;
 pub mod status;
+pub mod trigger;
