@@ -114,8 +114,11 @@ pub async fn materialize_sql_query(
             .map_err(MaterializeSqlQueryError::streaming_query)
             .map_err(|err| err.with_block_range(microbatch_start, current_end))?;
         match message {
-            QueryMessage::MicrobatchStart { range, is_reorg: _ } => {
-                current_end = range.end();
+            QueryMessage::MicrobatchStart {
+                ranges,
+                is_reorg: _,
+            } => {
+                current_end = ranges.iter().map(|r| r.end()).max().unwrap_or(current_end);
             }
             QueryMessage::Data(batch) => {
                 writer
@@ -134,9 +137,9 @@ pub async fn materialize_sql_query(
             QueryMessage::Watermark(_) => {
                 // TODO: Check if file should be closed early
             }
-            QueryMessage::MicrobatchEnd(range) => {
-                let microbatch_end = range.end();
-                let block_timestamp = range.timestamp();
+            QueryMessage::MicrobatchEnd(ranges) => {
+                let microbatch_end = ranges.iter().map(|r| r.end()).max().unwrap_or(current_end);
+                let block_timestamp = ranges.iter().filter_map(|r| r.timestamp()).max();
                 // Close current file and commit metadata
                 let ParquetFileWriterOutput {
                     parquet_meta,
@@ -145,7 +148,7 @@ pub async fn materialize_sql_query(
                     url,
                     ..
                 } = writer
-                    .close(range, vec![], Generation::default())
+                    .close(ranges, vec![], Generation::default())
                     .await
                     .map_err(MaterializeSqlQueryError::close_file)
                     .map_err(|err| err.with_block_range(microbatch_start, current_end))?;

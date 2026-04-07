@@ -48,15 +48,13 @@ use crate::{
         exec::{ExecContext, ExecContextBuilder},
         plan::PlanContextBuilder,
     },
-    cursor::{Cursor, CursorNetworkNotFoundError, NetworkCursor, Watermark},
+    cursor::{Cursor, CursorNetworkNotFoundError, NetworkCursor, NetworkIdList, Watermark},
     datasets_cache::DatasetsCache,
     detached_logical_plan::DetachedLogicalPlan,
     exec_env::ExecEnv,
     incrementalizer::incrementalize_plan,
     physical_table::{CanonicalChainError, PhysicalTable, segments::Segment},
-    plan_visitors::{
-        WatermarkColumn, find_cross_network_join, order_by_watermark, unproject_columns,
-    },
+    plan_visitors::{WatermarkColumn, order_by_watermark, unproject_columns},
     retryable::RetryableErrorExt,
     rpc_catalog_provider::{RPC_CATALOG_NAME, RpcCatalogProvider},
     self_schema_provider::SelfSchemaProvider,
@@ -105,66 +103,34 @@ pub enum SpawnError {
     #[error("failed to optimize query plan")]
     OptimizePlan(#[source] DataFusionError),
 
-    /// Query contains a join across tables from different blockchain networks
-    ///
-    /// Common causes:
-    /// - User query explicitly joins tables across networks (e.g., Ethereum + Base)
-    /// - Query references datasets with dependencies across multiple networks
-    /// - Catalog construction includes tables from different networks
-    ///
-    /// The error shows which tables are involved in the cross-network join and
-    /// their respective networks.
-    ///
-    /// **Note**: Batch (non-streaming) queries CAN join across networks because
-    /// they process complete, static ranges rather than incremental updates.
-    #[error("streaming query contains a cross-network join: {info}")]
-    CrossNetworkJoin {
-        info: crate::plan_visitors::CrossNetworkJoinInfo,
-    },
-
     /// Source tables do not share a common watermark column (`_block_num` or `_ts`).
     #[error("all source tables must have at least one watermark column (_block_num or _ts)")]
     NoWatermarkColumn,
 
-    /// Failed to resolve raw dataset from dependencies
+    /// Failed to resolve raw datasets from dependencies
     ///
-    /// This occurs when traversing dataset dependencies fails to find a raw
-    /// (non-derived) dataset whose network can be used for the streaming query.
-    #[error("failed to resolve raw dataset from dependencies")]
-    ResolveRawDataset(#[source] ResolveRawDatasetError),
+    /// This occurs when traversing dataset dependencies fails to find raw
+    /// (non-derived) datasets whose networks can be used for the streaming query.
+    #[error("failed to resolve raw datasets from dependencies")]
+    ResolveRawDatasets(#[source] ResolveRawDatasetsError),
 
     /// Failed to resolve blocks table for network
     ///
     /// Every streaming query requires access to a `blocks` table containing the
-    /// canonical blockchain data for the network. This error occurs when finding
-    /// or loading the blocks table fails.
-    ///
-    /// Common causes:
-    /// - No raw dataset with blocks table exists for the network
-    /// - Dataset dependency tree doesn't include a blocks table
-    /// - Blocks table exists but hasn't been synced (no active revision)
-    /// - Data store errors when loading table metadata
-    /// - Dataset manifest not found or corrupted
-    ///
-    /// Without a blocks table, the streaming query cannot determine block ranges
-    /// or detect chain reorganizations.
-    #[error("failed to resolve blocks table for network")]
-    ResolveBlocksTable(#[source] ResolveBlocksTableError),
+    /// canonical blockchain data for each source network. This error occurs when
+    /// finding or loading a blocks table fails.
+    #[error("failed to resolve blocks table for network '{network}'")]
+    ResolveBlocksTable {
+        network: NetworkId,
+        #[source]
+        source: ResolveBlocksTableError,
+    },
 
     /// Failed to convert cursor to target network
     ///
     /// When resuming a streaming query from a previous cursor, the cursor
     /// must be converted to the target network's format. This error occurs when
     /// the cursor doesn't contain an entry for the expected network.
-    ///
-    /// Common causes:
-    /// - Cursor from a different network than current query
-    /// - Corrupted or invalid cursor state
-    /// - Network name mismatch (e.g., "ethereum" vs "mainnet")
-    /// - Resume state out of sync with current catalog
-    ///
-    /// This prevents the query from resuming at the correct position and may
-    /// require starting from scratch or using a different resume point.
     #[error("failed to convert cursor")]
     ConvertCursor(#[source] CursorNetworkNotFoundError),
 }
@@ -223,11 +189,11 @@ impl TableUpdates {
 /// Completion points do not necessarily follow increments of 1, as the query progresses in batches.
 pub enum QueryMessage {
     MicrobatchStart {
-        range: BlockRange,
+        ranges: Vec<BlockRange>,
         is_reorg: bool,
     },
     Data(RecordBatch),
-    MicrobatchEnd(BlockRange),
+    MicrobatchEnd(Vec<BlockRange>),
 
     /// Watermark indicating the query has emitted all outputs up to the given block number.
     /// This represents a monotonically increasing checkpoint in the stream.
@@ -235,7 +201,7 @@ pub enum QueryMessage {
 }
 
 struct MicrobatchRange {
-    range: BlockRange,
+    ranges: Vec<BlockRange>,
     direction: StreamDirection,
 }
 
@@ -341,12 +307,10 @@ pub struct StreamingQuery {
     watermark_column: WatermarkColumn,
     /// Watermark columns to remove from the output (those not explicitly selected).
     watermark_columns_to_unproject: Vec<&'static str>,
-    network: NetworkId,
-    /// `blocks` table for the network associated with the catalog.
-    blocks_table: Arc<ResolvedBlocksTable>,
-    /// The single-network cursor for the previously processed range. This may be provided by the
-    /// consumer (as a multi-network cursor) and converted to this single-network cursor.
-    prev_cursor: Option<NetworkCursor>,
+    /// Source networks and their resolved blocks tables.
+    blocks_tables: BTreeMap<NetworkId, Arc<ResolvedBlocksTable>>,
+    /// Cursor for the previously processed range, tracking the last block per network.
+    prev_cursor: Option<Cursor>,
     /// Job ID for tracing. Recorded on execute_microbatch spans so it's
     /// searchable in Jaeger even when parent spans are still open.
     job_id: Option<metadata_db::jobs::JobId>,
@@ -388,13 +352,6 @@ impl StreamingQuery {
                 .filter(|name| !schema.fields().iter().any(|f| f.name() == *name))
                 .collect()
         };
-
-        // Prevent streaming cross-network joins (check runs before plan optimization).
-        if let Some(info) =
-            find_cross_network_join(&plan, &catalog).map_err(SpawnError::OptimizePlan)?
-        {
-            return Err(SpawnError::CrossNetworkJoin { info });
-        }
 
         // Only propagate watermark columns that all source tables support.
         // When materializing to a destination, also restrict to columns the
@@ -450,32 +407,43 @@ impl StreamingQuery {
             ctx.optimize(&plan).map_err(SpawnError::OptimizePlan)?
         };
 
-        // Resolve the network by walking dataset dependencies to find a raw dataset,
-        // then resolve the blocks table for that network.
-        let (network, blocks_table) = {
+        // Resolve blocks tables for all source networks by walking dataset dependencies.
+        let blocks_tables = {
             let unique_refs: BTreeSet<HashReference> = catalog
                 .physical_tables()
                 .map(|t| t.dataset_reference().clone())
                 .collect();
 
-            let raw_dataset =
-                resolve_raw_dataset_from_dependencies(&exec_env.datasets_cache, unique_refs.iter())
+            let raw_datasets =
+                resolve_raw_datasets_by_network(&exec_env.datasets_cache, unique_refs.iter())
                     .await
-                    .map_err(SpawnError::ResolveRawDataset)?;
+                    .map_err(SpawnError::ResolveRawDatasets)?;
 
-            let network = raw_dataset.network().clone();
-            let blocks_table = ResolvedBlocksTable::new(raw_dataset, exec_env.store.clone())
-                .await
-                .map_err(SpawnError::ResolveBlocksTable)?;
-
-            (network, Arc::new(blocks_table))
+            let mut blocks_tables = BTreeMap::new();
+            for (network, raw_dataset) in raw_datasets {
+                let blocks_table = ResolvedBlocksTable::new(raw_dataset, exec_env.store.clone())
+                    .await
+                    .map_err(|source| SpawnError::ResolveBlocksTable {
+                        network: network.clone(),
+                        source,
+                    })?;
+                blocks_tables.insert(network, Arc::new(blocks_table));
+            }
+            blocks_tables
         };
 
         let table_updates = TableUpdates::new(&catalog, multiplexer_handle).await;
-        let prev_cursor = cursor
-            .map(|c| c.to_single_network(&network))
-            .transpose()
-            .map_err(SpawnError::ConvertCursor)?;
+        if let Some(ref c) = cursor {
+            for network in c.0.keys() {
+                if !blocks_tables.contains_key(network) {
+                    return Err(SpawnError::ConvertCursor(CursorNetworkNotFoundError {
+                        expected: network.clone(),
+                        available: NetworkIdList(blocks_tables.keys().cloned().collect()),
+                    }));
+                }
+            }
+        }
+        let prev_cursor = cursor;
         let streaming_query = Self {
             exec_env,
             isolate_pool,
@@ -491,8 +459,7 @@ impl StreamingQuery {
             destination,
             watermark_column,
             watermark_columns_to_unproject,
-            network,
-            blocks_table,
+            blocks_tables,
             job_id,
         };
 
@@ -527,7 +494,7 @@ impl StreamingQuery {
                 .map_err(StreamingQueryExecutionError::CreateExecContext)?;
 
             // Get the next execution range
-            let Some(MicrobatchRange { range, direction }) = self
+            let Some(microbatch) = self
                 .next_microbatch_range(&ctx)
                 .await
                 .map_err(StreamingQueryExecutionError::NextMicrobatchRange)?
@@ -535,11 +502,24 @@ impl StreamingQuery {
                 continue;
             };
 
-            if self.execute_microbatch(&ctx, &range, &direction).await? {
+            if self.execute_microbatch(&ctx, &microbatch).await? {
                 return Ok(());
             }
-            self.prev_cursor = Some((&range).into());
+            self.prev_cursor = Some(Cursor::from_ranges(&microbatch.ranges));
         }
+    }
+
+    /// Returns the single network and its blocks table.
+    ///
+    /// Panics if the query spans multiple networks. Multi-network execution will
+    /// be implemented in a follow-up PR.
+    fn single_network(&self) -> (&NetworkId, &Arc<ResolvedBlocksTable>) {
+        assert_eq!(
+            self.blocks_tables.len(),
+            1,
+            "multi-network execution not yet supported"
+        );
+        self.blocks_tables.iter().next().unwrap()
     }
 
     fn watermark_bounds(
@@ -577,14 +557,16 @@ impl StreamingQuery {
     }
 
     /// Execute a single microbatch for the given range. Returns `true` if this was the final
-    /// batch (i.e. `range.end() == self.end_block`).
-    #[instrument(skip_all, err, fields(start_block = %range.start(), end_block = %range.end(), job_id = self.job_id.map(tracing::field::display)))]
+    /// batch (i.e. the end block matches `self.end_block`).
+    #[instrument(skip_all, err, fields(job_id = self.job_id.map(tracing::field::display)))]
     async fn execute_microbatch(
         &mut self,
         ctx: &ExecContext,
-        range: &BlockRange,
-        direction: &StreamDirection,
+        microbatch: &MicrobatchRange,
     ) -> Result<bool, StreamingQueryExecutionError> {
+        // For incrementalization bounds, use the first (currently only) range.
+        let range = &microbatch.ranges[0];
+
         let plan = {
             // Incrementalize the plan
             let plan = self
@@ -592,14 +574,14 @@ impl StreamingQuery {
                 .clone()
                 .attach_to(ctx)
                 .map_err(StreamingQueryExecutionError::AttachPlan)?;
-            let (start, end) = self.watermark_bounds(range, direction);
+            let (start, end) = self.watermark_bounds(range, &microbatch.direction);
             let mut plan = incrementalize_plan(plan, start, end, self.watermark_column)
                 .map_err(StreamingQueryExecutionError::IncrementalizePlan)?;
 
             // Enforce ordering by the watermark column.
             plan = order_by_watermark(plan, self.watermark_column);
 
-            // Remove watermark columns the user didn't explicitly select.
+            // Remove watermark columns the user didn't explicitly selected.
             if !self.watermark_columns_to_unproject.is_empty() {
                 plan = unproject_columns(plan, &self.watermark_columns_to_unproject)
                     .map_err(StreamingQueryExecutionError::UnprojectWatermarkColumn)?
@@ -621,8 +603,8 @@ impl StreamingQuery {
         let _ = self
             .tx
             .send(QueryMessage::MicrobatchStart {
-                range: range.clone(),
-                is_reorg: direction.is_reorg(),
+                ranges: microbatch.ranges.clone(),
+                is_reorg: microbatch.direction.is_reorg(),
             })
             .await;
 
@@ -638,7 +620,7 @@ impl StreamingQuery {
         // Send end message for this microbatch
         let _ = self
             .tx
-            .send(QueryMessage::MicrobatchEnd(range.clone()))
+            .send(QueryMessage::MicrobatchEnd(microbatch.ranges.clone()))
             .await;
 
         Ok(Some(range.end()) == self.end_block)
@@ -657,24 +639,11 @@ impl StreamingQuery {
 
         // Use a single context for all queries against the blocks table. This is to keep a
         // consistent reference chain within the scope of this function.
+        let (network, blocks_table) = self.single_network();
+        let network = network.clone();
+        let blocks_table = Arc::clone(blocks_table);
         let blocks_ctx = {
-            // Construct a catalog for the single `blocks_table`.
-            let catalog = {
-                let physical_table = self.blocks_table.physical_table.clone();
-                let sql_schema_name = self.blocks_table.sql_schema_name.clone();
-                let sql_schema_name_arc = Arc::from(sql_schema_name.as_str());
-                let resolved_table = LogicalTable::new(
-                    sql_schema_name,
-                    physical_table.dataset_reference().clone(),
-                    physical_table.table().clone(),
-                );
-                Catalog::new(
-                    vec![resolved_table],
-                    vec![],
-                    vec![(Arc::new(physical_table), sql_schema_name_arc)],
-                    Default::default(),
-                )
-            };
+            let catalog = blocks_table_catalog(&blocks_table);
             ExecContextBuilder::new(self.exec_env.clone())
                 .with_isolate_pool(self.isolate_pool.clone())
                 .for_catalog(catalog, false)
@@ -684,7 +653,7 @@ impl StreamingQuery {
 
         // The latest common watermark across the source tables.
         let Some(common_watermark) = self
-            .latest_src_watermark(&blocks_ctx, chains)
+            .latest_src_watermark(&blocks_table, &blocks_ctx, chains)
             .await
             .map_err(NextMicrobatchRangeError::LatestSrcWatermark)?
         else {
@@ -699,7 +668,7 @@ impl StreamingQuery {
         }
 
         let Some(direction) = self
-            .next_microbatch_start(&blocks_ctx)
+            .next_microbatch_start(&blocks_table, &blocks_ctx)
             .await
             .map_err(NextMicrobatchRangeError::NextMicrobatchStart)?
         else {
@@ -708,7 +677,7 @@ impl StreamingQuery {
         };
         let start = direction.segment_start();
         let Some(end) = self
-            .next_microbatch_end(&blocks_ctx, start, common_watermark)
+            .next_microbatch_end(&blocks_table, &blocks_ctx, start, common_watermark)
             .await
             .map_err(NextMicrobatchRangeError::NextMicrobatchEnd)?
         else {
@@ -716,13 +685,13 @@ impl StreamingQuery {
             return Ok(None);
         };
         Ok(Some(MicrobatchRange {
-            range: BlockRange {
+            ranges: vec![BlockRange {
                 numbers: start.number..=end.number,
-                network: self.network.clone(),
+                network: network.clone(),
                 hash: end.hash,
                 prev_hash: start.prev_hash,
                 timestamp: end.timestamp,
-            },
+            }],
             direction,
         }))
     }
@@ -730,13 +699,16 @@ impl StreamingQuery {
     #[instrument(skip_all, err)]
     async fn next_microbatch_start(
         &self,
+        blocks_table: &ResolvedBlocksTable,
         ctx: &ExecContext,
     ) -> Result<Option<StreamDirection>, NextMicrobatchStartError> {
-        match &self.prev_cursor {
+        let (network, _) = self.single_network();
+        let prev_network_cursor = self.prev_cursor.as_ref().and_then(|c| c.0.get(network));
+        match prev_network_cursor {
             // start stream
             None => {
                 let block = self
-                    .blocks_table_fetch(ctx, self.start_block, None)
+                    .blocks_table_fetch(blocks_table, ctx, self.start_block, None)
                     .await
                     .map_err(NextMicrobatchStartError::BlocksTableFetch)?;
                 Ok(block.map(|b| StreamDirection::ForwardFrom(b.into())))
@@ -744,7 +716,7 @@ impl StreamingQuery {
             // continue stream
             Some(prev)
                 if self
-                    .blocks_table_contains(ctx, prev)
+                    .blocks_table_contains(blocks_table, ctx, prev)
                     .await
                     .map_err(NextMicrobatchStartError::BlocksTableContains)?
                     .is_some() =>
@@ -759,7 +731,7 @@ impl StreamingQuery {
             // rewind stream due to reorg
             Some(prev) => {
                 let block = self
-                    .reorg_base(ctx, prev)
+                    .reorg_base(blocks_table, ctx, prev)
                     .await
                     .map_err(NextMicrobatchStartError::ReorgBase)?;
                 Ok(block.map(|b| StreamDirection::ReorgFrom(b.into())))
@@ -770,6 +742,7 @@ impl StreamingQuery {
     #[instrument(skip_all, err)]
     async fn next_microbatch_end(
         &mut self,
+        blocks_table: &ResolvedBlocksTable,
         ctx: &ExecContext,
         start: &SegmentStart,
         common_watermark: BlockWatermark,
@@ -796,7 +769,7 @@ impl StreamingQuery {
         if number == common_watermark.number {
             Ok(Some(common_watermark))
         } else {
-            self.blocks_table_fetch(ctx, number, None)
+            self.blocks_table_fetch(blocks_table, ctx, number, None)
                 .await
                 .map(|r| r.map(|r| r.block_watermark()))
                 .map_err(NextMicrobatchEndError)
@@ -806,6 +779,7 @@ impl StreamingQuery {
     #[instrument(skip_all, err)]
     async fn latest_src_watermark(
         &self,
+        blocks_table: &ResolvedBlocksTable,
         ctx: &ExecContext,
         chains: impl Iterator<Item = &[Segment]>,
     ) -> Result<Option<BlockWatermark>, LatestSrcWatermarkError> {
@@ -815,7 +789,7 @@ impl StreamingQuery {
             for segment in chain.iter().rev() {
                 let cursor = segment.single_range().into();
                 if let Some(block_watermark) = self
-                    .blocks_table_contains(ctx, &cursor)
+                    .blocks_table_contains(blocks_table, ctx, &cursor)
                     .await
                     .map_err(LatestSrcWatermarkError)?
                 {
@@ -837,6 +811,7 @@ impl StreamingQuery {
     #[instrument(skip_all, err)]
     async fn reorg_base(
         &self,
+        blocks_table: &ResolvedBlocksTable,
         ctx: &ExecContext,
         prev_cursor: &NetworkCursor,
     ) -> Result<Option<BlockRow>, ReorgBaseError> {
@@ -857,12 +832,17 @@ impl StreamingQuery {
 
         let mut min_fork_block_num = prev_cursor.number;
         let mut fork: Option<BlockRow> = self
-            .blocks_table_fetch(&fork_ctx, prev_cursor.number, Some(&prev_cursor.hash))
+            .blocks_table_fetch(
+                blocks_table,
+                &fork_ctx,
+                prev_cursor.number,
+                Some(&prev_cursor.hash),
+            )
             .await
             .map_err(ReorgBaseError::BlocksTableFetch)?;
         while let Some(block) = fork.take() {
             if self
-                .blocks_table_contains(ctx, &block.cursor())
+                .blocks_table_contains(blocks_table, ctx, &block.cursor())
                 .await
                 .map_err(ReorgBaseError::BlocksTableContains)?
                 .is_some()
@@ -872,6 +852,7 @@ impl StreamingQuery {
             min_fork_block_num = block.number;
             fork = self
                 .blocks_table_fetch(
+                    blocks_table,
                     &fork_ctx,
                     block.number.saturating_sub(1),
                     Some(&block.prev_hash),
@@ -898,7 +879,7 @@ impl StreamingQuery {
                 .start();
         }
 
-        self.blocks_table_fetch(ctx, min_fork_block_num, None)
+        self.blocks_table_fetch(blocks_table, ctx, min_fork_block_num, None)
             .await
             .map_err(ReorgBaseError::BlocksTableFetch)
     }
@@ -906,6 +887,7 @@ impl StreamingQuery {
     #[instrument(skip_all, err)]
     async fn blocks_table_contains(
         &self,
+        blocks_table: &ResolvedBlocksTable,
         ctx: &ExecContext,
         cursor: &NetworkCursor,
     ) -> Result<Option<BlockWatermark>, BlocksTableContainsError> {
@@ -936,25 +918,26 @@ impl StreamingQuery {
             }
         }
 
-        self.blocks_table_fetch(ctx, cursor.number, Some(&cursor.hash))
+        self.blocks_table_fetch(blocks_table, ctx, cursor.number, Some(&cursor.hash))
             .await
             .map(|row| row.map(|r| r.block_watermark()))
             .map_err(BlocksTableContainsError)
     }
 
-    #[instrument(skip(self, ctx), err)]
+    #[instrument(skip(self, blocks_table, ctx), err)]
     async fn blocks_table_fetch(
         &self,
+        blocks_table: &ResolvedBlocksTable,
         ctx: &ExecContext,
         number: BlockNum,
         hash: Option<&BlockHash>,
     ) -> Result<Option<BlockRow>, BlocksTableFetchError> {
-        let hash_column = self.blocks_table.hash_column;
-        let parent_hash_column = self.blocks_table.parent_hash_column;
-        let timestamp_column = self.blocks_table.timestamp_column;
-        let blocks_sql_schema_name = self.blocks_table.sql_schema_name.clone();
-        let blocks_physical_table_name = self.blocks_table.physical_table.table_name().clone();
-        let hash_constraint = self.blocks_table.hash_constraint_sql(hash);
+        let hash_column = blocks_table.hash_column;
+        let parent_hash_column = blocks_table.parent_hash_column;
+        let timestamp_column = blocks_table.timestamp_column;
+        let blocks_sql_schema_name = blocks_table.sql_schema_name.clone();
+        let blocks_physical_table_name = blocks_table.physical_table.table_name().clone();
+        let hash_constraint = blocks_table.hash_constraint_sql(hash);
 
         let sql = format!(
             "SELECT {}, {}, {} FROM {} WHERE _block_num = {} {} LIMIT 1",
@@ -987,15 +970,13 @@ impl StreamingQuery {
             return Ok(None);
         }
 
-        let hash = self
-            .blocks_table
+        let hash = blocks_table
             .get_hash_value(&results)
             .map_err(BlocksTableFetchError::ExtractHash)?;
-        let prev_hash = self
-            .blocks_table
+        let prev_hash = blocks_table
             .get_parent_hash_value(&results)
             .map_err(BlocksTableFetchError::ExtractHash)?;
-        let timestamp = self.blocks_table.get_timestamp_value(&results);
+        let timestamp = blocks_table.get_timestamp_value(&results);
         Ok(Some(BlockRow {
             number,
             hash,
@@ -1331,6 +1312,24 @@ pub fn keep_alive_stream<'a>(
     })
 }
 
+/// Construct a [`Catalog`] containing a single blocks table for use with [`ExecContext`] queries.
+fn blocks_table_catalog(blocks_table: &ResolvedBlocksTable) -> Catalog {
+    let physical_table = blocks_table.physical_table.clone();
+    let sql_schema_name = blocks_table.sql_schema_name.clone();
+    let sql_schema_name_arc = Arc::from(sql_schema_name.as_str());
+    let resolved_table = LogicalTable::new(
+        sql_schema_name,
+        physical_table.dataset_reference().clone(),
+        physical_table.table().clone(),
+    );
+    Catalog::new(
+        vec![resolved_table],
+        vec![],
+        vec![(Arc::new(physical_table), sql_schema_name_arc)],
+        Default::default(),
+    )
+}
+
 /// Resolved blocks table information for a given network.
 struct ResolvedBlocksTable {
     dataset_kind: DatasetKindStr,
@@ -1534,47 +1533,41 @@ pub enum ResolveBlocksTableError {
     TableNotSynced(String, String),
 }
 
-/// Resolve the raw dataset from a set of root dataset references.
+/// Resolve raw datasets from a set of root dataset references, grouped by network.
 ///
 /// Traverses transitive dependencies from each root, collecting raw datasets.
-/// Returns the first raw dataset found, validating that all raw datasets in
-/// the dependency tree belong to the same network.
-async fn resolve_raw_dataset_from_dependencies(
+/// Returns one raw dataset per unique network found in the dependency tree.
+async fn resolve_raw_datasets_by_network(
     datasets_cache: &DatasetsCache,
     root_dataset_refs: impl Iterator<Item = &HashReference>,
-) -> Result<Arc<RawDataset>, ResolveRawDatasetError> {
-    let mut found: Option<Arc<RawDataset>> = None;
+) -> Result<BTreeMap<NetworkId, Arc<RawDataset>>, ResolveRawDatasetsError> {
+    let mut by_network: BTreeMap<NetworkId, Arc<RawDataset>> = BTreeMap::new();
 
     for hash_ref in root_dataset_refs {
         let dataset = datasets_cache
             .get_dataset(hash_ref)
             .await
-            .map_err(ResolveRawDatasetError::GetDataset)?;
+            .map_err(ResolveRawDatasetsError::GetDataset)?;
 
         let raw_datasets = crate::datasets_cache::collect_raw_datasets(datasets_cache, dataset)
             .await
-            .map_err(ResolveRawDatasetError::Traversal)?;
+            .map_err(ResolveRawDatasetsError::Traversal)?;
 
         for raw in raw_datasets {
-            match &found {
-                None => found = Some(raw),
-                Some(first) if *first.network() != *raw.network() => {
-                    return Err(ResolveRawDatasetError::MultipleNetworks {
-                        first: first.network().clone(),
-                        second: raw.network().clone(),
-                    });
-                }
-                Some(_) => {} // same network
-            }
+            by_network.entry(raw.network().clone()).or_insert(raw);
         }
     }
 
-    found.ok_or(ResolveRawDatasetError::NoRawDatasetFound)
+    if by_network.is_empty() {
+        return Err(ResolveRawDatasetsError::NoRawDatasetFound);
+    }
+
+    Ok(by_network)
 }
 
-/// Errors that occur when resolving the raw dataset from dependencies.
+/// Errors that occur when resolving raw datasets from dependencies.
 #[derive(Debug, thiserror::Error)]
-pub enum ResolveRawDatasetError {
+pub enum ResolveRawDatasetsError {
     /// Failed to get root dataset from dataset store.
     #[error("failed to get dataset")]
     GetDataset(#[source] crate::datasets_cache::GetDatasetError),
@@ -1582,10 +1575,6 @@ pub enum ResolveRawDatasetError {
     /// Failed to traverse dataset dependencies.
     #[error("failed to traverse dependencies")]
     Traversal(#[source] crate::datasets_cache::DependencyTraversalError),
-
-    /// Multiple networks found in the dependency tree.
-    #[error("multiple networks in dependency tree: {first} and {second}")]
-    MultipleNetworks { first: NetworkId, second: NetworkId },
 
     /// No raw dataset found in the dependency tree.
     #[error("no raw dataset found in dependency tree")]

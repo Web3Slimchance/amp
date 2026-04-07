@@ -102,7 +102,7 @@ impl ParquetFileWriter {
     #[tracing::instrument(skip_all, fields(table = %self.table_ref_compact, location = %self.location_id), err)]
     pub async fn close(
         mut self,
-        range: BlockRange,
+        ranges: Vec<BlockRange>,
         parent_ids: Vec<FileId>,
         generation: Generation,
     ) -> Result<ParquetFileWriterOutput, ParquetFileWriterCloseError> {
@@ -119,7 +119,7 @@ impl ParquetFileWriter {
             table: self.table_name.to_string(),
             filename: self.filename.clone(),
             created_at: Timestamp::now(),
-            ranges: vec![range.clone()],
+            ranges: ranges.clone(),
             watermark: None,
         };
 
@@ -158,10 +158,9 @@ impl ParquetFileWriter {
             .map_err(ParquetFileWriterCloseError::HeadObject)?;
 
         tracing::debug!(
-            "wrote {} for range {} to {}, row count {}, size {}",
+            "wrote {} for {} range(s), row count {}, size {}",
             self.filename,
-            range.start(),
-            range.end(),
+            ranges.len(),
             meta.file_metadata().num_rows(),
             format_size(object_meta.size),
         );

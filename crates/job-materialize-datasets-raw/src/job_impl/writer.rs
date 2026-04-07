@@ -423,7 +423,7 @@ impl RawTableWriter {
         let range = self.current_range.take().unwrap();
 
         let metadata = file
-            .close(range, vec![], Generation::default())
+            .close(vec![range], vec![], Generation::default())
             .await
             .map_err(CloseCurrentFileError::Close)?;
 

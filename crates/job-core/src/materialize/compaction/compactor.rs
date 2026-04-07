@@ -454,7 +454,7 @@ impl CompactionGroup {
         let generation = self.size.generation + 1;
 
         writer
-            .close(range, parent_ids, generation)
+            .close(vec![range], parent_ids, generation)
             .await
             .map_err(CompactorError::FileWrite)
     }
