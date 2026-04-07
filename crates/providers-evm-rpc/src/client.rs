@@ -238,7 +238,7 @@ impl Client {
                     tracing::info!(
                         blocks_streamed,
                         total_blocks_to_stream,
-                        progress_percentage = (blocks_streamed as f32 / total_blocks_to_stream as f32) * 100.0,
+                        progress_percentage = format_args!("{:.2}", (blocks_streamed as f32 / total_blocks_to_stream as f32) * 100.0),
                         current_block = block_num,
                         start_block,
                         end_block,
@@ -429,7 +429,7 @@ impl Client {
                 tracing::info!(
                     blocks_completed,
                     total_blocks_to_stream,
-                    progress_percentage = (blocks_completed as f32 / total_blocks_to_stream as f32) * 100.0,
+                    progress_percentage = format_args!("{:.2}", (blocks_completed as f32 / total_blocks_to_stream as f32) * 100.0),
                     txns_completed,
                     elapsed_ms = start.elapsed().as_millis() as u64,
                     "Block fetch progress"
