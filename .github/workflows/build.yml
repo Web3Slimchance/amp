@@ -30,7 +30,6 @@ jobs:
       name: ${{ steps.meta.outputs.name }}
       nightly: ${{ steps.meta.outputs.nightly }}
       latest: ${{ steps.meta.outputs.latest }}
-      canary: ${{ steps.meta.outputs.canary }}
       version: ${{ steps.meta.outputs.version }}
       timestamp: ${{ steps.meta.outputs.timestamp }}
       release: ${{ steps.meta.outputs.release }}
@@ -51,7 +50,6 @@ jobs:
             name="Nightly ($(date -u +%Y-%m-%d))"
             nightly="true"
             latest="false"
-            canary="false"
             version="${tag}"
             release="true"
             containerize="true"
@@ -66,7 +64,6 @@ jobs:
             name="${GITHUB_REF_NAME}"
             nightly="false"
             latest="true"
-            canary="false"
             version="${GITHUB_REF_NAME}"
             release="true"
             containerize="true"
@@ -75,7 +72,6 @@ jobs:
             name="${GITHUB_REF_NAME}"
             nightly="false"
             latest="false"
-            canary="true"
             version="${GITHUB_SHA}"
             release="false"
             containerize="true"
@@ -85,7 +81,6 @@ jobs:
           echo "name=${name}" >> "$GITHUB_OUTPUT"
           echo "nightly=${nightly}" >> "$GITHUB_OUTPUT"
           echo "latest=${latest}" >> "$GITHUB_OUTPUT"
-          echo "canary=${canary}" >> "$GITHUB_OUTPUT"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "release=${release}" >> "$GITHUB_OUTPUT"
           echo "containerize=${containerize}" >> "$GITHUB_OUTPUT"
@@ -383,10 +378,9 @@ jobs:
         with:
           images: ghcr.io/edgeandnode/${{ matrix.name }}
           tags: |
-            type=raw,value=canary,enable=${{ needs.metadata.outputs.canary == 'true' }}
+            type=raw,value=${{ needs.metadata.outputs.tag }}
             type=raw,value=latest,enable=${{ needs.metadata.outputs.latest == 'true' }}
             type=raw,value=nightly,enable=${{ needs.metadata.outputs.nightly == 'true' }}
-            type=ref,event=tag
             type=sha
           labels: |
             org.opencontainers.image.source=https://github.com/edgeandnode/amp
