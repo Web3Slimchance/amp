@@ -41,7 +41,7 @@ use crate::{
     amp_catalog_provider::{AMP_CATALOG_NAME, AmpCatalogProvider, AsyncSchemaProvider},
     arrow::{
         array::{Array, Int64Array, RecordBatch, TimestampNanosecondArray},
-        datatypes::SchemaRef,
+        datatypes::{DataType, SchemaRef, TimeUnit},
     },
     catalog::{logical::LogicalTable, physical::Catalog},
     context::{
@@ -713,28 +713,30 @@ impl StreamingQuery {
                     .map_err(NextMicrobatchStartError::BlocksTableFetch)?;
                 Ok(block.map(|b| StreamDirection::ForwardFrom(b.into())))
             }
-            // continue stream
-            Some(prev)
-                if self
+            // continue or rewind stream
+            Some(prev) => {
+                let watermark = self
                     .blocks_table_contains(blocks_table, ctx, prev)
                     .await
-                    .map_err(NextMicrobatchStartError::BlocksTableContains)?
-                    .is_some() =>
-            {
-                let segment_start = SegmentStart {
-                    number: prev.number + 1,
-                    prev_hash: prev.hash,
-                    timestamp: None,
-                };
-                Ok(Some(StreamDirection::ForwardFrom(segment_start)))
-            }
-            // rewind stream due to reorg
-            Some(prev) => {
-                let block = self
-                    .reorg_base(blocks_table, ctx, prev)
-                    .await
-                    .map_err(NextMicrobatchStartError::ReorgBase)?;
-                Ok(block.map(|b| StreamDirection::ReorgFrom(b.into())))
+                    .map_err(NextMicrobatchStartError::BlocksTableContains)?;
+                match watermark {
+                    Some(wm) => {
+                        let segment_start = SegmentStart {
+                            number: prev.number + 1,
+                            prev_hash: prev.hash,
+                            timestamp: wm.timestamp,
+                        };
+                        Ok(Some(StreamDirection::ForwardFrom(segment_start)))
+                    }
+                    None => {
+                        // rewind stream due to reorg
+                        let block = self
+                            .reorg_base(blocks_table, ctx, prev)
+                            .await
+                            .map_err(NextMicrobatchStartError::ReorgBase)?;
+                        Ok(block.map(|b| StreamDirection::ReorgFrom(b.into())))
+                    }
+                }
             }
         }
     }
@@ -1419,8 +1421,14 @@ impl ResolvedBlocksTable {
                 }
             })
         } else {
-            // Timestamp column is DataType::Timestamp(Nanosecond, _). Extract the
-            // raw i64 nanos and convert to seconds.
+            // Timestamp column is DataType::Timestamp(Nanosecond, _), with or
+            // without timezone. The physical representation is always i64 nanos,
+            // so cast to remove timezone before downcasting.
+            let col = datafusion::arrow::compute::cast(
+                col,
+                &DataType::Timestamp(TimeUnit::Nanosecond, None),
+            )
+            .expect("timestamp column must be castable to Timestamp(Nanosecond, None)");
             col.as_any()
                 .downcast_ref::<TimestampNanosecondArray>()
                 .and_then(|arr| {
