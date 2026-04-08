@@ -68,7 +68,7 @@ impl DatasetsCache {
 // Dataset loading API
 impl DatasetsCache {
     /// Retrieves a dataset by hash reference with in-memory caching. Use `resolve_revision()` to convert symbolic references to hash references first.
-    #[tracing::instrument(skip(self), err)]
+    #[tracing::instrument(skip(self), fields(reference = %format!("{reference:#}")), err)]
     pub async fn get_dataset(
         &self,
         reference: &HashReference,
