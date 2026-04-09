@@ -19,15 +19,9 @@ pub fn init() {
     // multiple initializations.
     static INIT: Once = Once::new();
     INIT.call_once(|| {
-        let env_filter = env_filter();
-
-        let span_events = span_events();
-
-        tracing_subscriber::fmt()
-            .with_env_filter(env_filter)
-            .with_writer(std::io::stderr)
-            .with_span_events(span_events)
-            .with_ansi(std::io::stderr().is_terminal())
+        tracing_subscriber::Registry::default()
+            .with(env_filter())
+            .with(fmt_layer())
             .init();
     });
 }
@@ -48,13 +42,9 @@ pub fn init_with_telemetry(url: &str, trace_ratio: f64) -> telemetry::traces::Re
         (telemetry_layer, tracer_provider)
     };
 
-    let fmt_layer = tracing_subscriber::fmt::layer()
-        .with_writer(std::io::stderr)
-        .with_ansi(std::io::stderr().is_terminal());
-
     tracing_subscriber::Registry::default()
         .with(env_filter)
-        .with(fmt_layer)
+        .with(fmt_layer())
         .with(telemetry_layer)
         .init();
 
@@ -131,6 +121,16 @@ fn env_filter() -> EnvFilter {
     }
 
     env_filter
+}
+
+fn fmt_layer<S>() -> impl tracing_subscriber::Layer<S>
+where
+    S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
+{
+    tracing_subscriber::fmt::layer()
+        .with_writer(std::io::stderr)
+        .with_span_events(span_events())
+        .with_ansi(std::io::stderr().is_terminal())
 }
 
 fn span_events() -> FmtSpan {
