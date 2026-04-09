@@ -131,6 +131,7 @@ impl PhysicalTable {
     }
 
     /// Compute missing block ranges from the canonical chain.
+    #[tracing::instrument(skip_all)]
     pub async fn missing_ranges(
         &self,
         desired: RangeInclusive<BlockNum>,
@@ -187,6 +188,7 @@ impl PhysicalTable {
         Ok(canonical)
     }
 
+    #[tracing::instrument(skip_all)]
     pub(crate) async fn segments(&self) -> Result<Vec<Segment>, GetSegmentsError> {
         let raw_files = self
             .store

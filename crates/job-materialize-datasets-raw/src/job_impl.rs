@@ -466,6 +466,7 @@ pub async fn execute(ctx: Context, desc: JobDescriptor, job_id: JobId) -> Result
 /// Uses attempt-based rotation: each retry picks the next provider in the sorted list,
 /// cycling back to the first after exhausting all options.
 /// Returns the first provider when no job ID is available.
+#[tracing::instrument(skip_all)]
 async fn select_provider_for_attempt(
     mut providers: Vec<(
         amp_providers_registry::ProviderName,

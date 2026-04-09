@@ -27,6 +27,7 @@ use object_store::ObjectMeta;
 ///
 /// Warning: This function has side effects - it deletes orphaned files from object store.
 /// These deletions are logged at `WARN` level before execution.
+#[tracing::instrument(skip_all)]
 pub async fn consistency_check(
     table: &PhysicalTable,
     store: &DataStore,

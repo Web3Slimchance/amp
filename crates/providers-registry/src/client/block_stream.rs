@@ -18,6 +18,7 @@ use futures::Stream;
 use monitoring::telemetry::metrics::Meter;
 
 /// Creates a block stream client from provider configuration. Supports EVM RPC, Solana, and Firehose providers.
+#[tracing::instrument(skip_all)]
 pub async fn create(
     name: ProviderName,
     config: ProviderResolvedConfigRaw,
