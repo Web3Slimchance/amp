@@ -490,7 +490,7 @@ impl PostgresBuilder {
                 let reader = BufReader::new(stdout);
                 let mut lines = reader.lines();
                 while let Ok(Some(line)) = lines.next_line().await {
-                    tracing::info!(target: "postgres", "{}", line);
+                    tracing::info!("{}", line);
                 }
             })
         });
@@ -500,7 +500,7 @@ impl PostgresBuilder {
                 let reader = BufReader::new(stderr);
                 let mut lines = reader.lines();
                 while let Ok(Some(line)) = lines.next_line().await {
-                    tracing::warn!(target: "postgres", "{}", line);
+                    tracing::warn!("{}", line);
                 }
             })
         });

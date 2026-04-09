@@ -1,5 +1,7 @@
 use alloy::primitives::BlockHash;
-use common::physical_table::segments::{Segment, canonical_chain};
+use common::physical_table::segments::{
+    Segment, canonical_chain, load_arbitrum_fixture, missing_ranges,
+};
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use datasets_common::{block_num::BlockNum, block_range::BlockRange, network_id::NetworkId};
 use metadata_db::files::FileId;
@@ -106,5 +108,25 @@ fn bench_chains(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, bench_chains);
+fn bench_missing_ranges_arbitrum(c: &mut Criterion) {
+    let segments = load_arbitrum_fixture();
+    let latest_block = segments
+        .iter()
+        .map(|s| *s.ranges()[0].numbers.end())
+        .max()
+        .unwrap();
+    let desired = 0..=latest_block;
+
+    let mut group = c.benchmark_group("missing_ranges_arbitrum");
+    group.sample_size(10);
+    group.bench_function("52k_real_segments", |b| {
+        b.iter(|| {
+            let result = missing_ranges(black_box(&segments), black_box(desired.clone()));
+            black_box(result);
+        })
+    });
+    group.finish();
+}
+
+criterion_group!(benches, bench_chains, bench_missing_ranges_arbitrum);
 criterion_main!(benches);

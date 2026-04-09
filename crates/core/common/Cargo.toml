@@ -4,6 +4,9 @@ edition.workspace = true
 version.workspace = true
 license-file.workspace = true
 
+[features]
+test-fixtures = ["dep:flate2", "dep:postcard"]
+
 [dependencies]
 alloy.workspace = true
 amp-data-store = { path = "../data-store" }
@@ -46,6 +49,8 @@ tracing.workspace = true
 tracing-futures.workspace = true
 url.workspace = true
 uuid.workspace = true
+flate2 = { version = "1", optional = true }
+postcard = { version = "1", features = ["alloc"], optional = true }
 
 [dev-dependencies]
 amp-object-store = { path = "../object-store" }
@@ -54,7 +59,10 @@ indoc.workspace = true
 metadata-db-postgres = { path = "../../services/metadata-db-postgres" }
 tempfile.workspace = true
 criterion = "0.5"
+flate2 = "1"
+postcard = { version = "1", features = ["alloc"] }
 
 [[bench]]
 name = "segments"
 harness = false
+required-features = ["test-fixtures"]
