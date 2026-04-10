@@ -1,6 +1,8 @@
 use std::{sync::Arc, time::Duration};
 
-use datafusion::parquet::file::properties::WriterProperties as ParquetWriterProperties;
+use datafusion::parquet::file::properties::{
+    WriterProperties as ParquetWriterProperties, WriterVersion,
+};
 
 use super::{
     collector::CollectorProperties,
@@ -43,6 +45,7 @@ pub fn parquet_opts(config: impl Into<ParquetConfig>) -> Arc<WriterProperties> {
     // Datafusion doesn't actually read that metadata info anywhere and just reiles on the
     // `file_sort_order` set on the reader configuration.
     let parquet = ParquetWriterProperties::builder()
+        .set_writer_version(WriterVersion::PARQUET_2_0)
         .set_compression(config.compression)
         .set_bloom_filter_ndv(bloom_filter_ndv)
         .set_bloom_filter_enabled(config.bloom_filters)
