@@ -220,7 +220,8 @@ async fn main_inner() -> Result<(), Error> {
             let addrs = config.server_addrs.clone();
 
             let (_providers, meter) =
-                monitoring::init(config.opentelemetry.as_ref()).map_err(Error::Monitoring)?;
+                monitoring::init(&(&config.logging).into(), config.opentelemetry.as_ref())
+                    .map_err(Error::Monitoring)?;
 
             server_cmd::run(
                 config,
@@ -243,7 +244,8 @@ async fn main_inner() -> Result<(), Error> {
                 .ok_or(Error::MissingMetadataDbConfig)?;
 
             let (_providers, meter) =
-                monitoring::init(config.opentelemetry.as_ref()).map_err(Error::Monitoring)?;
+                monitoring::init(&(&config.logging).into(), config.opentelemetry.as_ref())
+                    .map_err(Error::Monitoring)?;
 
             let build_info = build_info::load();
             worker_cmd::run(build_info, config, &metadata_db_config, meter, node_id)
@@ -259,7 +261,8 @@ async fn main_inner() -> Result<(), Error> {
             let admin_api_addr = config.controller_addrs.admin_api_addr;
 
             let (_providers, meter) =
-                monitoring::init(config.opentelemetry.as_ref()).map_err(Error::Monitoring)?;
+                monitoring::init(&(&config.logging).into(), config.opentelemetry.as_ref())
+                    .map_err(Error::Monitoring)?;
 
             let build_info = build_info::load();
             controller_cmd::run(
@@ -280,7 +283,8 @@ async fn main_inner() -> Result<(), Error> {
                 .ok_or(Error::MissingMetadataDbConfig)?;
 
             let (_providers, _meter) =
-                monitoring::init(config.opentelemetry.as_ref()).map_err(Error::Monitoring)?;
+                monitoring::init(&(&config.logging).into(), config.opentelemetry.as_ref())
+                    .map_err(Error::Monitoring)?;
 
             migrate_cmd::run(&metadata_db_config)
                 .await

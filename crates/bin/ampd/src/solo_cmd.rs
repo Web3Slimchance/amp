@@ -81,7 +81,8 @@ pub async fn run(
 
     // 4. Init monitoring
     let (_providers, meter) =
-        monitoring::init(config.opentelemetry.as_ref()).map_err(Error::MonitoringInit)?;
+        monitoring::init(&(&config.logging).into(), config.opentelemetry.as_ref())
+            .map_err(Error::MonitoringInit)?;
 
     let worker_id = "worker".parse().expect("Invalid worker ID");
 

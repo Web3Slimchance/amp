@@ -2,6 +2,14 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
+/// Logging output configuration.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct LoggingConfig {
+    /// Output logs as JSON (default: false).
+    #[serde(default)]
+    pub json: bool,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct OpenTelemetryConfig {
     /// Remote OpenTelemetry metrics collector endpoint. Metrics are sent over binary HTTP.

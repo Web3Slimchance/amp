@@ -8,43 +8,49 @@ use tracing_subscriber::{
     util::SubscriberInitExt,
 };
 
-use crate::telemetry;
+use crate::{config::LoggingConfig, telemetry};
 
 static AMP_LOG_ENV_VAR: &str = "AMP_LOG";
 static AMP_LOG_SPAN_EVENT_ENV_VAR: &str = "AMP_LOG_SPAN_EVENT";
 
-/// Initializes a tracing subscriber for logging.
+/// Initializes a tracing subscriber for logging with default configuration.
 pub fn init() {
+    init_with_config(&LoggingConfig::default());
+}
+
+/// Initializes a tracing subscriber for logging.
+pub fn init_with_config(config: &LoggingConfig) {
     // Since we also use this function to enable logging in tests, wrap it in `Once` to prevent
     // multiple initializations.
     static INIT: Once = Once::new();
     INIT.call_once(|| {
         tracing_subscriber::Registry::default()
             .with(env_filter())
-            .with(fmt_layer())
+            .with(fmt_layer(config))
             .init();
     });
 }
 
 /// Initializes a tracing subscriber for logging with OpenTelemetry tracing support.
-pub fn init_with_telemetry(url: &str, trace_ratio: f64) -> telemetry::traces::Result {
+pub fn init_with_telemetry(
+    config: &LoggingConfig,
+    url: &str,
+    trace_ratio: f64,
+) -> telemetry::traces::Result {
     let env_filter = env_filter();
 
     // Clamp trace_ratio to valid range [0.0, 1.0]
     let trace_ratio = trace_ratio.clamp(0.0, 1.0);
 
     // Initialize OpenTelemetry tracing infrastructure to enable tracing of query execution.
-    let (telemetry_layer, traces_provider) = {
-        let tracer_provider = telemetry::traces::provider(url, trace_ratio)?;
-        let tracer = tracer_provider.tracer("amp-tracer");
-        let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+    let traces_provider = telemetry::traces::provider(url, trace_ratio)?;
 
-        (telemetry_layer, tracer_provider)
-    };
+    let tracer = traces_provider.tracer("amp-tracer");
+    let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
 
     tracing_subscriber::Registry::default()
         .with(env_filter)
-        .with(fmt_layer())
+        .with(fmt_layer(config))
         .with(telemetry_layer)
         .init();
 
@@ -123,14 +129,28 @@ fn env_filter() -> EnvFilter {
     env_filter
 }
 
-fn fmt_layer<S>() -> impl tracing_subscriber::Layer<S>
+fn fmt_layer<S>(config: &LoggingConfig) -> Box<dyn tracing_subscriber::Layer<S> + Send + Sync>
 where
     S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
 {
-    tracing_subscriber::fmt::layer()
-        .with_writer(std::io::stderr)
-        .with_span_events(span_events())
-        .with_ansi(std::io::stderr().is_terminal())
+    let span_events = span_events();
+
+    if config.json {
+        Box::new(
+            tracing_subscriber::fmt::layer()
+                .json()
+                .with_writer(std::io::stderr)
+                .with_span_events(span_events)
+                .with_ansi(false),
+        )
+    } else {
+        Box::new(
+            tracing_subscriber::fmt::layer()
+                .with_writer(std::io::stderr)
+                .with_span_events(span_events)
+                .with_ansi(std::io::stderr().is_terminal()),
+        )
+    }
 }
 
 fn span_events() -> FmtSpan {

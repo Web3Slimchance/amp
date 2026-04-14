@@ -23,26 +23,31 @@ pub type TelemetryKit = (
 );
 
 pub fn init(
-    config: Option<impl Into<OpenTelemetryConfig>>,
+    logging: &config::LoggingConfig,
+    otel: Option<impl Into<OpenTelemetryConfig>>,
 ) -> Result<TelemetryKit, telemetry::ExporterBuildError> {
-    let Some(config) = config.map(Into::into) else {
-        logging::init();
+    let Some(otel) = otel.map(Into::into) else {
+        logging::init_with_config(logging);
         return Ok(((None, None), None));
     };
 
     // Initialize tracing
-    let tracing_provider = match config.trace_url.as_deref() {
-        Some(url) => Some(logging::init_with_telemetry(url, config.trace_ratio)?),
+    let tracing_provider = match otel.trace_url.as_deref() {
+        Some(url) => Some(logging::init_with_telemetry(
+            logging,
+            url,
+            otel.trace_ratio,
+        )?),
         None => {
-            logging::init();
+            logging::init_with_config(logging);
             None
         }
     };
 
     // Initialize metrics
-    let (metrics_provider, meter) = match config.metrics_url.as_deref() {
+    let (metrics_provider, meter) = match otel.metrics_url.as_deref() {
         Some(url) => {
-            let (provider, meter) = metrics::start(url, config.metrics_export_interval)?;
+            let (provider, meter) = metrics::start(url, otel.metrics_export_interval)?;
             (Some(provider), Some(meter))
         }
         None => (None, None),

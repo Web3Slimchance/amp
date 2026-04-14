@@ -26,7 +26,7 @@ pub use self::{
 use self::{
     controller::ControllerAddrs,
     materialize::{ConfigDuration, ParquetConfig},
-    monitoring::OpenTelemetryConfig,
+    monitoring::{LoggingConfig, OpenTelemetryConfig},
     server::ServerAddrs,
 };
 
@@ -104,6 +104,7 @@ fn resolve_config(
         spill_location: config_file.spill_location,
         microbatch_max_interval: config_file.microbatch_max_interval,
         parquet: config_file.writer,
+        logging: config_file.logging,
         opentelemetry: config_file.opentelemetry,
         server_addrs,
         controller_addrs,
@@ -212,6 +213,8 @@ pub struct Config {
     pub spill_location: Vec<PathBuf>,
     /// Maximum interval for derived dataset dump microbatches (in blocks).
     pub microbatch_max_interval: u64,
+    /// Logging output configuration.
+    pub logging: LoggingConfig,
     /// OpenTelemetry observability configuration.
     pub opentelemetry: Option<OpenTelemetryConfig>,
     /// Network addresses for query server endpoints.

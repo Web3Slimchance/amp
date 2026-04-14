@@ -37,6 +37,9 @@
       "default": 30,
       "minimum": 0
     },
+    "logging": {
+      "$ref": "#/$defs/LoggingConfig"
+    },
     "manifests_dir": {
       "description": "Path to a directory containing dataset manifest files (default: `manifests`)",
       "type": "string",
@@ -262,6 +265,17 @@
       "required": [
         "brokers"
       ]
+    },
+    "LoggingConfig": {
+      "description": "Logging output configuration.",
+      "type": "object",
+      "properties": {
+        "json": {
+          "description": "Output logs as JSON (default: false).",
+          "type": "boolean",
+          "default": false
+        }
+      }
     },
     "OpenTelemetryConfig": {
       "description": "OpenTelemetry observability configuration for metrics and tracing.\n\nControls export of metrics and traces to an OpenTelemetry-compatible collector\nvia OTLP/HTTP.",

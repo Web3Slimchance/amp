@@ -34,7 +34,7 @@ use figment::{
 
 use crate::{
     materialize::{ConfigDuration, ParquetConfig},
-    monitoring::OpenTelemetryConfig,
+    monitoring::{LoggingConfig, OpenTelemetryConfig},
 };
 
 /// Default data directory name - stores Parquet files
@@ -191,6 +191,8 @@ pub struct ConfigFile {
     pub admin_api_addr: Option<String>,
 
     // Observability
+    #[serde(default)]
+    pub logging: LoggingConfig,
     pub opentelemetry: Option<OpenTelemetryConfig>,
 
     // Writer/Parquet configuration

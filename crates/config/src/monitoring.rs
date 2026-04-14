@@ -1,5 +1,20 @@
 use std::time::Duration;
 
+/// Logging output configuration.
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct LoggingConfig {
+    /// Output logs as JSON (default: false).
+    #[serde(default)]
+    pub json: bool,
+}
+
+impl From<&LoggingConfig> for amp_monitoring::config::LoggingConfig {
+    fn from(config: &LoggingConfig) -> Self {
+        Self { json: config.json }
+    }
+}
+
 /// OpenTelemetry observability configuration for metrics and tracing.
 ///
 /// Controls export of metrics and traces to an OpenTelemetry-compatible collector
