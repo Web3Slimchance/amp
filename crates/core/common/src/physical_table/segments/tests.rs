@@ -5,7 +5,7 @@ use datasets_common::{block_num::BlockNum, network_id::NetworkId};
 use metadata_db::files::FileId;
 use object_store::ObjectMeta;
 use rand::{
-    Rng as _, RngCore as _, SeedableRng as _,
+    Rng as _, RngExt as _, SeedableRng as _,
     rngs::StdRng,
     seq::{IndexedRandom, SliceRandom},
 };

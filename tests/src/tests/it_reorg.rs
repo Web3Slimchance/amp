@@ -10,7 +10,7 @@ use common::{
 };
 use datasets_common::{partial_reference::PartialReference, reference::Reference};
 use monitoring::logging;
-use rand::{Rng, RngCore, SeedableRng as _, rngs::StdRng};
+use rand::{Rng, RngExt as _, SeedableRng as _, rngs::StdRng};
 use serde::Deserialize;
 use tokio::sync::mpsc;
 

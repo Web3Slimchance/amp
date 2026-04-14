@@ -1,7 +1,7 @@
 //! PKCE (Proof Key for Code Exchange) helpers for OAuth 2.0 device flow.
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use rand::RngCore;
+use rand::RngExt as _;
 use reqwest::Client;
 use sha2::{Digest, Sha256};
 
@@ -20,7 +20,7 @@ use super::{
 /// unreserved characters [A-Za-z0-9-._~].
 pub fn generate_code_verifier() -> String {
     let mut bytes = [0u8; 32];
-    rand::rng().fill_bytes(&mut bytes);
+    rand::rng().fill(&mut bytes);
     URL_SAFE_NO_PAD.encode(bytes)
 }
 

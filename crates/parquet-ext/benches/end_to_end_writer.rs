@@ -19,7 +19,7 @@ use parquet::{
     file::properties::{WriterProperties, WriterPropertiesPtr},
 };
 use parquet_ext::arrow::async_writer::AsyncArrowWriter as OurAsyncArrowWriter;
-use rand::Rng as _;
+use rand::RngExt as _;
 use tokio::runtime::Runtime;
 
 enum Cardinality {

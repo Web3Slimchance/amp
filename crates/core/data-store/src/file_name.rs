@@ -30,7 +30,7 @@ impl FileName {
     ///
     /// Example: `000000001-a1b2c3d4e5f6g7h8.parquet`
     pub fn new_with_random_suffix(start: BlockNum) -> Self {
-        use rand::RngCore as _;
+        use rand::Rng as _;
         Self::new(start, rand::rng().next_u64())
     }
 

@@ -6,7 +6,7 @@ use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use datasets_common::{block_num::BlockNum, block_range::BlockRange, network_id::NetworkId};
 use metadata_db::files::FileId;
 use object_store::ObjectMeta;
-use rand::{Rng, seq::SliceRandom};
+use rand::{Rng, RngExt as _, seq::SliceRandom};
 
 fn random_hash(rng: &mut impl Rng) -> BlockHash {
     BlockHash::from(rng.random::<[u8; 32]>())
