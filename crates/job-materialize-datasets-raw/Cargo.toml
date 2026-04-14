@@ -8,6 +8,7 @@ license-file.workspace = true
 amp-data-store = { path = "../core/data-store" }
 amp-job-core = { path = "../job-core" }
 amp-parquet = { path = "../core/parquet" }
+amp-providers-evm-rpc = { path = "../providers-evm-rpc" }
 amp-providers-registry = { path = "../providers-registry" }
 common = { path = "../core/common" }
 datafusion.workspace = true

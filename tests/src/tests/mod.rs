@@ -22,6 +22,7 @@ mod it_job_events;
 mod it_joins;
 mod it_multi_network_batch;
 mod it_multi_table_continuous;
+mod it_new_head_notifier;
 mod it_non_incremental;
 mod it_reorg;
 mod it_segment_pruning;

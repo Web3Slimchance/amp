@@ -9,15 +9,19 @@ use std::path::PathBuf;
 
 use amp_providers_common::provider_name::ProviderName;
 
-use crate::{config::EvmRpcProviderConfig, error::ClientError, provider::Auth};
+use crate::{
+    client::WsSubscriptionConfig, config::EvmRpcProviderConfig, error::ClientError, provider::Auth,
+};
 
 pub mod client;
 pub mod config;
 pub mod error;
 pub mod kind;
 pub mod metrics;
+pub mod new_heads;
 pub mod provider;
 pub mod tables;
+mod ws_connect;
 
 pub use self::client::Client;
 
@@ -28,12 +32,18 @@ pub async fn client(
     meter: Option<&monitoring::telemetry::metrics::Meter>,
 ) -> Result<Client, ClientError> {
     let url = config.url.into_inner();
+
     let auth = config.auth_token.map(|token| match config.auth_header {
         Some(header) => Auth::CustomHeader {
             name: header,
             value: token,
         },
         None => Auth::Bearer(token),
+    });
+
+    let ws_subscription = config.ws_url.map(|ws_url| WsSubscriptionConfig {
+        url: ws_url.into_inner(),
+        auth: auth.clone(),
     });
 
     let request_limit = u16::max(1, config.concurrent_request_limit.unwrap_or(1024));
@@ -62,6 +72,7 @@ pub async fn client(
                 config.rate_limit_per_minute,
                 config.fetch_receipts_per_tx,
                 auth,
+                ws_subscription,
                 meter,
             )
             .await?
@@ -76,6 +87,7 @@ pub async fn client(
             config.fetch_receipts_per_tx,
             config.timeout,
             auth,
+            ws_subscription,
             meter,
         )?,
     };

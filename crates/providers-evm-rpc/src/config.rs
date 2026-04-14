@@ -28,6 +28,16 @@ pub struct EvmRpcProviderConfig {
     #[cfg_attr(feature = "schemars", schemars(with = "String"))]
     pub url: Redacted<Url>,
 
+    /// Optional WebSocket URL for `eth_subscribe("newHeads")` notifications.
+    ///
+    /// When set, the provider will open a separate WebSocket connection to subscribe
+    /// to new block headers, reducing latency compared to polling.
+    ///
+    /// The `auth_header` and `auth_token` fields, if set, will also be applied to the WebSocket connection.
+    #[serde(default)]
+    #[cfg_attr(feature = "schemars", schemars(with = "Option<String>"))]
+    pub ws_url: Option<Redacted<Url>>,
+
     /// Custom header name for authentication.
     ///
     /// When set alongside `auth_token`, sends `<auth_header>: <auth_token>` as a raw header
@@ -89,6 +99,11 @@ pub struct EvmRpcProviderConfig {
 pub struct AuthHeaderName(String);
 
 impl AuthHeaderName {
+    /// Returns a reference to the inner string.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
     /// Consumes the wrapper and returns the inner string.
     pub fn into_inner(self) -> String {
         self.0
@@ -114,6 +129,11 @@ impl<'de> serde::Deserialize<'de> for AuthHeaderName {
 pub struct AuthToken(Redacted<String>);
 
 impl AuthToken {
+    /// Returns a reference to the inner string.
+    pub fn as_str(&self) -> &str {
+        self.0.as_ref()
+    }
+
     /// Consumes the wrapper and returns the inner string.
     pub fn into_inner(self) -> String {
         self.0.into_inner()

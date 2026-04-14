@@ -96,7 +96,8 @@ use amp_job_core::{
     },
     proto,
 };
-use amp_providers_registry::retryable::RetryableErrorExt as _;
+use amp_providers_evm_rpc::new_heads::{NewHeadNotifier, Notification};
+use amp_providers_registry::{BlockStreamClient, retryable::RetryableErrorExt as _};
 use common::{
     catalog::{logical::LogicalTable, physical::Catalog},
     physical_table::{MissingRangesError, PhysicalTable, segments::merge_ranges},
@@ -107,7 +108,7 @@ use datasets_common::{
     table_name::TableName,
 };
 use datasets_raw::{
-    client::{BlockStreamer as _, BlockStreamerExt as _, LatestBlockError},
+    client::{BlockStreamer as _, BlockStreamerExt as _, BlockStreamerWithRetry, LatestBlockError},
     dataset::Dataset as RawDataset,
 };
 
@@ -281,14 +282,24 @@ pub async fn execute(ctx: Context, desc: JobDescriptor, job_id: JobId) -> Result
         provider = %provider_name,
         "selected provider for block streaming"
     );
-    let mut client = amp_providers_registry::create_block_stream_client(
+    let block_stream_client = amp_providers_registry::create_block_stream_client(
         provider_name,
         config,
         ctx.meter.as_ref(),
     )
     .await
-    .map_err(Error::CreateBlockStreamClient)?
-    .with_retry();
+    .map_err(Error::CreateBlockStreamClient)?;
+
+    let mut new_head_notifier = block_stream_client.new_head_notifier();
+
+    match new_head_notifier {
+        Some(_) => tracing::info!("WS active for new block detection"),
+        None => tracing::info!(
+            "ws_url not configured in provider, falling back to polling for new block detection"
+        ),
+    }
+
+    let mut client = block_stream_client.with_retry();
 
     let start = dataset.start_block().unwrap_or(0);
     let resolved = resolve_end_block(&end, start, client.latest_block(finalized_blocks_only))
@@ -329,27 +340,15 @@ pub async fn execute(ctx: Context, desc: JobDescriptor, job_id: JobId) -> Result
     let materialize_result: Result<(), Error> = async {
         let mut prev_latest_block: Option<BlockNum> = None;
         loop {
-            let Some(latest_block) = client
-                .latest_block(finalized_blocks_only)
-                .await
-                .map_err(Error::LatestBlock)?
-            else {
-                // No data to materialize, wait for more data
-                timer.tick().await;
-                continue;
-            };
-
-            // Skip recomputing missing ranges if latest_block hasn't changed.
-            if Some(latest_block) == prev_latest_block {
-                timer.tick().await;
-                continue;
-            }
-
-            if latest_block < start {
-                // Start not yet reached, wait for more data
-                timer.tick().await;
-                continue;
-            }
+            let latest_block = wait_for_new_block(
+                &mut client,
+                finalized_blocks_only,
+                &mut timer,
+                &mut new_head_notifier,
+                prev_latest_block,
+                start,
+            )
+            .await?;
 
             let mut missing_ranges_by_table: BTreeMap<TableName, Vec<RangeInclusive<BlockNum>>> =
                 Default::default();
@@ -392,8 +391,7 @@ pub async fn execute(ctx: Context, desc: JobDescriptor, job_id: JobId) -> Result
                 {
                     break;
                 } else {
-                    // Otherwise, wait for more data.
-                    timer.tick().await;
+                    // Otherwise, wait for more data (loop back to wait_for_new_block).
                     continue;
                 }
             }
@@ -678,5 +676,71 @@ impl amp_job_core::error::JobErrorExt for Error {
             Self::MissingRanges(_) => "MISSING_RANGES",
             Self::PartitionTask(_) => "PARTITION_TASK",
         }
+    }
+}
+
+/// Wait for the latest block number. Uses WebSocket notifications when available, otherwise falls back to polling the client.
+///
+/// This function loops internally, waiting for new data when:
+/// - The provider returns no blocks yet
+/// - The latest block hasn't changed since `prev_latest_block`
+/// - The latest block is below `start`
+async fn wait_for_new_block(
+    client: &mut BlockStreamerWithRetry<BlockStreamClient>,
+    finalized_blocks_only: bool,
+    timer: &mut tokio::time::Interval,
+    notifier: &mut Option<NewHeadNotifier>,
+    prev_latest_block: Option<BlockNum>,
+    start: BlockNum,
+) -> Result<BlockNum, Error> {
+    loop {
+        let ws_block = match notifier {
+            Some(n) => {
+                tokio::select! {
+                    _ = timer.tick() => None,
+                    notification = n.notified() => {
+                        match notification {
+                            Notification::NewHead(block_num) => {
+                                tracing::debug!(block_num, "new block detected via WebSocket");
+                                timer.reset();
+                                Some(block_num)
+                            }
+                            Notification::Stopped => {
+                                tracing::warn!("new-head notifier stopped, falling back to polling");
+                                *notifier = None;
+                                None
+                            }
+                        }
+                    }
+                }
+            }
+            None => {
+                timer.tick().await;
+                None
+            }
+        };
+
+        // If we got a block number from the WebSocket and we're not tracking finalized
+        // blocks, we can use it directly without an RPC call.
+        let latest_block = if let Some(block_num) = ws_block
+            && !finalized_blocks_only
+        {
+            block_num
+        } else {
+            let Some(block_num) = client
+                .latest_block(finalized_blocks_only)
+                .await
+                .map_err(Error::LatestBlock)?
+            else {
+                continue;
+            };
+            block_num
+        };
+
+        if Some(latest_block) == prev_latest_block || latest_block < start {
+            continue;
+        }
+
+        return Ok(latest_block);
     }
 }

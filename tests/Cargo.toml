@@ -19,6 +19,7 @@ amp-data-store = { path = "../crates/core/data-store" }
 amp-datasets-registry = { path = "../crates/core/datasets-registry" }
 amp-object-store = { path = "../crates/core/object-store" }
 amp-parquet = { path = "../crates/core/parquet" }
+amp-providers-evm-rpc = { path = "../crates/providers-evm-rpc" }
 amp-providers-registry = { path = "../crates/providers-registry" }
 amp-providers-solana = { path = "../crates/providers-solana" }
 amp-job-core = { path = "../crates/job-core" }

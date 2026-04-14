@@ -72,6 +72,13 @@
     "url": {
       "description": "The URL of the EVM RPC endpoint (HTTP, HTTPS, WebSocket, or IPC).\n\nSupported schemes: `http://`, `https://`, `ws://`, `wss://`, and IPC socket paths.",
       "type": "string"
+    },
+    "ws_url": {
+      "description": "Optional WebSocket URL for `eth_subscribe(\"newHeads\")` notifications.\n\nWhen set, the provider will open a separate WebSocket connection to subscribe\nto new block headers, reducing latency compared to polling.\n\nThe `auth_header` and `auth_token` fields, if set, will also be applied to the WebSocket connection.",
+      "type": [
+        "string",
+        "null"
+      ]
     }
   },
   "required": [

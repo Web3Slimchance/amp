@@ -46,6 +46,7 @@ use crate::{
         BatchRequestError, BatchingError, ClientError, FetchReceiptsError, OverflowSource,
         RpcToRowsError, ToRowError,
     },
+    new_heads::NewHeadNotifier,
     provider::Auth,
     tables::transactions::{Transaction, TransactionRowsBuilder},
 };
@@ -109,6 +110,15 @@ impl BatchingRpcWrapper {
     }
 }
 
+/// Configuration for the optional new-head WebSocket notifier.
+#[derive(Clone)]
+pub struct WsSubscriptionConfig {
+    /// WebSocket URL for `eth_subscribe("newHeads")`.
+    pub url: Url,
+    /// Authentication for the WebSocket handshake, same as the RPC provider auth.
+    pub auth: Option<Auth>,
+}
+
 #[derive(Clone)]
 pub struct Client {
     client: RootProviderWithMetrics,
@@ -117,6 +127,7 @@ pub struct Client {
     limiter: Arc<tokio::sync::Semaphore>,
     batch_size: usize,
     fetch_receipts_per_tx: bool,
+    ws_subscription: Option<WsSubscriptionConfig>,
 }
 
 impl Client {
@@ -131,6 +142,7 @@ impl Client {
         fetch_receipts_per_tx: bool,
         timeout: Duration,
         auth: Option<Auth>,
+        ws_subscription: Option<WsSubscriptionConfig>,
         meter: Option<&monitoring::telemetry::metrics::Meter>,
     ) -> Result<Self, ClientError> {
         assert!(request_limit >= 1);
@@ -145,6 +157,7 @@ impl Client {
             limiter,
             batch_size,
             fetch_receipts_per_tx,
+            ws_subscription,
         })
     }
 
@@ -174,6 +187,7 @@ impl Client {
             limiter,
             batch_size,
             fetch_receipts_per_tx,
+            ws_subscription: None,
         })
     }
 
@@ -187,6 +201,7 @@ impl Client {
         rate_limit: Option<NonZeroU32>,
         fetch_receipts_per_tx: bool,
         auth: Option<Auth>,
+        ws_subscription: Option<WsSubscriptionConfig>,
         meter: Option<&monitoring::telemetry::metrics::Meter>,
     ) -> Result<Self, ClientError> {
         assert!(request_limit >= 1);
@@ -204,11 +219,24 @@ impl Client {
             limiter,
             batch_size,
             fetch_receipts_per_tx,
+            ws_subscription,
         })
     }
 
     pub fn provider_name(&self) -> &str {
         &self.provider_name
+    }
+
+    /// Create a new-head notifier if WebSocket subscription config is available.
+    ///
+    /// Returns `None` if no WebSocket URL was configured for this client.
+    pub fn new_head_notifier(&self) -> Option<NewHeadNotifier> {
+        let config = self.ws_subscription.as_ref()?;
+        Some(NewHeadNotifier::spawn(
+            config.url.clone(),
+            config.auth.clone(),
+            Default::default(),
+        ))
     }
 
     /// Create a stream that fetches blocks from start_block to end_block. One method is called at a time.

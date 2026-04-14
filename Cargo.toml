@@ -88,6 +88,7 @@ alloy = { version = "1.4", default-features = false, features = [
     "provider-http",
     "provider-ipc",
     "provider-ws",
+    "pubsub",
     "reqwest-rustls-tls",
     "rpc",
     "rpc-types",
@@ -163,6 +164,7 @@ tokio = { version = "1.36.0", features = [
     "parking_lot",
 ] }
 tokio-stream = "0.1.17"
+tokio-tungstenite = { version = "0.28", features = ["rustls-tls-webpki-roots"] }
 tokio-util = { version = "0.7.15", features = ["rt"] }
 toml = "0.8.10"
 tower = "0.5.2"

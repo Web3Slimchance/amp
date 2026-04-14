@@ -6,11 +6,13 @@ license-file.workspace = true
 
 [features]
 # JSON Schema generation support for provider configuration validation.
-schemars = ["dep:schemars", "amp-providers-common/schemars", "dep:serde_json"]
+schemars = ["dep:schemars", "amp-providers-common/schemars"]
 
 [dependencies]
 alloy.workspace = true
 amp-providers-common = { path = "../providers-common" }
+http.workspace = true
+tokio-tungstenite.workspace = true
 async-stream.workspace = true
 datasets-common = { path = "../core/datasets-common" }
 datasets-raw = { path = "../core/datasets-raw" }
@@ -20,7 +22,7 @@ headers.workspace = true
 monitoring = { path = "../core/monitoring" }
 schemars = { workspace = true, optional = true }
 serde.workspace = true
-serde_json = { workspace = true, optional = true }
+serde_json.workspace = true
 serde_with.workspace = true
 thiserror.workspace = true
 tokio.workspace = true

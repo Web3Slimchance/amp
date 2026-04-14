@@ -4,7 +4,7 @@ use amp_providers_common::{
     config::{ConfigHeader, InvalidConfigError, ProviderResolvedConfigRaw, TryIntoConfig as _},
     provider_name::ProviderName,
 };
-use amp_providers_evm_rpc::kind::EvmRpcProviderKind;
+use amp_providers_evm_rpc::{kind::EvmRpcProviderKind, new_heads::NewHeadNotifier};
 use amp_providers_firehose::kind::FirehoseProviderKind;
 use amp_providers_solana::kind::SolanaProviderKind;
 use amp_providers_tempo::kind::TempoProviderKind;
@@ -106,6 +106,18 @@ pub enum BlockStreamClient {
     Solana(amp_providers_solana::Client),
     Firehose(Box<amp_providers_firehose::Client>),
     Tempo(amp_providers_tempo::Client),
+}
+
+impl BlockStreamClient {
+    /// Create a new-head notifier if the underlying provider supports WebSocket subscriptions.
+    ///
+    /// Returns `None` for non-EVM providers or when no WebSocket URL is configured.
+    pub fn new_head_notifier(&self) -> Option<NewHeadNotifier> {
+        match self {
+            Self::EvmRpc(client) => client.new_head_notifier(),
+            _ => None,
+        }
+    }
 }
 
 impl BlockStreamer for BlockStreamClient {

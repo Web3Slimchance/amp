@@ -10,11 +10,9 @@ use std::{
 
 use alloy::{
     network::AnyNetwork,
-    providers::{
-        ProviderBuilder as AlloyProviderBuilder, RootProvider as AlloyRootProvider, WsConnect,
-    },
+    providers::{ProviderBuilder as AlloyProviderBuilder, RootProvider as AlloyRootProvider},
     rpc::client::ClientBuilder,
-    transports::{Authorization as TransportAuthorization, TransportError, http::reqwest::Client},
+    transports::{TransportError, http::reqwest::Client},
 };
 use amp_providers_common::config::{InvalidConfigError, ProviderResolvedConfigRaw, TryIntoConfig};
 use governor::{DefaultDirectRateLimiter, Quota, RateLimiter};
@@ -132,6 +130,7 @@ pub enum CreateEvmRpcClientError {
 }
 
 /// Authentication configuration for EVM RPC providers.
+#[derive(Clone)]
 pub enum Auth {
     /// Standard `Authorization: Bearer <token>` header.
     Bearer(AuthToken),
@@ -217,37 +216,40 @@ pub async fn new_ipc<P: AsRef<Path>>(
         .connect_client(client))
 }
 
+/// Build a `WsConnectWithHeaders` with auth applied.
+pub fn ws_connect_with_auth(
+    url: &Url,
+    auth: Option<&Auth>,
+) -> crate::ws_connect::WsConnectWithHeaders {
+    let mut ws = crate::ws_connect::WsConnectWithHeaders::new(url.as_str());
+    match auth {
+        Some(Auth::Bearer(token)) => {
+            ws = ws.with_header("authorization", format!("Bearer {}", token.as_str()));
+        }
+        Some(Auth::CustomHeader { name, value }) => {
+            ws = ws.with_header(name.as_str(), value.as_str());
+        }
+        None => {}
+    }
+    ws
+}
+
 /// Create a WebSocket EVM RPC provider.
 pub async fn new_ws(
     url: Url,
     auth: Option<Auth>,
     rate_limit: Option<NonZeroU32>,
 ) -> Result<EvmRpcAlloyProvider, TransportError> {
-    let mut ws_connect = WsConnect::new(url);
-    ws_connect = if let Some(a) = auth {
-        let token = match a {
-            Auth::Bearer(token) => token,
-            Auth::CustomHeader { value: token, .. } => {
-                tracing::warn!(
-                    "custom auth header names are not supported for WebSocket connections; \
-                     falling back to raw Authorization header"
-                );
-                token
-            }
-        };
-        ws_connect.with_auth(TransportAuthorization::raw(token.into_inner()))
-    } else {
-        ws_connect
-    };
+    let ws_connect = ws_connect_with_auth(&url, auth.as_ref());
 
     let client_builder = ClientBuilder::default();
     let client = if let Some(rl) = rate_limit {
         client_builder
             .layer(RateLimitLayer::new(rl))
-            .ws(ws_connect)
+            .pubsub(ws_connect)
             .await?
     } else {
-        client_builder.ws(ws_connect).await?
+        client_builder.pubsub(ws_connect).await?
     };
 
     Ok(AlloyProviderBuilder::new()
