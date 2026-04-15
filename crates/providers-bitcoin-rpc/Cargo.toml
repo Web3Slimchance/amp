@@ -1,0 +1,30 @@
+[package]
+name = "amp-providers-bitcoin-rpc"
+edition.workspace = true
+version.workspace = true
+license-file.workspace = true
+
+[features]
+# JSON Schema generation support for provider configuration validation.
+schemars = ["dep:schemars", "amp-providers-common/schemars"]
+
+[dependencies]
+amp-providers-common = { path = "../providers-common" }
+datasets-common = { path = "../core/datasets-common" }
+datasets-raw = { path = "../core/datasets-raw" }
+futures.workspace = true
+governor.workspace = true
+hex.workspace = true
+monitoring = { path = "../core/monitoring" }
+reqwest = { workspace = true }
+schemars = { workspace = true, optional = true }
+serde.workspace = true
+serde_json = { workspace = true }
+serde_with.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+arrow.workspace = true

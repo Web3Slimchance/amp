@@ -1,6 +1,8 @@
 //! Manifests register handler
 
-use amp_datasets_raw::manifest::{EvmRpcManifest, FirehoseManifest, SolanaManifest, TempoManifest};
+use amp_datasets_raw::manifest::{
+    BitcoinRpcManifest, EvmRpcManifest, FirehoseManifest, SolanaManifest, TempoManifest,
+};
 use amp_datasets_registry::{error::RegisterManifestError, manifests::StoreError};
 use axum::{
     Json,
@@ -123,6 +125,10 @@ pub async fn handler(
         }
         DatasetKind::Firehose => {
             parse_and_canonicalize_raw_dataset_manifest::<FirehoseManifest>(&manifest_str)
+                .map_err(Error::from)?
+        }
+        DatasetKind::BitcoinRpc => {
+            parse_and_canonicalize_raw_dataset_manifest::<BitcoinRpcManifest>(&manifest_str)
                 .map_err(Error::from)?
         }
     };

@@ -260,6 +260,12 @@ gen:
     cp -f $(ls -t target/debug/build/amp-providers-static-gen-*/out/schema.json | head -1) {{GEN_PROVIDER_SCHEMAS_OUTDIR}}/static.spec.json
     echo "  {{GEN_PROVIDER_SCHEMAS_OUTDIR}}/static.spec.json"
 
+    # Bitcoin RPC (provider + table schema)
+    cp -f $(ls -t target/debug/build/amp-providers-bitcoin-rpc-gen-*/out/schema.json | head -1) {{GEN_PROVIDER_SCHEMAS_OUTDIR}}/bitcoin-rpc.spec.json
+    echo "  {{GEN_PROVIDER_SCHEMAS_OUTDIR}}/bitcoin-rpc.spec.json"
+    cp -f $(ls -t target/debug/build/datasets-bitcoin-rpc-gen-*/out/tables.md | head -1) {{GEN_TABLE_SCHEMAS_OUTDIR}}/bitcoin-rpc.md
+    echo "  {{GEN_TABLE_SCHEMAS_OUTDIR}}/bitcoin-rpc.md"
+
     # Admin API (OpenAPI spec)
     cp -f $(ls -t target/debug/build/amp-controller-admin-api-gen-*/out/openapi.spec.json | head -1) {{GEN_OPENAPI_SCHEMAS_OUTDIR}}/admin.spec.json
     echo "  {{GEN_OPENAPI_SCHEMAS_OUTDIR}}/admin.spec.json"
@@ -394,6 +400,24 @@ gen-tempo-provider-schema DEST_DIR=GEN_PROVIDER_SCHEMAS_OUTDIR:
     @mkdir -p {{DEST_DIR}}
     @cp -f $(ls -t target/debug/build/amp-providers-tempo-gen-*/out/schema.json | head -1) {{DEST_DIR}}/tempo.spec.json
     @echo "Schema generated and copied to {{DEST_DIR}}/tempo.spec.json"
+
+### Bitcoin RPC (provider + table schema)
+
+# Generate Bitcoin RPC provider config JSON schema
+[group: 'codegen']
+gen-bitcoin-rpc-provider-schema DEST_DIR=GEN_PROVIDER_SCHEMAS_OUTDIR:
+    RUSTFLAGS="--cfg gen_schema_provider" cargo check -p amp-providers-bitcoin-rpc-gen
+    @mkdir -p {{DEST_DIR}}
+    @cp -f $(ls -t target/debug/build/amp-providers-bitcoin-rpc-gen-*/out/schema.json | head -1) {{DEST_DIR}}/bitcoin-rpc.spec.json
+    @echo "Schema generated and copied to {{DEST_DIR}}/bitcoin-rpc.spec.json"
+
+# Generate Bitcoin RPC table schema markdown
+[group: 'codegen']
+gen-bitcoin-rpc-tables-schema DEST_DIR=GEN_TABLE_SCHEMAS_OUTDIR:
+    RUSTFLAGS="--cfg gen_schema_tables" cargo check -p datasets-bitcoin-rpc-gen
+    @mkdir -p {{DEST_DIR}}
+    @cp -f $(ls -t target/debug/build/datasets-bitcoin-rpc-gen-*/out/tables.md | head -1) {{DEST_DIR}}/bitcoin-rpc.md
+    @echo "Table schema markdown generated and copied to {{DEST_DIR}}/bitcoin-rpc.md"
 
 ### Static (provider only)
 

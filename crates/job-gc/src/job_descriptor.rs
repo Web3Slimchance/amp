@@ -28,6 +28,9 @@ impl From<JobDescriptor> for metadata_db::job_events::EventDetailOwned {
         })
         .expect("JobDescriptor serialization is infallible");
 
+        // SAFETY: `raw` was just produced by `serde_json::value::to_raw_value`, which always
+        // emits valid JSON. `from_owned_unchecked` requires the input to be valid JSON, which
+        // is guaranteed by the construction above.
         metadata_db::job_events::EventDetail::from_owned_unchecked(raw)
     }
 }

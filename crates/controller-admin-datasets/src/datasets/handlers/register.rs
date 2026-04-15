@@ -1,4 +1,6 @@
-use amp_datasets_raw::manifest::{EvmRpcManifest, FirehoseManifest, SolanaManifest, TempoManifest};
+use amp_datasets_raw::manifest::{
+    BitcoinRpcManifest, EvmRpcManifest, FirehoseManifest, SolanaManifest, TempoManifest,
+};
 use amp_datasets_registry::error::{LinkManifestError, RegisterManifestError, SetVersionTagError};
 use axum::{
     Json,
@@ -195,6 +197,10 @@ pub async fn handler(
                     .map_err(Error::from)?,
                     DatasetKind::Solana => parse_and_canonicalize_raw_dataset_manifest::<
                         SolanaManifest,
+                    >(manifest_content.get())
+                    .map_err(Error::from)?,
+                    DatasetKind::BitcoinRpc => parse_and_canonicalize_raw_dataset_manifest::<
+                        BitcoinRpcManifest,
                     >(manifest_content.get())
                     .map_err(Error::from)?,
                 };

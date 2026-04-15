@@ -26,6 +26,7 @@ datafusion-tracing.workspace = true
 datasets-common = { path = "../datasets-common" }
 datasets-derived = { path = "../datasets-derived" }
 datasets-raw = { path = "../datasets-raw" }
+bitcoin-rpc-datasets = { path = "../../extractors/bitcoin-rpc" }
 evm-rpc-datasets = { path = "../../extractors/evm-rpc" }
 firehose-datasets = { path = "../../extractors/firehose" }
 futures.workspace = true

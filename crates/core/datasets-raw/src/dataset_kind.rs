@@ -185,3 +185,11 @@ define_dataset_kind! {
     /// blockchain data from Solana sources (Old Faithful archives).
     pub struct SolanaDatasetKind => "solana",
 }
+
+define_dataset_kind! {
+    /// Type-safe representation of the Bitcoin RPC dataset kind.
+    ///
+    /// This zero-sized type represents the "bitcoin-rpc" dataset kind, which extracts
+    /// blockchain data directly from Bitcoin Core JSON-RPC endpoints.
+    pub struct BitcoinRpcDatasetKind => "bitcoin-rpc",
+}

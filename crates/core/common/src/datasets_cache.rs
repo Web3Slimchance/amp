@@ -11,6 +11,7 @@ use amp_datasets_registry::{
     DatasetsRegistry,
     manifests::{ManifestContent, ManifestParseError},
 };
+use bitcoin_rpc_datasets::{BitcoinRpcDatasetKind, Manifest as BitcoinRpcManifest};
 use datafusion::common::HashMap;
 use datasets_common::{
     dataset::Dataset, dataset_kind_str::DatasetKindStr, hash::Hash, hash_reference::HashReference,
@@ -401,6 +402,23 @@ fn create_dataset_from_manifest(
                 })?;
             Arc::new(
                 tempo_datasets::dataset(reference.clone(), manifest).map_err(|source| {
+                    GetDatasetError::InvalidTableName {
+                        reference: reference.clone(),
+                        source,
+                    }
+                })?,
+            )
+        }
+        s if s == BitcoinRpcDatasetKind => {
+            let manifest = manifest_content
+                .try_into_manifest::<BitcoinRpcManifest>()
+                .map_err(|source| GetDatasetError::ParseManifest {
+                    reference: reference.clone(),
+                    kind: BitcoinRpcDatasetKind.into(),
+                    source,
+                })?;
+            Arc::new(
+                bitcoin_rpc_datasets::dataset(reference.clone(), manifest).map_err(|source| {
                     GetDatasetError::InvalidTableName {
                         reference: reference.clone(),
                         source,

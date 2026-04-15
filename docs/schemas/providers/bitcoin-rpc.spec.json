@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "BitcoinRpcProviderConfig",
+  "description": "Bitcoin RPC provider configuration for parsing TOML config.",
+  "type": "object",
+  "properties": {
+    "auth": {
+      "description": "Optional HTTP Basic Auth credentials.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/BasicAuth"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "concurrent_request_limit": {
+      "description": "Optional limit on the number of concurrent requests.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint16",
+      "maximum": 65535,
+      "minimum": 0
+    },
+    "confirmations": {
+      "description": "Number of confirmations required for \"finalized\" blocks.\nDefaults to 6.",
+      "type": "integer",
+      "format": "uint32",
+      "default": 6,
+      "minimum": 0
+    },
+    "kind": {
+      "description": "The provider kind, must be `\"bitcoin-rpc\"`.",
+      "const": "bitcoin-rpc"
+    },
+    "network": {
+      "description": "The network this provider serves (e.g., \"mainnet\", \"testnet\", \"signet\").",
+      "$ref": "#/$defs/NetworkId"
+    },
+    "rate_limit_per_minute": {
+      "description": "Optional rate limit for requests per minute.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint32",
+      "default": null,
+      "minimum": 1
+    },
+    "timeout_secs": {
+      "description": "Request timeout in seconds.",
+      "type": "integer",
+      "format": "uint64",
+      "default": 30,
+      "minimum": 0
+    },
+    "url": {
+      "description": "The URL of the Bitcoin RPC endpoint (HTTP or HTTPS).",
+      "type": "string"
+    }
+  },
+  "required": [
+    "kind",
+    "network",
+    "url"
+  ],
+  "$defs": {
+    "BasicAuth": {
+      "description": "HTTP Basic Auth credentials for the Bitcoin RPC endpoint.",
+      "type": "object",
+      "properties": {
+        "password": {
+          "description": "RPC password.",
+          "type": "string"
+        },
+        "user": {
+          "description": "RPC username.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "user",
+        "password"
+      ]
+    },
+    "NetworkId": {
+      "description": "A validated network identifier that enforces basic constraints.\n\nNetwork identifiers are used to distinguish between different blockchain networks\n(e.g., \"mainnet\", \"base\", \"arbitrum-one\"). This type provides compile-time guarantees\nthat all instances contain valid network identifiers.\n\nNetwork IDs should follow the values defined in The Graph's networks registry:\n<https://github.com/graphprotocol/networks-registry/blob/main/docs/networks-table.md>\n\n## Format Requirements\n\nA valid network identifier must:\n- **Not be empty** (minimum length of 1 character)",
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

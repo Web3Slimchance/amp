@@ -1,5 +1,6 @@
 //! Client creation for raw dataset providers.
 
+use amp_providers_bitcoin_rpc::kind::BitcoinRpcProviderKind;
 use amp_providers_common::{
     config::{ConfigHeader, InvalidConfigError, ProviderResolvedConfigRaw, TryIntoConfig as _},
     provider_name::ProviderName,
@@ -92,6 +93,21 @@ pub async fn create(
                 name,
                 source: ProviderClientError::Tempo(err),
             })
+    } else if header.kind == BitcoinRpcProviderKind {
+        let typed_config =
+            config
+                .try_into_config()
+                .map_err(|err| CreateClientError::ConfigParse {
+                    name: name.clone(),
+                    source: err,
+                })?;
+        amp_providers_bitcoin_rpc::client(name.clone(), typed_config, meter)
+            .await
+            .map(BlockStreamClient::BitcoinRpc)
+            .map_err(|err| CreateClientError::ProviderClient {
+                name,
+                source: ProviderClientError::BitcoinRpc(err),
+            })
     } else {
         Err(CreateClientError::UnsupportedKind {
             kind: header.kind.to_string(),
@@ -106,6 +122,7 @@ pub enum BlockStreamClient {
     Solana(amp_providers_solana::Client),
     Firehose(Box<amp_providers_firehose::Client>),
     Tempo(amp_providers_tempo::Client),
+    BitcoinRpc(amp_providers_bitcoin_rpc::Client),
 }
 
 impl BlockStreamClient {
@@ -154,6 +171,12 @@ impl BlockStreamer for BlockStreamClient {
                         yield item;
                     }
                 }
+                Self::BitcoinRpc(client) => {
+                    let stream = client.block_stream(start_block, end_block).await;
+                    for await item in stream {
+                        yield item;
+                    }
+                }
             }
         }
     }
@@ -167,6 +190,7 @@ impl BlockStreamer for BlockStreamClient {
             Self::Solana(client) => client.latest_block(finalized).await,
             Self::Firehose(client) => client.latest_block(finalized).await,
             Self::Tempo(client) => client.latest_block(finalized).await,
+            Self::BitcoinRpc(client) => client.latest_block(finalized).await,
         }
     }
 
@@ -176,6 +200,7 @@ impl BlockStreamer for BlockStreamClient {
             Self::Solana(client) => client.bucket_size(),
             Self::Firehose(client) => client.bucket_size(),
             Self::Tempo(client) => client.bucket_size(),
+            Self::BitcoinRpc(client) => client.bucket_size(),
         }
     }
 
@@ -185,6 +210,7 @@ impl BlockStreamer for BlockStreamClient {
             Self::Solana(client) => client.provider_name(),
             Self::Firehose(client) => client.provider_name(),
             Self::Tempo(client) => client.provider_name(),
+            Self::BitcoinRpc(client) => client.provider_name(),
         }
     }
 }
@@ -274,6 +300,13 @@ pub enum ProviderClientError {
     /// invalid RPC URLs, connection issues, or authentication failures.
     #[error("failed to create Tempo RPC client")]
     Tempo(#[source] amp_providers_tempo::error::ClientError),
+
+    /// Failed to create Bitcoin RPC client.
+    ///
+    /// This occurs during initialization of the Bitcoin RPC client, which may fail due to
+    /// invalid RPC URLs, connection issues, or authentication failures.
+    #[error("failed to create Bitcoin RPC client")]
+    BitcoinRpc(#[source] amp_providers_bitcoin_rpc::error::ClientError),
 }
 
 impl crate::retryable::RetryableErrorExt for ProviderClientError {
@@ -286,6 +319,7 @@ impl crate::retryable::RetryableErrorExt for ProviderClientError {
             Self::Tempo(err) => {
                 matches!(err, amp_providers_tempo::error::ClientError::Transport(_))
             }
+            Self::BitcoinRpc(_) => true,
         }
     }
 }

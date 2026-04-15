@@ -5,7 +5,8 @@ use std::collections::BTreeMap;
 use datasets_common::{block_num::BlockNum, manifest::TableSchema, network_id::NetworkId};
 
 use crate::dataset_kind::{
-    EvmRpcDatasetKind, FirehoseDatasetKind, SolanaDatasetKind, TempoDatasetKind,
+    BitcoinRpcDatasetKind, EvmRpcDatasetKind, FirehoseDatasetKind, SolanaDatasetKind,
+    TempoDatasetKind,
 };
 
 /// EVM-RPC dataset manifest.
@@ -19,6 +20,9 @@ pub type TempoManifest = Manifest<TempoDatasetKind>;
 
 /// Solana dataset manifest.
 pub type SolanaManifest = Manifest<SolanaDatasetKind>;
+
+/// Bitcoin RPC dataset manifest.
+pub type BitcoinRpcManifest = Manifest<BitcoinRpcDatasetKind>;
 
 /// Generic raw dataset manifest, parameterized by dataset kind `K`.
 ///
@@ -80,5 +84,6 @@ pub mod schema {
         Firehose,
         Solana,
         Tempo,
+        BitcoinRpc,
     }
 }

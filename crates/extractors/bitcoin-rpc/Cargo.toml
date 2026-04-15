@@ -1,0 +1,10 @@
+[package]
+name = "bitcoin-rpc-datasets"
+edition.workspace = true
+version.workspace = true
+license-file.workspace = true
+
+[dependencies]
+amp-providers-bitcoin-rpc = { path = "../../providers-bitcoin-rpc" }
+datasets-common = { path = "../../core/datasets-common" }
+datasets-raw = { path = "../../core/datasets-raw" }

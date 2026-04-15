@@ -1,0 +1,21 @@
+[package]
+name = "datasets-bitcoin-rpc-gen"
+edition.workspace = true
+version.workspace = true
+license-file.workspace = true
+publish = false
+
+# The parent crate is always available as a build dependency
+[build-dependencies]
+bitcoin-rpc-datasets = { path = ".." }
+
+# Table schema markdown generation dependencies
+# These dependencies are only included when the gen_schema_tables cfg flag is enabled
+[target.'cfg(gen_schema_tables)'.build-dependencies]
+datasets-common = { path = "../../../core/datasets-common" }
+datasets-raw = { path = "../../../core/datasets-raw" }
+tokio = { workspace = true, features = ["macros", "rt"] }
+
+[lints.rust]
+# Allow the gen_schema_tables cfg flag used for conditional schema generation
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(gen_schema_tables)'] }

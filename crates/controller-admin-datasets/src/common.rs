@@ -6,7 +6,8 @@ use std::{
 };
 
 use amp_datasets_raw::dataset_kind::{
-    EvmRpcDatasetKind, FirehoseDatasetKind, SolanaDatasetKind, TempoDatasetKind,
+    BitcoinRpcDatasetKind, EvmRpcDatasetKind, FirehoseDatasetKind, SolanaDatasetKind,
+    TempoDatasetKind,
 };
 use amp_datasets_registry::error::ResolveRevisionError;
 use common::{
@@ -153,6 +154,8 @@ pub enum DatasetKind {
     Firehose,
     /// Raw datasets that extract blockchain data from Tempo RPC endpoints.
     Tempo,
+    /// Raw datasets that extract blockchain data from Bitcoin Core JSON-RPC endpoints.
+    BitcoinRpc,
 }
 
 impl DatasetKind {
@@ -164,6 +167,7 @@ impl DatasetKind {
             Self::Solana => SolanaDatasetKind.as_str(),
             Self::Firehose => FirehoseDatasetKind.as_str(),
             Self::Tempo => TempoDatasetKind.as_str(),
+            Self::BitcoinRpc => BitcoinRpcDatasetKind.as_str(),
         }
     }
 }
@@ -190,6 +194,8 @@ impl TryFrom<&DatasetKindStr> for DatasetKind {
             Ok(Self::Solana)
         } else if *kind == FirehoseDatasetKind {
             Ok(Self::Firehose)
+        } else if *kind == BitcoinRpcDatasetKind {
+            Ok(Self::BitcoinRpc)
         } else {
             Err(UnsupportedDatasetKindError(kind.to_string()))
         }

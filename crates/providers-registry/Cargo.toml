@@ -5,6 +5,7 @@ version.workspace = true
 license-file.workspace = true
 
 [dependencies]
+amp-providers-bitcoin-rpc = { path = "../providers-bitcoin-rpc" }
 amp-providers-common = { path = "../providers-common" }
 amp-providers-evm-rpc = { path = "../providers-evm-rpc" }
 amp-providers-firehose = { path = "../providers-firehose" }

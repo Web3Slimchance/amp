@@ -1295,6 +1295,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "amp-providers-bitcoin-rpc"
+version = "0.1.0"
+dependencies = [
+ "amp-providers-common",
+ "arrow",
+ "datasets-common",
+ "datasets-raw",
+ "futures",
+ "governor 0.10.4",
+ "hex",
+ "monitoring",
+ "reqwest 0.13.2",
+ "schemars 1.2.1",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "url",
+]
+
+[[package]]
+name = "amp-providers-bitcoin-rpc-gen"
+version = "0.1.0"
+dependencies = [
+ "amp-providers-bitcoin-rpc",
+ "schemars 1.2.1",
+ "serde_json",
+]
+
+[[package]]
 name = "amp-providers-common"
 version = "0.1.0"
 dependencies = [
@@ -1381,6 +1413,7 @@ dependencies = [
 name = "amp-providers-registry"
 version = "0.1.0"
 dependencies = [
+ "amp-providers-bitcoin-rpc",
  "amp-providers-common",
  "amp-providers-evm-rpc",
  "amp-providers-firehose",
@@ -2784,6 +2817,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2dee39a0ee5b4095224a0cfc6bf4cc1baf0f9624b96b367e53b66d974e51d953"
 
 [[package]]
+name = "bitcoin-rpc-datasets"
+version = "0.1.0"
+dependencies = [
+ "amp-providers-bitcoin-rpc",
+ "datasets-common",
+ "datasets-raw",
+]
+
+[[package]]
 name = "bitcoin_hashes"
 version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3402,6 +3444,7 @@ dependencies = [
  "async-stream",
  "async-trait",
  "bigdecimal",
+ "bitcoin-rpc-datasets",
  "bs58",
  "chrono",
  "criterion",
@@ -4832,6 +4875,16 @@ dependencies = [
  "tracing",
  "tracing-futures",
  "unicode-width",
+]
+
+[[package]]
+name = "datasets-bitcoin-rpc-gen"
+version = "0.1.0"
+dependencies = [
+ "bitcoin-rpc-datasets",
+ "datasets-common",
+ "datasets-raw",
+ "tokio",
 ]
 
 [[package]]

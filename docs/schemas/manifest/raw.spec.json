@@ -99,7 +99,8 @@
         "evm-rpc",
         "firehose",
         "solana",
-        "tempo"
+        "tempo",
+        "bitcoin-rpc"
       ]
     },
     "Table": {
