@@ -166,9 +166,9 @@ impl PhysicalTable {
         // The blocking computation is offloaded to a dedicated thread pool via `spawn_blocking`
         // to prevent blocking the async runtime. The `canonical_chain` function performs
         // CPU-intensive operations (sorting, chain building) that can take milliseconds.
-        let parent_span = tracing::Span::current();
+        let span = tracing::info_span!("canonical_chain");
         let canonical = tokio::task::spawn_blocking(move || {
-            let _span = tracing::info_span!(parent: parent_span, "canonical_chain").entered();
+            let _entered = span.entered();
             canonical_chain(&segments)
         })
         .await

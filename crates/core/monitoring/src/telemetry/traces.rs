@@ -1,5 +1,9 @@
+use std::time::Duration;
+
 use opentelemetry_otlp::{ExporterBuildError, Protocol, WithExportConfig};
-use opentelemetry_sdk::trace::SdkTracerProvider as Inner;
+use opentelemetry_sdk::trace::{
+    BatchConfigBuilder, BatchSpanProcessor, SdkTracerProvider as Inner,
+};
 
 pub type Result = std::result::Result<TracerProvider, ExporterBuildError>;
 
@@ -46,8 +50,16 @@ pub fn provider(url: &str, trace_ratio: f64) -> Result {
         .with_endpoint(url)
         .build()?;
 
+    let batch_config = BatchConfigBuilder::default()
+        .with_scheduled_delay(Duration::from_millis(500))
+        .with_max_queue_size(8192)
+        .build();
+    let batch_processor = BatchSpanProcessor::builder(exporter)
+        .with_batch_config(batch_config)
+        .build();
+
     let provider = Inner::builder()
-        .with_batch_exporter(exporter)
+        .with_span_processor(batch_processor)
         .with_resource(resource)
         .with_sampler(opentelemetry_sdk::trace::Sampler::TraceIdRatioBased(
             trace_ratio,

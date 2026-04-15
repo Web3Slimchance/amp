@@ -29,6 +29,7 @@ use futures::{
     stream::{self, BoxStream},
 };
 use metadata_db::{MetadataDb, files::FileId};
+use tracing_futures::Instrument as _;
 
 use super::{
     compactor::CompactionGroup,
@@ -140,7 +141,7 @@ impl<'a> CompactionPlan<'a> {
         table: &'a TableSnapshot,
         reader_factory: Arc<AmpReaderFactory>,
         metrics: &Option<Arc<CompactionMetrics>>,
-    ) -> CompactionResult<Option<Self>> {
+    ) -> CompactionResult<Option<BoxStream<'a, CompactionGroup>>> {
         let chain = table.canonical_segments();
 
         // Drop the latest N segments from the end of the canonical chain to
@@ -172,7 +173,11 @@ impl<'a> CompactionPlan<'a> {
             metrics.clone(),
         );
 
-        Ok(Some(Self {
+        let span = tracing::trace_span!(
+            "compaction_plan",
+            table = %table.physical_table().table_ref_compact()
+        );
+        let inner = Self {
             files,
             opts,
             metrics: metrics.as_ref().cloned(),
@@ -183,14 +188,14 @@ impl<'a> CompactionPlan<'a> {
             current_candidate: None,
             done: false,
             group_count: 0,
-        }))
+        };
+        Ok(Some(inner.instrument(span).boxed()))
     }
 }
 
 impl<'a> Stream for CompactionPlan<'a> {
     type Item = CompactionGroup;
 
-    #[tracing::instrument(skip_all, fields(table = self.table.table_ref_compact(), group_count = self.group_count + 1))]
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
 

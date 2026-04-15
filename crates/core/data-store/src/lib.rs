@@ -866,7 +866,7 @@ impl DataStore {
     ///
     /// The `schema` parameter is required to compute DataFusion statistics from the parquet
     /// metadata.
-    #[tracing::instrument(skip_all, fields(%file_id, cache_hit))]
+    #[tracing::instrument(level = "trace", skip_all, fields(%file_id, cache_hit))]
     pub async fn get_cached_parquet_metadata(
         &self,
         file_id: FileId,
