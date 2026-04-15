@@ -95,6 +95,10 @@ impl std::fmt::Display for ProgressResult {
                     }
                     _ => writeln!(f, "    Block range: (no data)")?,
                 }
+                match progress.latest_segment_delay_seconds {
+                    Some(delay) => writeln!(f, "    Latest segment delay: {}s", delay)?,
+                    None => writeln!(f, "    Latest segment delay: (unknown)")?,
+                }
                 writeln!(f, "    Files: {}", progress.files_count)?;
                 writeln!(f, "    Size: {}", format_bytes(progress.total_size_bytes))?;
             }

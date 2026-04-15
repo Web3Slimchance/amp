@@ -1,6 +1,9 @@
 //! Job progress handler
 
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use amp_job_core::{job_id::JobId, status::JobStatus};
 use axum::{
@@ -161,6 +164,18 @@ pub async fn handler(
         })?;
 
     let mut tables = HashMap::new();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|err| {
+            tracing::error!(
+                job_id = ?job_id,
+                error = %err,
+                error_source = logging::error_source(&err),
+                "system clock is before UNIX epoch"
+            );
+            Error::SystemTime(err)
+        })?
+        .as_secs();
 
     // For each table, compute progress
     for job_table in job_tables {
@@ -208,65 +223,81 @@ pub async fn handler(
                 )
             });
 
-        let (current_block, start_block, files_count, total_size_bytes) =
-            if let Some(pt) = physical_table {
-                let snapshot = pt.snapshot(false).await.map_err(|err| {
-                    tracing::error!(
-                        table = %table_name,
-                        error = %err,
-                        error_source = logging::error_source(&err),
-                        "failed to snapshot physical table"
-                    );
-                    Error::SnapshotTable(err)
-                })?;
+        let (
+            current_block,
+            start_block,
+            latest_segment_delay_seconds,
+            files_count,
+            total_size_bytes,
+        ) = if let Some(pt) = physical_table {
+            let snapshot = pt.snapshot(false).await.map_err(|err| {
+                tracing::error!(
+                    table = %table_name,
+                    error = %err,
+                    error_source = logging::error_source(&err),
+                    "failed to snapshot physical table"
+                );
+                Error::SnapshotTable(err)
+            })?;
 
-                let synced_range = snapshot.synced_range().map_err(|err| {
-                    tracing::error!(
-                        table = %table_name,
-                        error = %err,
-                        error_source = logging::error_source(&err),
-                        "table has multi-network segments; cannot compute job progress"
-                    );
-                    Error::MultiNetworkSegments(err)
-                })?;
-                let canonical_segments = snapshot.canonical_segments();
+            let synced_range = snapshot.synced_range().map_err(|err| {
+                tracing::error!(
+                    table = %table_name,
+                    error = %err,
+                    error_source = logging::error_source(&err),
+                    "table has multi-network segments; cannot compute job progress"
+                );
+                Error::MultiNetworkSegments(err)
+            })?;
+            let canonical_segments = snapshot.canonical_segments();
 
-                let files_count = canonical_segments.len() as i64;
-                let total_size_bytes = canonical_segments
-                    .iter()
-                    .map(|s| s.object().size as i64)
-                    .sum();
+            let files_count = canonical_segments.len() as i64;
+            let total_size_bytes = canonical_segments
+                .iter()
+                .map(|s| s.object().size as i64)
+                .sum();
 
-                let (start, end) =
-                    match synced_range {
-                        Some(range) => {
-                            let start: i64 = range.start().try_into().map_err(|_| {
-                                Error::BlockNumberOverflow {
-                                    block_num: range.start(),
-                                }
+            let (start, end, latest_segment_delay_seconds) = match synced_range {
+                Some(range) => {
+                    let start: i64 =
+                        range
+                            .start()
+                            .try_into()
+                            .map_err(|_| Error::BlockNumberOverflow {
+                                block_num: range.start(),
                             })?;
-                            let end: i64 =
-                                range
-                                    .end()
-                                    .try_into()
-                                    .map_err(|_| Error::BlockNumberOverflow {
-                                        block_num: range.end(),
-                                    })?;
-                            (Some(start), Some(end))
-                        }
-                        None => (None, None),
-                    };
-
-                (end, start, files_count, total_size_bytes)
-            } else {
-                (None, None, 0, 0)
+                    let end: i64 =
+                        range
+                            .end()
+                            .try_into()
+                            .map_err(|_| Error::BlockNumberOverflow {
+                                block_num: range.end(),
+                            })?;
+                    let latest_segment_delay_seconds = range
+                        .timestamp
+                        .map(|timestamp| now.saturating_sub(timestamp));
+                    (Some(start), Some(end), latest_segment_delay_seconds)
+                }
+                None => (None, None, None),
             };
+
+            (
+                end,
+                start,
+                latest_segment_delay_seconds,
+                files_count,
+                total_size_bytes,
+            )
+        } else {
+            (None, None, None, 0, 0)
+        };
 
         tables.insert(
             job_table.table_name.to_string(),
             TableProgress {
                 current_block,
                 start_block,
+                latest_segment_delay_seconds,
                 files_count,
                 total_size_bytes,
             },
@@ -313,6 +344,8 @@ pub struct TableProgress {
     pub current_block: Option<i64>,
     /// Lowest block number that has been synced (null if no data yet)
     pub start_block: Option<i64>,
+    /// Wall-clock delay between the latest segment timestamp and response generation time.
+    pub latest_segment_delay_seconds: Option<u64>,
     /// Number of Parquet files written for this table
     pub files_count: i64,
     /// Total size of all Parquet files in bytes
@@ -376,6 +409,10 @@ pub enum Error {
         /// The block number that could not be converted.
         block_num: u64,
     },
+
+    /// System clock was before the UNIX epoch while computing freshness.
+    #[error("system clock is before UNIX epoch")]
+    SystemTime(#[source] std::time::SystemTimeError),
 }
 
 impl IntoErrorResponse for Error {
@@ -391,6 +428,7 @@ impl IntoErrorResponse for Error {
             Error::SnapshotTable(_) => "SNAPSHOT_TABLE_ERROR",
             Error::MultiNetworkSegments(_) => "MULTI_NETWORK_SEGMENTS_ERROR",
             Error::BlockNumberOverflow { .. } => "BLOCK_NUMBER_OVERFLOW",
+            Error::SystemTime(_) => "SYSTEM_TIME_ERROR",
         }
     }
 
@@ -406,6 +444,7 @@ impl IntoErrorResponse for Error {
             Error::SnapshotTable(_) => StatusCode::INTERNAL_SERVER_ERROR,
             Error::MultiNetworkSegments(_) => StatusCode::INTERNAL_SERVER_ERROR,
             Error::BlockNumberOverflow { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Error::SystemTime(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }

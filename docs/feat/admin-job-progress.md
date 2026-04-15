@@ -10,7 +10,7 @@ components: "crate:amp-data-store,service:admin-api,crate:metadata-db"
 
 ## Summary
 
-The Job Progress API provides visibility into the sync state of jobs, reporting metrics like `start_block`, `current_block`, and file statistics for all tables written by a specific job. This allows operators to track the progress of a dataset sync at a point in time, either programmatically over the RESTful API or via the administration CLI (ampctl).
+The Job Progress API provides visibility into the sync state of jobs, reporting metrics like `start_block`, `current_block`, `latest_segment_delay_seconds`, and file statistics for all tables written by a specific job. This allows operators to track the progress and freshness of a dataset sync at a point in time, either programmatically over the RESTful API or via the administration CLI (ampctl).
 
 ## Table of Contents
 
@@ -42,13 +42,13 @@ A **Push Model** (event-driven) is available via [Worker Event Streaming](app-am
 
 ### Logic Location & Ownership
 
-| Component       | Responsibility                                                         |
-| --------------- | ---------------------------------------------------------------------- |
-| **`DataStore`** | `get_tables_by_writer()` - finds tables written by a specific job       |
-| **`DataStore`** | Computes sync stats from table snapshots                               |
-| **Admin API**   | Orchestration - resolves job, iterates tables, combines results        |
-| **Admin API**   | Presentation - formats JSON response for REST clients                  |
-| **Gateway**     | Authentication - scopes access to authorized users                     |
+| Component       | Responsibility                                                    |
+| --------------- | ----------------------------------------------------------------- |
+| **`DataStore`** | `get_tables_by_writer()` - finds tables written by a specific job |
+| **`DataStore`** | Computes sync stats from table snapshots                          |
+| **Admin API**   | Orchestration - resolves job, iterates tables, combines results   |
+| **Admin API**   | Presentation - formats JSON response for REST clients             |
+| **Gateway**     | Authentication - scopes access to authorized users                |
 
 **Key Principle**: Admin API handlers do not interact with `metadata_db` directly. All database access is encapsulated in `DataStore` methods, keeping handlers as pure orchestration and presentation logic.
 
@@ -77,9 +77,9 @@ This design follows the Single Responsibility Principle: `/datasets` manages dat
 
 ## API Reference
 
-| Endpoint               | Method | Description                                |
-| ---------------------- | ------ | ------------------------------------------ |
-| `/jobs/{id}/progress`  | GET    | Progress for all tables written by the job |
+| Endpoint              | Method | Description                                |
+| --------------------- | ------ | ------------------------------------------ |
+| `/jobs/{id}/progress` | GET    | Progress for all tables written by the job |
 
 For request/response schemas, see [Admin API OpenAPI spec](../schemas/openapi/admin.spec.json):
 
@@ -98,12 +98,14 @@ jq '.paths["/jobs/{id}/progress"]' docs/schemas/openapi/admin.spec.json
     "blocks": {
       "current_block": 21500000,
       "start_block": 0,
+      "latest_segment_delay_seconds": 12,
       "files_count": 1247,
       "total_size_bytes": 137970286592
     },
     "transactions": {
       "current_block": 21499850,
       "start_block": 0,
+      "latest_segment_delay_seconds": 18,
       "files_count": 3891,
       "total_size_bytes": 549957091328
     }
@@ -117,7 +119,7 @@ The table keys are the table names. Since a job writes to exactly one dataset, t
 
 **Get job progress:**
 
-View sync progress for all tables written by a job, including current block and file statistics.
+View sync progress for all tables written by a job, including current block, freshness delay, and file statistics.
 
 ```bash
 # First, list jobs to get the job ID
@@ -160,6 +162,12 @@ The `current_block` field represents the highest block number in the **contiguou
 3. **Gap handling**: If there are gaps in the canonical chain, the synced range reflects only the contiguous portion. This ensures `current_block` accurately represents verified, queryable data.
 
 This approach provides a reliable "ground truth" for sync progress, unaffected by reorgs or incomplete writes.
+
+### How "Latest Segment Delay" is Defined
+
+The `latest_segment_delay_seconds` field is the wall-clock freshness of the table at response time. It is computed as `now - latest_segment_timestamp`, where `latest_segment_timestamp` is the timestamp of the end block in the table's latest synced segment.
+
+If the table has no synced data, or the latest synced range has no timestamp, the field is `null`.
 
 ### Source Files
 

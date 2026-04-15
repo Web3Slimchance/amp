@@ -24,7 +24,7 @@ Job commands provide operational control over extraction jobs. Operators can lis
 
 - **Job**: An extraction task that syncs blockchain data for a dataset, executed by a worker node
 - **Terminal State**: A job that has finished executing (`COMPLETED`, `STOPPED`, or `ERROR`)
-- **Progress**: Sync state of a job's tables, including `current_block`, `start_block`, and file statistics
+- **Progress**: Sync state of a job's tables, including `current_block`, `start_block`, `latest_segment_delay_seconds`, and file statistics
 - **Events**: Append-only lifecycle event log recording every state transition (SCHEDULED, RUNNING, COMPLETED, ERROR, FATAL, STOPPED)
 - **Pagination**: Jobs are listed in pages using `--limit` (default: 50) and `--after` (cursor ID)
 

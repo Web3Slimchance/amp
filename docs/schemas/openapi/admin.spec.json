@@ -3727,6 +3727,15 @@
             "format": "int64",
             "description": "Number of Parquet files written for this table"
           },
+          "latest_segment_delay_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Wall-clock delay between the latest segment timestamp and response generation time.",
+            "minimum": 0
+          },
           "start_block": {
             "type": [
               "integer",

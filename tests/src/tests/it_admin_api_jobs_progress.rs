@@ -42,6 +42,15 @@ async fn get_job_progress_succeeds() {
     // Verify response structure
     assert_eq!(progress.job_id, job_id);
     assert!(!progress.job_status.is_empty());
+
+    for table in progress.tables.values() {
+        if table.current_block.is_some() {
+            assert!(
+                table.latest_segment_delay_seconds.is_some(),
+                "tables with synced data should report latest segment delay"
+            );
+        }
+    }
 }
 
 #[tokio::test]
@@ -140,6 +149,15 @@ async fn get_job_progress_shows_running_status() {
 
     assert!(has_progress, "at least one table should have progress");
 
+    let has_delay = running_progress
+        .tables
+        .values()
+        .any(|t| t.latest_segment_delay_seconds.is_some());
+    assert!(
+        has_delay,
+        "at least one table should report latest segment delay"
+    );
+
     println!(
         "Verified RUNNING status with {} tables",
         running_progress.tables.len()
@@ -226,6 +244,15 @@ async fn get_job_progress_shows_completed_status() {
     assert!(
         has_complete_progress,
         "at least one table should have complete progress"
+    );
+
+    let has_delay = final_progress
+        .tables
+        .values()
+        .any(|t| t.latest_segment_delay_seconds.is_some());
+    assert!(
+        has_delay,
+        "at least one table should report latest segment delay"
     );
 
     println!(
@@ -342,6 +369,7 @@ struct JobProgressResponse {
 struct TableProgress {
     current_block: Option<i64>,
     start_block: Option<i64>,
+    latest_segment_delay_seconds: Option<u64>,
     files_count: i64,
     total_size_bytes: i64,
 }

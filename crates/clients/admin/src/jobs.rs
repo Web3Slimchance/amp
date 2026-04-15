@@ -1002,6 +1002,8 @@ pub struct TableProgress {
     pub current_block: Option<i64>,
     /// Lowest block number synced (None if no data yet)
     pub start_block: Option<i64>,
+    /// Wall-clock delay between the latest segment timestamp and response generation time.
+    pub latest_segment_delay_seconds: Option<u64>,
     /// Number of Parquet files written
     pub files_count: i64,
     /// Total size of all Parquet files in bytes
