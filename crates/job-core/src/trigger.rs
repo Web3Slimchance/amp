@@ -21,16 +21,13 @@ pub enum Trigger {
     /// No periodic re-scheduling after success.
     OneShot,
 
-    /// Fixed-cadence scheduling: next fire time is `start_at + n * every_secs`.
+    /// Fixed-cadence scheduling: next fire time is `created_at + n * every_secs`.
     ///
     /// If a previous run is still `RUNNING` when the next tick fires, the tick
-    /// is skipped (single-flight). Jitter is automatic at 1/4 of `every_secs`.
+    /// is skipped (single-flight).
     Interval {
         /// Duration between triggers in seconds. Must be >= 1.
         every_secs: IntervalSecs,
-        /// Optional ISO-8601 anchor time. Defaults to job creation time.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        start_at: Option<DateTime<Utc>>,
     },
 
     /// Cron-based scheduling on cron boundaries.
@@ -68,7 +65,7 @@ impl Trigger {
     /// Compute the next fire time after `now` for this trigger.
     ///
     /// - `OneShot`: returns `None` (no periodic scheduling).
-    /// - `Interval`: computes the smallest `start_at + n * every_secs > now`.
+    /// - `Interval`: computes the smallest `created_at + n * every_secs > now`.
     /// - `Cron`: computes the next cron fire time after `now`.
     ///
     /// Does NOT include jitter -- the caller adds jitter separately.
@@ -79,11 +76,8 @@ impl Trigger {
     ) -> Option<DateTime<Utc>> {
         match self {
             Trigger::OneShot => None,
-            Trigger::Interval {
-                every_secs,
-                start_at,
-            } => {
-                let anchor = start_at.unwrap_or(created_at);
+            Trigger::Interval { every_secs } => {
+                let anchor = created_at;
                 let interval_secs = every_secs.get();
                 let elapsed = now - anchor;
                 if elapsed.num_seconds() < 0 {
@@ -108,17 +102,6 @@ impl Trigger {
                 let next = sched.after(&now_in_tz).next()?;
                 Some(next.with_timezone(&Utc))
             }
-        }
-    }
-
-    /// Compute the jitter duration for this trigger (in seconds).
-    ///
-    /// - `Interval`: 1/4 of `every_secs`.
-    /// - Others: 0.
-    pub fn jitter_secs(&self) -> i64 {
-        match self {
-            Trigger::Interval { every_secs, .. } => every_secs.get() / 4,
-            _ => 0,
         }
     }
 }
@@ -152,8 +135,6 @@ impl<'de> de::Deserialize<'de> for Trigger {
             OneShot,
             Interval {
                 every_secs: IntervalSecs,
-                #[serde(default)]
-                start_at: Option<DateTime<Utc>>,
             },
             Cron {
                 schedule: CronSchedule,
@@ -165,13 +146,7 @@ impl<'de> de::Deserialize<'de> for Trigger {
         let raw = TriggerRaw::deserialize(deserializer)?;
         let trigger = match raw {
             TriggerRaw::OneShot => Trigger::OneShot,
-            TriggerRaw::Interval {
-                every_secs,
-                start_at,
-            } => Trigger::Interval {
-                every_secs,
-                start_at,
-            },
+            TriggerRaw::Interval { every_secs } => Trigger::Interval { every_secs },
             TriggerRaw::Cron {
                 schedule,
                 time_zone,
@@ -416,7 +391,6 @@ mod tests {
         //* Given
         let trigger = Trigger::Interval {
             every_secs: IntervalSecs::new(60).expect("valid interval"),
-            start_at: None,
         };
 
         //* When
@@ -457,7 +431,6 @@ mod tests {
         //* Given
         let trigger = Trigger::Interval {
             every_secs: IntervalSecs::new(30).expect("valid interval"),
-            start_at: None,
         };
 
         //* When
@@ -509,7 +482,6 @@ mod tests {
             trigger,
             Some(Trigger::Interval {
                 every_secs: IntervalSecs::new(300).expect("valid interval"),
-                start_at: None,
             })
         );
     }
@@ -560,23 +532,6 @@ mod tests {
     fn deserialize_with_one_shot_round_trips() {
         //* Given
         let trigger = Trigger::OneShot;
-
-        //* When
-        let json = serde_json::to_string(&trigger).expect("serialization should succeed");
-        let deserialized: Trigger =
-            serde_json::from_str(&json).expect("deserialization should succeed");
-
-        //* Then
-        assert_eq!(trigger, deserialized);
-    }
-
-    #[test]
-    fn deserialize_with_interval_all_fields_round_trips() {
-        //* Given
-        let trigger = Trigger::Interval {
-            every_secs: IntervalSecs::new(600).expect("valid interval"),
-            start_at: Some("2026-01-01T00:00:00Z".parse().expect("valid datetime")),
-        };
 
         //* When
         let json = serde_json::to_string(&trigger).expect("serialization should succeed");
@@ -680,7 +635,6 @@ mod tests {
             trigger,
             Trigger::Interval {
                 every_secs: IntervalSecs::new(120).expect("valid interval"),
-                start_at: None,
             }
         );
     }
@@ -847,7 +801,6 @@ mod tests {
         let now: DateTime<Utc> = "2026-01-01T00:02:30Z".parse().expect("valid datetime");
         let trigger = Trigger::Interval {
             every_secs: IntervalSecs::new(60).expect("valid interval"),
-            start_at: Some(anchor),
         };
 
         //* When
@@ -860,13 +813,12 @@ mod tests {
     }
 
     #[test]
-    fn next_fire_time_with_interval_no_start_at_uses_created_at() {
+    fn next_fire_time_with_interval_uses_created_at_as_anchor() {
         //* Given
         let created: DateTime<Utc> = "2026-01-01T00:00:00Z".parse().expect("valid datetime");
         let now: DateTime<Utc> = "2026-01-01T00:01:30Z".parse().expect("valid datetime");
         let trigger = Trigger::Interval {
             every_secs: IntervalSecs::new(60).expect("valid interval"),
-            start_at: None,
         };
 
         //* When
@@ -892,46 +844,5 @@ mod tests {
         //* Then
         let expected: DateTime<Utc> = "2026-01-01T00:01:00Z".parse().expect("valid datetime");
         assert_eq!(next, Some(expected));
-    }
-
-    // --- jitter_secs ---
-
-    #[test]
-    fn jitter_secs_with_interval_returns_quarter_of_every_secs() {
-        //* Given
-        let trigger = Trigger::Interval {
-            every_secs: IntervalSecs::new(3600).expect("valid interval"),
-            start_at: None,
-        };
-
-        //* When
-        let result = trigger.jitter_secs();
-
-        //* Then
-        assert_eq!(result, 900);
-    }
-
-    #[test]
-    fn jitter_secs_with_one_shot_returns_zero() {
-        //* When
-        let result = Trigger::OneShot.jitter_secs();
-
-        //* Then
-        assert_eq!(result, 0);
-    }
-
-    #[test]
-    fn jitter_secs_with_cron_returns_zero() {
-        //* Given
-        let trigger = Trigger::Cron {
-            schedule: CronSchedule::new("0 * * * *".to_owned()).expect("valid cron schedule"),
-            time_zone: UtcOffset::default(),
-        };
-
-        //* When
-        let result = trigger.jitter_secs();
-
-        //* Then
-        assert_eq!(result, 0);
     }
 }

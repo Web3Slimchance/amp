@@ -5,6 +5,17 @@ use sqlx::{Executor, Postgres};
 use super::{Job, idempotency_key::IdempotencyKey, job_id::JobId};
 use crate::{job_status::JobStatus, workers::WorkerNodeId};
 
+/// Job with its latest descriptor from the event log.
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct JobWithDescriptor {
+    /// Base job information
+    #[sqlx(flatten)]
+    pub job: Job,
+
+    /// Latest descriptor from SCHEDULED events (may be None if no events exist)
+    pub descriptor: Option<crate::job_events::EventDetailOwned>,
+}
+
 /// Job with calculated retry information
 ///
 /// This struct extends the base Job with retry_index information calculated
@@ -294,6 +305,41 @@ where
                 .await
         }
     }
+}
+
+/// Get all jobs in a terminal state with their latest descriptor.
+///
+/// Returns jobs in COMPLETED, ERROR, or FATAL status, each with the most recent
+/// SCHEDULED event descriptor (if any).
+pub async fn get_terminal_with_descriptors<'c, E>(
+    exe: E,
+) -> Result<Vec<JobWithDescriptor>, sqlx::Error>
+where
+    E: Executor<'c, Database = Postgres>,
+{
+    let query = indoc::indoc! {r#"
+        SELECT
+            j.id,
+            js.node_id,
+            js.status,
+            j.created_at,
+            js.updated_at,
+            (
+                SELECT detail FROM job_events
+                WHERE job_id = j.id AND event_type = $2 AND detail IS NOT NULL
+                ORDER BY id DESC LIMIT 1
+            ) AS descriptor
+        FROM jobs j
+        INNER JOIN jobs_status js ON j.id = js.job_id
+        WHERE js.status = ANY($1)
+        ORDER BY j.id ASC
+    "#};
+
+    sqlx::query_as(query)
+        .bind([JobStatus::Completed, JobStatus::Error, JobStatus::Fatal])
+        .bind(JobStatus::Scheduled)
+        .fetch_all(exe)
+        .await
 }
 
 /// Get all failed (ERROR) jobs with their attempt counts for retry evaluation.

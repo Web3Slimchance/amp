@@ -32,7 +32,9 @@ use amp_controller_admin_jobs::scheduler::{
     ListJobDescriptorsError, ListJobsByDatasetError, ListJobsError, ListWorkersError, NodeSelector,
     ScheduleJobError, SchedulerJobs, SchedulerWorkers, StopJobError,
 };
-use amp_job_core::{job_id::JobId, retry_strategy::RetryStrategy, status::JobStatus};
+use amp_job_core::{
+    job_id::JobId, retry_strategy::RetryStrategy, status::JobStatus, trigger::Trigger,
+};
 use amp_worker_core::node_id::NodeId;
 use async_trait::async_trait;
 use datasets_common::{hash::Hash, name::Name, namespace::Namespace};
@@ -45,6 +47,9 @@ use metadata_db::{
 };
 use monitoring::logging;
 use rand::seq::IndexedRandom as _;
+use tokio::sync::mpsc;
+
+use crate::trigger::{PeriodicJobTrigger, TriggerCommand};
 
 /// A worker is considered active if it has sent a heartbeat in this period
 ///
@@ -60,12 +65,16 @@ const DEAD_WORKER_INTERVAL: Duration = Duration::from_secs(5);
 /// Thread-safe for sharing across async tasks via `Arc<dyn JobScheduler>`.
 pub struct Scheduler {
     metadata_db: MetadataDb,
+    trigger_tx: mpsc::Sender<TriggerCommand>,
 }
 
 impl Scheduler {
     /// Create a new scheduler instance
-    pub fn new(metadata_db: MetadataDb) -> Self {
-        Self { metadata_db }
+    pub fn new(metadata_db: MetadataDb, trigger_tx: mpsc::Sender<TriggerCommand>) -> Self {
+        Self {
+            metadata_db,
+            trigger_tx,
+        }
     }
 
     /// Schedule a job with a pre-built descriptor
@@ -156,6 +165,9 @@ impl Scheduler {
         let scheduled_job_status = JobStatus::Scheduled;
         let detail: metadata_db::job_events::EventDetail<'static> = job_descriptor.into();
 
+        // Parse trigger before detail is consumed, for timer registration after commit
+        let trigger = Trigger::from_descriptor(detail.as_str()).unwrap_or_default();
+
         let job_id: JobId = metadata_db::jobs::register(&mut tx, idempotency_key)
             .await
             .map(Into::into)
@@ -195,6 +207,19 @@ impl Scheduler {
         tx.commit()
             .await
             .map_err(ScheduleJobError::CommitTransaction)?;
+
+        // Register a trigger timer for periodic jobs so the first fire happens
+        // without waiting for a restart.
+        if trigger.is_periodic() {
+            let _ = self
+                .trigger_tx
+                .send(TriggerCommand::Register(PeriodicJobTrigger {
+                    job_id,
+                    trigger,
+                    created_at: chrono::Utc::now(),
+                }))
+                .await;
+        }
 
         Ok(job_id)
     }
@@ -347,37 +372,13 @@ impl Scheduler {
                 continue;
             }
 
-            let result: Result<(), RescheduleJobError> = async {
-                let mut tx = self
-                    .metadata_db
-                    .begin_txn()
-                    .await
-                    .map_err(RescheduleJobError::BeginTransaction)?;
-
-                // Registers in job_status and job_events
-                metadata_db::jobs::reschedule(
-                    &mut tx,
-                    job.id,
-                    job.node_id.clone(),
-                    descriptor_raw,
-                    retry_index,
-                )
-                .await
-                .map_err(RescheduleJobError::RescheduleJob)?;
-
-                metadata_db::workers::send_job_notif(
-                    &mut tx,
-                    job.node_id.clone(),
-                    &JobNotification::Start { job_id },
-                )
-                .await
-                .map_err(RescheduleJobError::SendJobNotification)?;
-
-                tx.commit()
-                    .await
-                    .map_err(RescheduleJobError::CommitTransaction)?;
-                Ok(())
-            }
+            let result = reschedule_and_notify(
+                &self.metadata_db,
+                job.id,
+                job.node_id.clone(),
+                descriptor_raw,
+                retry_index,
+            )
             .await;
 
             if let Err(err) = result {
@@ -393,6 +394,49 @@ impl Scheduler {
 
         Ok(())
     }
+}
+
+/// Reschedule a job and notify the worker within a single transaction.
+///
+/// Used by both the retry reconciliation loop and the trigger timer system.
+pub(crate) async fn reschedule_and_notify(
+    metadata_db: &MetadataDb,
+    job_id: metadata_db::jobs::JobId,
+    node_id: metadata_db::workers::WorkerNodeIdOwned,
+    descriptor: metadata_db::job_events::EventDetailOwned,
+    retry_index: i32,
+) -> Result<(), RescheduleJobError> {
+    let mut db_txn = metadata_db
+        .begin_txn()
+        .await
+        .map_err(RescheduleJobError::BeginTransaction)?;
+
+    metadata_db::jobs::reschedule(
+        &mut db_txn,
+        job_id,
+        node_id.clone(),
+        descriptor,
+        retry_index,
+    )
+    .await
+    .map_err(RescheduleJobError::RescheduleJob)?;
+
+    metadata_db::workers::send_job_notif(
+        &mut db_txn,
+        node_id,
+        &JobNotification::Start {
+            job_id: job_id.into(),
+        },
+    )
+    .await
+    .map_err(RescheduleJobError::SendJobNotification)?;
+
+    db_txn
+        .commit()
+        .await
+        .map_err(RescheduleJobError::CommitTransaction)?;
+
+    Ok(())
 }
 
 /// Errors that occur during failed job reconciliation [`Scheduler::reconcile_failed_jobs`]
@@ -415,7 +459,7 @@ pub enum ReconcileFailedJobsError {
 
 /// Errors that occur when rescheduling a single failed job for retry
 #[derive(Debug, thiserror::Error)]
-pub enum RescheduleJobError {
+pub(crate) enum RescheduleJobError {
     /// Failed to begin a database transaction for the reschedule operation
     ///
     /// The reschedule and notification are performed atomically within a
@@ -633,7 +677,7 @@ impl SchedulerWorkers for Scheduler {
 /// Wire format: `{"job_id": <id>, "action": "START"|"STOP"}`
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "action", rename_all = "SCREAMING_SNAKE_CASE")]
-enum JobNotification {
+pub(crate) enum JobNotification {
     /// Start the job.
     Start { job_id: JobId },
     /// Stop the job.

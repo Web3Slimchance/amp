@@ -8,6 +8,7 @@ pub mod handlers;
 mod router;
 mod scheduler;
 pub mod service;
+mod trigger;
 
 #[cfg(feature = "utoipa")]
 pub use router::generate_openapi_spec;

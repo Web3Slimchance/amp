@@ -44,7 +44,9 @@ pub async fn new(
 ) -> Result<(SocketAddr, impl Future<Output = Result<(), ServerError>>), Error> {
     let build_info = build_info.into();
 
-    let scheduler = Arc::new(Scheduler::new(metadata_db.clone()));
+    let (trigger_tx, trigger_rx) = tokio::sync::mpsc::channel(1);
+    let scheduler = Arc::new(Scheduler::new(metadata_db.clone(), trigger_tx.clone()));
+    let trigger_metadata_db = metadata_db.clone();
 
     let ctx = Ctx {
         metadata_db,
@@ -79,6 +81,26 @@ pub async fn new(
 
     let router = app.layer(CorsLayer::permissive());
 
+    // Spawn trigger timer task
+    let trigger_tx_for_task = trigger_tx.clone();
+    let trigger_metadata_db_for_task = trigger_metadata_db.clone();
+    let trigger_task = tokio::spawn(async move {
+        crate::trigger::run(
+            &trigger_metadata_db_for_task,
+            trigger_tx_for_task,
+            trigger_rx,
+        )
+        .await
+    });
+
+    if let Err(err) = crate::trigger::recover_from_db(&trigger_metadata_db, &trigger_tx).await {
+        tracing::error!(
+            error = %err,
+            error_source = monitoring::logging::error_source(&err),
+            "failed to recover trigger timers from database"
+        );
+    }
+
     // Spawn background task for failed job reconciliation
     let scheduler_for_reconciliation = scheduler.clone();
     let reconciliation_task = tokio::spawn(async move {
@@ -103,6 +125,9 @@ pub async fn new(
             }
             _ = reconciliation_task => {
                 Err(ServerError::ReconciliationTerminated)
+            }
+            _ = trigger_task => {
+                Err(ServerError::TriggerTimerTerminated)
             }
         }
     };
@@ -163,6 +188,14 @@ pub enum ServerError {
     /// - Task is cancelled externally
     #[error("Reconciliation task terminated unexpectedly")]
     ReconciliationTerminated,
+
+    /// Trigger timer task terminated unexpectedly
+    ///
+    /// This occurs when:
+    /// - Trigger timer task panics
+    /// - All senders are dropped
+    #[error("Trigger timer task terminated unexpectedly")]
+    TriggerTimerTerminated,
 }
 
 /// Returns a future that completes when a shutdown signal is received.

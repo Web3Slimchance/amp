@@ -115,6 +115,36 @@ where
         .await
 }
 
+/// Count SCHEDULED events for a job since the last COMPLETED event.
+///
+/// If no COMPLETED event exists, counts all SCHEDULED events (same as `get_attempt_count`).
+/// This is used for periodic trigger jobs where the attempt index resets each cycle.
+pub async fn get_attempt_count_since_last_completed<'c, E>(
+    exe: E,
+    job_id: JobId,
+) -> Result<i32, sqlx::Error>
+where
+    E: Executor<'c, Database = Postgres>,
+{
+    let query = indoc::indoc! {r#"
+        SELECT COUNT(*)::int4
+        FROM job_events
+        WHERE job_id = $1
+          AND event_type = $2
+          AND id > COALESCE(
+              (SELECT MAX(id) FROM job_events WHERE job_id = $1 AND event_type = $3),
+              0
+          )
+    "#};
+
+    sqlx::query_scalar(query)
+        .bind(job_id)
+        .bind(JobStatus::Scheduled)
+        .bind(JobStatus::Completed)
+        .fetch_one(exe)
+        .await
+}
+
 /// Get latest job descriptor for a job
 pub async fn get_latest_descriptor<'c, E>(
     exe: E,

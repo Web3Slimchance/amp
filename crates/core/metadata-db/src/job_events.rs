@@ -90,6 +90,23 @@ where
         .map_err(Error::Database)
 }
 
+/// Count scheduling attempts since the last completed run
+///
+/// For periodic trigger jobs, the attempt index resets each cycle.
+/// Counts SCHEDULED events after the most recent COMPLETED event.
+#[tracing::instrument(skip(exe), err)]
+pub async fn get_attempt_count_since_last_completed<'c, E>(
+    exe: E,
+    job_id: impl Into<JobId> + std::fmt::Debug,
+) -> Result<i32, Error>
+where
+    E: Executor<'c>,
+{
+    sql::get_attempt_count_since_last_completed(exe, job_id.into())
+        .await
+        .map_err(Error::Database)
+}
+
 /// Get all scheduling attempts for a job
 ///
 /// Returns attempts derived from SCHEDULED events, ordered by retry_index ascending.

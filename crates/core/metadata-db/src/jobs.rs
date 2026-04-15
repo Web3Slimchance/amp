@@ -12,7 +12,7 @@ pub(crate) mod sql;
 pub use self::{
     idempotency_key::{IdempotencyKey, IdempotencyKeyOwned},
     job_id::JobId,
-    sql::JobWithRetryInfo,
+    sql::{JobWithDescriptor, JobWithRetryInfo},
 };
 pub use crate::job_status::JobStatus;
 use crate::{
@@ -188,6 +188,20 @@ where
     E: Executor<'c>,
 {
     sql::delete_by_status(exe, statuses)
+        .await
+        .map_err(Error::Database)
+}
+
+/// Get all jobs in a terminal state with their latest descriptor.
+///
+/// Returns jobs in COMPLETED, ERROR, or FATAL status, each with the most recent
+/// SCHEDULED event descriptor (if any).
+#[tracing::instrument(skip(exe), err)]
+pub async fn get_terminal_with_descriptors<'c, E>(exe: E) -> Result<Vec<JobWithDescriptor>, Error>
+where
+    E: Executor<'c>,
+{
+    sql::get_terminal_with_descriptors(exe)
         .await
         .map_err(Error::Database)
 }
