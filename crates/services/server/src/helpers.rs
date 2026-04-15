@@ -42,6 +42,9 @@ pub fn is_streaming(stmt: &sql::parser::Statement) -> bool {
 
 /// Extract `microbatch_max_interval` from `SETTINGS microbatch_max_interval = <u64>`.
 ///
+/// In single-network mode this value is a block count. In multi-network mode it
+/// is interpreted as a second-based interval.
+///
 /// ```sql
 /// SELECT * FROM eth.logs SETTINGS stream = true, microbatch_max_interval = 5000
 /// ```

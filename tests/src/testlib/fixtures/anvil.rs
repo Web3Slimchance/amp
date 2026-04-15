@@ -202,6 +202,31 @@ impl Anvil {
         Ok(())
     }
 
+    /// Set a fixed interval (in seconds) between block timestamps.
+    ///
+    /// When set, each mined block advances the timestamp by exactly this many
+    /// seconds regardless of wall-clock time. Useful for deterministic tests.
+    pub async fn set_block_timestamp_interval(&self, seconds: u64) -> Result<()> {
+        self.provider
+            .anvil_set_block_timestamp_interval(seconds)
+            .await
+            .map_err(|err| anyhow!("Failed to set block timestamp interval: {}", err))?;
+        Ok(())
+    }
+
+    /// Set the timestamp for the next mined block.
+    ///
+    /// This overrides the timestamp of the next block only. Combined with
+    /// [`set_block_timestamp_interval`](Self::set_block_timestamp_interval),
+    /// this allows tests to produce fully deterministic block timestamps.
+    pub async fn set_next_block_timestamp(&self, timestamp: u64) -> Result<()> {
+        self.provider
+            .anvil_set_next_block_timestamp(timestamp)
+            .await
+            .map_err(|err| anyhow!("Failed to set next block timestamp: {}", err))?;
+        Ok(())
+    }
+
     /// Trigger a blockchain reorganization with the specified depth.
     ///
     /// This causes Anvil to reorganize the blockchain by replacing the last

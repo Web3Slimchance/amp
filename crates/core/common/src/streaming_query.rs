@@ -40,7 +40,7 @@ use crate::{
     BlockNum, BlockRange,
     amp_catalog_provider::{AMP_CATALOG_NAME, AmpCatalogProvider, AsyncSchemaProvider},
     arrow::{
-        array::{Array, Int64Array, RecordBatch, TimestampNanosecondArray},
+        array::{Array, Int64Array, RecordBatch, TimestampNanosecondArray, UInt64Array},
         datatypes::{DataType, SchemaRef, TimeUnit},
     },
     catalog::{logical::LogicalTable, physical::Catalog},
@@ -133,6 +133,15 @@ pub enum SpawnError {
     /// the cursor doesn't contain an entry for the expected network.
     #[error("failed to convert cursor")]
     ConvertCursor(#[source] CursorNetworkNotFoundError),
+
+    /// `end_block` is not supported for multi-network queries.
+    ///
+    /// This occurs when spawning a streaming query that references tables from
+    /// multiple networks while also specifying an `end_block`. Block numbers are
+    /// network-specific and cannot be used as a shared stop condition across
+    /// networks.
+    #[error("end_block is not supported for multi-network queries")]
+    EndBlockNotSupportedForMultiNetwork,
 }
 
 /// Awaits any update for tables in a query context catalog.
@@ -202,7 +211,7 @@ pub enum QueryMessage {
 
 struct MicrobatchRange {
     ranges: Vec<BlockRange>,
-    direction: StreamDirection,
+    directions: BTreeMap<NetworkId, StreamDirection>,
 }
 
 struct SegmentStart {
@@ -366,6 +375,18 @@ impl StreamingQuery {
                     .any(|f| f.name() == wm.column_name())
             });
         }
+        // Multi-network queries must use timestamp-based watermarking because
+        // _block_num values from different networks are incomparable.
+        let is_multi_network = {
+            let unique_networks: BTreeSet<&NetworkId> = catalog
+                .physical_tables()
+                .flat_map(|t| t.networks())
+                .collect();
+            unique_networks.len() > 1
+        };
+        if is_multi_network {
+            watermark_columns_to_propagate.retain(|wm| *wm != WatermarkColumn::BlockNum);
+        }
         let watermark_column =
             if watermark_columns_to_propagate.contains(&WatermarkColumn::BlockNum) {
                 WatermarkColumn::BlockNum
@@ -443,6 +464,10 @@ impl StreamingQuery {
                 }
             }
         }
+        if blocks_tables.len() > 1 && end_block.is_some() {
+            return Err(SpawnError::EndBlockNotSupportedForMultiNetwork);
+        }
+
         let prev_cursor = cursor;
         let streaming_query = Self {
             exec_env,
@@ -509,49 +534,57 @@ impl StreamingQuery {
         }
     }
 
-    /// Returns the single network and its blocks table.
-    ///
-    /// Panics if the query spans multiple networks. Multi-network execution will
-    /// be implemented in a follow-up PR.
-    fn single_network(&self) -> (&NetworkId, &Arc<ResolvedBlocksTable>) {
-        assert_eq!(
-            self.blocks_tables.len(),
-            1,
-            "multi-network execution not yet supported"
-        );
-        self.blocks_tables.iter().next().unwrap()
-    }
-
     fn watermark_bounds(
         &self,
-        range: &BlockRange,
-        direction: &StreamDirection,
-    ) -> (datafusion::prelude::Expr, datafusion::prelude::Expr) {
+        ranges: &[BlockRange],
+        directions: &BTreeMap<NetworkId, StreamDirection>,
+    ) -> Result<(datafusion::prelude::Expr, datafusion::prelude::Expr), MissingBlockTimestampError>
+    {
         use datafusion::common::ScalarValue;
 
         match self.watermark_column {
-            WatermarkColumn::BlockNum => (lit(range.start()), lit(range.end())),
+            WatermarkColumn::BlockNum => {
+                // SAFETY: single-network BlockNum mode always builds exactly one range.
+                let range = ranges
+                    .first()
+                    .expect("single-network BlockNum mode must have exactly one range");
+                Ok((lit(range.start()), lit(range.end())))
+            }
             WatermarkColumn::Ts => {
-                // Block timestamps are stored in seconds (see `get_timestamp_value`).
-                // Convert to nanoseconds to match the `_ts` column type.
-                let start_secs = direction
-                    .segment_start()
-                    .timestamp
-                    .expect("start block timestamp required when _ts is the watermark column");
-                let end_secs = range
-                    .timestamp()
-                    .expect("end block timestamp required when _ts is the watermark column");
+                // For multi-network: start_ts is the min across all networks' start
+                // timestamps so that early blocks from all networks are included.
+                // end_ts is the min across all networks' end timestamps (shared window).
+                let start_secs = directions
+                    .values()
+                    .map(|d| {
+                        d.segment_start()
+                            .timestamp
+                            .ok_or(MissingBlockTimestampError)
+                    })
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into_iter()
+                    .min()
+                    // SAFETY: `directions` is always non-empty when called.
+                    .expect("at least one direction");
+                let end_secs = ranges
+                    .iter()
+                    .map(|r| r.timestamp().ok_or(MissingBlockTimestampError))
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into_iter()
+                    .min()
+                    // SAFETY: `ranges` is always non-empty when called.
+                    .expect("at least one range");
                 let tz: Arc<str> = Arc::from("+00:00");
-                (
+                Ok((
                     lit(ScalarValue::TimestampNanosecond(
-                        Some(start_secs as i64 * 1_000_000_000),
+                        Some((start_secs as i64).saturating_mul(1_000_000_000)),
                         Some(tz.clone()),
                     )),
                     lit(ScalarValue::TimestampNanosecond(
-                        Some(end_secs as i64 * 1_000_000_000),
+                        Some((end_secs as i64).saturating_mul(1_000_000_000)),
                         Some(tz),
                     )),
-                )
+                ))
             }
         }
     }
@@ -564,9 +597,6 @@ impl StreamingQuery {
         ctx: &ExecContext,
         microbatch: &MicrobatchRange,
     ) -> Result<bool, StreamingQueryExecutionError> {
-        // For incrementalization bounds, use the first (currently only) range.
-        let range = &microbatch.ranges[0];
-
         let plan = {
             // Incrementalize the plan
             let plan = self
@@ -574,7 +604,9 @@ impl StreamingQuery {
                 .clone()
                 .attach_to(ctx)
                 .map_err(StreamingQueryExecutionError::AttachPlan)?;
-            let (start, end) = self.watermark_bounds(range, &microbatch.direction);
+            let (start, end) = self
+                .watermark_bounds(&microbatch.ranges, &microbatch.directions)
+                .map_err(StreamingQueryExecutionError::MissingBlockTimestamp)?;
             let mut plan = incrementalize_plan(plan, start, end, self.watermark_column)
                 .map_err(StreamingQueryExecutionError::IncrementalizePlan)?;
 
@@ -604,7 +636,7 @@ impl StreamingQuery {
             .tx
             .send(QueryMessage::MicrobatchStart {
                 ranges: microbatch.ranges.clone(),
-                is_reorg: microbatch.direction.is_reorg(),
+                is_reorg: microbatch.directions.values().any(|d| d.is_reorg()),
             })
             .await;
 
@@ -623,7 +655,14 @@ impl StreamingQuery {
             .send(QueryMessage::MicrobatchEnd(microbatch.ranges.clone()))
             .await;
 
-        Ok(Some(range.end()) == self.end_block)
+        // end_block only applies to single-network BlockNum mode.
+        let is_final = self.end_block.is_some_and(|end_block| {
+            microbatch
+                .ranges
+                .first()
+                .is_some_and(|r| r.end() == end_block)
+        });
+        Ok(is_final)
     }
 
     #[instrument(skip_all, err)]
@@ -631,15 +670,25 @@ impl StreamingQuery {
         &mut self,
         ctx: &ExecContext,
     ) -> Result<Option<MicrobatchRange>, NextMicrobatchRangeError> {
-        // Gather the chains for each source table.
+        if self.blocks_tables.len() == 1 {
+            self.next_microbatch_range_single_network(ctx).await
+        } else {
+            self.next_microbatch_range_multi_network(ctx).await
+        }
+    }
+
+    /// Single-network microbatch range construction (BlockNum or Ts watermark).
+    async fn next_microbatch_range_single_network(
+        &mut self,
+        ctx: &ExecContext,
+    ) -> Result<Option<MicrobatchRange>, NextMicrobatchRangeError> {
         let chains = ctx
             .physical_table()
             .table_snapshots()
             .map(|(s, _)| s.canonical_segments());
 
-        // Use a single context for all queries against the blocks table. This is to keep a
-        // consistent reference chain within the scope of this function.
-        let (network, blocks_table) = self.single_network();
+        // SAFETY: guarded by `blocks_tables.len() == 1` check in `next_microbatch_range`.
+        let (network, blocks_table) = self.blocks_tables.iter().next().unwrap();
         let network = network.clone();
         let blocks_table = Arc::clone(blocks_table);
         let blocks_ctx = {
@@ -651,24 +700,28 @@ impl StreamingQuery {
                 .map_err(NextMicrobatchRangeError::CreateExecContext)?
         };
 
-        // The latest common watermark across the source tables.
         let Some(common_watermark) = self
             .latest_src_watermark(&blocks_table, &blocks_ctx, chains)
             .await
             .map_err(NextMicrobatchRangeError::LatestSrcWatermark)?
         else {
-            // No common watermark across source tables.
             tracing::debug!("no common watermark found");
             return Ok(None);
         };
 
         if common_watermark.number < self.start_block {
-            // Common watermark hasn't reached the requested start block yet.
             return Ok(None);
         }
 
+        let prev_network_cursor = self.prev_cursor.as_ref().and_then(|c| c.0.get(&network));
         let Some(direction) = self
-            .next_microbatch_start(&blocks_table, &blocks_ctx)
+            .next_microbatch_start_for_network(
+                &blocks_table,
+                &blocks_ctx,
+                prev_network_cursor,
+                self.start_block,
+                false,
+            )
             .await
             .map_err(NextMicrobatchRangeError::NextMicrobatchStart)?
         else {
@@ -692,23 +745,233 @@ impl StreamingQuery {
                 prev_hash: start.prev_hash,
                 timestamp: end.timestamp,
             }],
-            direction,
+            directions: BTreeMap::from([(network.clone(), direction)]),
         }))
     }
 
+    /// Multi-network microbatch range construction using timestamp-aligned windows.
+    async fn next_microbatch_range_multi_network(
+        &mut self,
+        ctx: &ExecContext,
+    ) -> Result<Option<MicrobatchRange>, NextMicrobatchRangeError> {
+        // Build per-network blocks contexts.
+        let mut blocks_ctxs: BTreeMap<NetworkId, (Arc<ResolvedBlocksTable>, ExecContext)> =
+            BTreeMap::new();
+        for (network, blocks_table) in &self.blocks_tables {
+            let blocks_table = Arc::clone(blocks_table);
+            let blocks_ctx = {
+                let catalog = blocks_table_catalog(&blocks_table);
+                ExecContextBuilder::new(self.exec_env.clone())
+                    .with_isolate_pool(self.isolate_pool.clone())
+                    .for_catalog(catalog, false)
+                    .await
+                    .map_err(NextMicrobatchRangeError::CreateExecContext)?
+            };
+            blocks_ctxs.insert(network.clone(), (blocks_table, blocks_ctx));
+        }
+
+        // Determine per-network start directions.
+        let mut directions: BTreeMap<NetworkId, StreamDirection> = BTreeMap::new();
+        for (network, (blocks_table, blocks_ctx)) in &blocks_ctxs {
+            let prev_network_cursor = self.prev_cursor.as_ref().and_then(|c| c.0.get(network));
+
+            let direction = if prev_network_cursor.is_none() {
+                // Initial start: find the first block at-or-after timestamp 0.
+                let block = self
+                    .blocks_table_fetch_by_timestamp(blocks_table, blocks_ctx, 0, true)
+                    .await
+                    .map_err(NextMicrobatchStartError::BlocksTableFetch)
+                    .map_err(NextMicrobatchRangeError::NextMicrobatchStart)?;
+                block.map(|b| StreamDirection::ForwardFrom(b.into()))
+            } else {
+                self.next_microbatch_start_for_network(
+                    blocks_table,
+                    blocks_ctx,
+                    prev_network_cursor,
+                    self.start_block,
+                    true,
+                )
+                .await
+                .map_err(NextMicrobatchRangeError::NextMicrobatchStart)?
+            };
+
+            let Some(direction) = direction else {
+                tracing::debug!(
+                    %network,
+                    "no next microbatch start found for network"
+                );
+                return Ok(None);
+            };
+
+            directions.insert(network.clone(), direction);
+        }
+
+        // Rewind-all: if any network detects a reorg, rewind all networks.
+        if directions.values().any(|d| d.is_reorg()) {
+            let min_reorg_ts = directions
+                .values()
+                .filter(|d| d.is_reorg())
+                .map(|d| {
+                    d.segment_start()
+                        .timestamp
+                        .ok_or(MissingBlockTimestampError)
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(NextMicrobatchRangeError::MissingBlockTimestamp)?
+                .into_iter()
+                .min()
+                // SAFETY: guarded by `any(is_reorg)` check above.
+                .expect("at least one reorg direction");
+
+            for (network, (blocks_table, blocks_ctx)) in &blocks_ctxs {
+                if !directions[network].is_reorg() {
+                    // Find the block at-or-before the reorg timestamp for this network.
+                    let block = self
+                        .blocks_table_fetch_by_timestamp(
+                            blocks_table,
+                            blocks_ctx,
+                            min_reorg_ts,
+                            false,
+                        )
+                        .await
+                        .map_err(NextMicrobatchStartError::BlocksTableFetch)
+                        .map_err(NextMicrobatchRangeError::NextMicrobatchStart)?;
+                    let Some(block) = block else {
+                        tracing::debug!(
+                            %network,
+                            min_reorg_ts,
+                            "no block found at-or-before reorg timestamp",
+                        );
+                        return Ok(None);
+                    };
+                    directions.insert(network.clone(), StreamDirection::ReorgFrom(block.into()));
+                }
+            }
+
+            // Update cursor to rewound state.
+            let rewound_cursor: BTreeMap<_, _> = directions
+                .iter()
+                .map(|(network, direction)| {
+                    let start = direction.segment_start();
+                    (
+                        network.clone(),
+                        NetworkCursor {
+                            number: start.number.saturating_sub(1),
+                            hash: start.prev_hash,
+                        },
+                    )
+                })
+                .collect();
+            self.prev_cursor = Some(Cursor(rewound_cursor));
+        }
+
+        // Find the common watermark timestamp across all source tables and networks.
+        let chains = ctx
+            .physical_table()
+            .table_snapshots()
+            .map(|(s, _)| s.canonical_segments());
+        let Some(common_watermark_ts) = self
+            .latest_src_watermark_multi(&blocks_ctxs, chains)
+            .await
+            .map_err(NextMicrobatchRangeError::LatestSrcWatermark)?
+        else {
+            tracing::debug!("no common watermark timestamp found");
+            return Ok(None);
+        };
+
+        // Compute end timestamp: min of (common_watermark, start + max_interval).
+        // In single-network mode, `microbatch_max_interval` is a block count. In multi-network
+        // mode it is interpreted as a second-based interval because block numbers are
+        // incomparable across networks but timestamps (in seconds) are universal.
+        let start_ts = directions
+            .values()
+            .map(|d| {
+                d.segment_start()
+                    .timestamp
+                    .ok_or(MissingBlockTimestampError)
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(NextMicrobatchRangeError::MissingBlockTimestamp)?
+            .into_iter()
+            .max()
+            // SAFETY: `directions` is always non-empty at this point.
+            .expect("at least one direction");
+        let max_end_ts = start_ts + self.microbatch_max_interval;
+        let end_ts = common_watermark_ts.min(max_end_ts);
+
+        if end_ts < start_ts {
+            tracing::debug!(end_ts, start_ts, "end timestamp is before start timestamp");
+            return Ok(None);
+        }
+
+        if end_ts < common_watermark_ts {
+            // We're limiting this batch; signal readiness for immediate continuation.
+            self.table_updates.set_ready();
+        }
+
+        // Build per-network block ranges.
+        let mut ranges = Vec::with_capacity(self.blocks_tables.len());
+        for (network, direction) in &directions {
+            let (blocks_table, blocks_ctx) = &blocks_ctxs[network];
+            let start = direction.segment_start();
+
+            // Fetch the last block at-or-before end_ts. When multiple blocks
+            // share the same timestamp (common with 1-second precision), the
+            // query orders by `(timestamp DESC, _block_num DESC)` and takes the
+            // first row, so the highest block number wins the tie-break.
+            let end = self
+                .blocks_table_fetch_by_timestamp(blocks_table, blocks_ctx, end_ts, false)
+                .await
+                .map_err(NextMicrobatchStartError::BlocksTableFetch)
+                .map_err(NextMicrobatchRangeError::NextMicrobatchStart)?;
+            let Some(end) = end else {
+                tracing::debug!(
+                    %network,
+                    end_ts,
+                    "no block found at-or-before end timestamp",
+                );
+                return Ok(None);
+            };
+
+            if end.number < start.number {
+                tracing::debug!(
+                    %network,
+                    end_block = end.number,
+                    start_block = start.number,
+                    "end block is before start block",
+                );
+                return Ok(None);
+            }
+
+            ranges.push(BlockRange {
+                numbers: start.number..=end.number,
+                network: network.clone(),
+                hash: end.hash,
+                prev_hash: start.prev_hash,
+                timestamp: end.timestamp,
+            });
+        }
+
+        Ok(Some(MicrobatchRange { ranges, directions }))
+    }
+
     #[instrument(skip_all, err)]
-    async fn next_microbatch_start(
+    async fn next_microbatch_start_for_network(
         &self,
         blocks_table: &ResolvedBlocksTable,
         ctx: &ExecContext,
+        prev_network_cursor: Option<&NetworkCursor>,
+        start_block: BlockNum,
+        // `false` for single-network `_block_num` resume semantics.
+        // `true` for multi-network `_ts` watermarking, which needs the actual next
+        // canonical block's timestamp rather than the previous cursor timestamp.
+        resolve_forward_start: bool,
     ) -> Result<Option<StreamDirection>, NextMicrobatchStartError> {
-        let (network, _) = self.single_network();
-        let prev_network_cursor = self.prev_cursor.as_ref().and_then(|c| c.0.get(network));
         match prev_network_cursor {
             // start stream
             None => {
                 let block = self
-                    .blocks_table_fetch(blocks_table, ctx, self.start_block, None)
+                    .blocks_table_fetch(blocks_table, ctx, start_block, None)
                     .await
                     .map_err(NextMicrobatchStartError::BlocksTableFetch)?;
                 Ok(block.map(|b| StreamDirection::ForwardFrom(b.into())))
@@ -721,12 +984,27 @@ impl StreamingQuery {
                     .map_err(NextMicrobatchStartError::BlocksTableContains)?;
                 match watermark {
                     Some(wm) => {
-                        let segment_start = SegmentStart {
-                            number: prev.number + 1,
-                            prev_hash: prev.hash,
-                            timestamp: wm.timestamp,
-                        };
-                        Ok(Some(StreamDirection::ForwardFrom(segment_start)))
+                        if resolve_forward_start {
+                            // Timestamp watermarking needs the actual next block's
+                            // timestamp, and block numbers may legitimately have
+                            // gaps, so resolve the next canonical block directly.
+                            let block = self
+                                .blocks_table_fetch_first_after_number(
+                                    blocks_table,
+                                    ctx,
+                                    prev.number,
+                                )
+                                .await
+                                .map_err(NextMicrobatchStartError::BlocksTableFetch)?;
+                            Ok(block.map(|b| StreamDirection::ForwardFrom(b.into())))
+                        } else {
+                            let segment_start = SegmentStart {
+                                number: prev.number + 1,
+                                prev_hash: prev.hash,
+                                timestamp: wm.timestamp,
+                            };
+                            Ok(Some(StreamDirection::ForwardFrom(segment_start)))
+                        }
                     }
                     None => {
                         // rewind stream due to reorg
@@ -793,7 +1071,7 @@ impl StreamingQuery {
                 if let Some(block_watermark) = self
                     .blocks_table_contains(blocks_table, ctx, &cursor)
                     .await
-                    .map_err(LatestSrcWatermarkError)?
+                    .map_err(LatestSrcWatermarkError::BlocksTableContains)?
                 {
                     latest_src_watermarks.push(block_watermark);
                     continue 'chain_loop;
@@ -803,6 +1081,57 @@ impl StreamingQuery {
         }
         // Select the minimum table watermark as the end.
         Ok(latest_src_watermarks.into_iter().min_by_key(|w| w.number))
+    }
+
+    /// Multi-network variant of `latest_src_watermark`. Returns the minimum
+    /// confirmed timestamp across all chains and networks.
+    ///
+    /// Each segment is expected to have exactly one range (single-range segments).
+    /// Multi-range segments are not yet produced by the materializer; if one
+    /// appears, all its ranges must be confirmed for the segment to count.
+    #[instrument(skip_all, err)]
+    async fn latest_src_watermark_multi(
+        &self,
+        blocks_ctxs: &BTreeMap<NetworkId, (Arc<ResolvedBlocksTable>, ExecContext)>,
+        chains: impl Iterator<Item = &[Segment]>,
+    ) -> Result<Option<u64>, LatestSrcWatermarkError> {
+        let mut latest_timestamps: Vec<u64> = Default::default();
+        'chain_loop: for chain in chains {
+            for segment in chain.iter().rev() {
+                let mut segment_confirmed = true;
+                let mut min_ts: Option<u64> = None;
+                debug_assert!(!segment.ranges().is_empty(), "segment has no ranges");
+                for range in segment.ranges() {
+                    let Some((blocks_table, blocks_ctx)) = blocks_ctxs.get(&range.network) else {
+                        segment_confirmed = false;
+                        break;
+                    };
+                    let cursor: NetworkCursor = range.into();
+                    if let Some(bw) = self
+                        .blocks_table_contains(blocks_table, blocks_ctx, &cursor)
+                        .await
+                        .map_err(LatestSrcWatermarkError::BlocksTableContains)?
+                    {
+                        let ts = bw
+                            .timestamp
+                            .ok_or(MissingBlockTimestampError)
+                            .map_err(LatestSrcWatermarkError::MissingBlockTimestamp)?;
+                        min_ts = Some(min_ts.map_or(ts, |prev| prev.min(ts)));
+                    } else {
+                        segment_confirmed = false;
+                        break;
+                    }
+                }
+                if segment_confirmed {
+                    // SAFETY: `min_ts` is always `Some` here because every
+                    // confirmed range produces a timestamp (None errors above).
+                    latest_timestamps.push(min_ts.expect("confirmed segment has timestamp"));
+                    continue 'chain_loop;
+                }
+            }
+            return Ok(None);
+        }
+        Ok(latest_timestamps.into_iter().min())
     }
 
     /// Find the block to resume streaming from after detecting a reorg.
@@ -955,36 +1284,161 @@ impl StreamingQuery {
             hash_constraint,
         );
 
-        // SAFETY: Validation is deferred to the SQL parser which will return appropriate errors
-        // for empty or invalid SQL. The format! macro ensures non-empty output.
+        let results = self.execute_blocks_sql(ctx, sql).await?;
+        if results.num_rows() == 0 {
+            tracing::debug!(block_number = number, block_hash = ?hash, "blocks table missing block");
+            return Ok(None);
+        }
+
+        self.parse_block_row(blocks_table, &results, number)
+            .map(Some)
+    }
+
+    /// Fetches the first block at or after (or at or before) a given timestamp.
+    ///
+    /// When multiple blocks share the same timestamp, `_block_num` is used as a
+    /// tie-breaker: `at_or_after=true` picks the lowest block number,
+    /// `at_or_after=false` picks the highest.
+    #[instrument(skip(self, blocks_table, ctx), err)]
+    async fn blocks_table_fetch_by_timestamp(
+        &self,
+        blocks_table: &ResolvedBlocksTable,
+        ctx: &ExecContext,
+        timestamp: u64,
+        at_or_after: bool,
+    ) -> Result<Option<BlockRow>, BlocksTableFetchError> {
+        let hash_column = blocks_table.hash_column;
+        let parent_hash_column = blocks_table.parent_hash_column;
+        let timestamp_column = blocks_table.timestamp_column;
+        let blocks_sql_schema_name = blocks_table.sql_schema_name.clone();
+        let blocks_physical_table_name = blocks_table.physical_table.table_name().clone();
+        let ts_literal = blocks_table.timestamp_sql_literal(timestamp);
+
+        let (comparator, order) = if at_or_after {
+            (">=", "ASC")
+        } else {
+            ("<=", "DESC")
+        };
+
+        let sql = format!(
+            "SELECT _block_num, {}, {}, {} FROM {} WHERE {} {} {} ORDER BY {} {}, _block_num {} LIMIT 1",
+            hash_column,
+            parent_hash_column,
+            timestamp_column,
+            TableReference::Partial {
+                schema: Arc::new(blocks_sql_schema_name.to_string()),
+                table: Arc::new(blocks_physical_table_name),
+            }
+            .to_quoted_string(),
+            timestamp_column,
+            comparator,
+            ts_literal,
+            timestamp_column,
+            order,
+            order,
+        );
+
+        let results = self.execute_blocks_sql(ctx, sql).await?;
+        if results.num_rows() == 0 {
+            tracing::debug!(
+                timestamp,
+                at_or_after,
+                "blocks table missing block at timestamp",
+            );
+            return Ok(None);
+        }
+
+        // SAFETY: the SQL query always selects `_block_num` and the schema
+        // defines it as UInt64.
+        let number = results
+            .column_by_name("_block_num")
+            .and_then(|col| col.as_any().downcast_ref::<UInt64Array>())
+            .map(|arr| arr.value(0))
+            .expect("_block_num column must be UInt64");
+        self.parse_block_row(blocks_table, &results, number)
+            .map(Some)
+    }
+
+    /// Fetches the first canonical block strictly after the given block number.
+    #[instrument(skip(self, blocks_table, ctx), err)]
+    async fn blocks_table_fetch_first_after_number(
+        &self,
+        blocks_table: &ResolvedBlocksTable,
+        ctx: &ExecContext,
+        number: BlockNum,
+    ) -> Result<Option<BlockRow>, BlocksTableFetchError> {
+        let hash_column = blocks_table.hash_column;
+        let parent_hash_column = blocks_table.parent_hash_column;
+        let timestamp_column = blocks_table.timestamp_column;
+        let blocks_sql_schema_name = blocks_table.sql_schema_name.clone();
+        let blocks_physical_table_name = blocks_table.physical_table.table_name().clone();
+
+        let sql = format!(
+            "SELECT _block_num, {}, {}, {} FROM {} WHERE _block_num > {} ORDER BY _block_num ASC LIMIT 1",
+            hash_column,
+            parent_hash_column,
+            timestamp_column,
+            TableReference::Partial {
+                schema: Arc::new(blocks_sql_schema_name.to_string()),
+                table: Arc::new(blocks_physical_table_name),
+            }
+            .to_quoted_string(),
+            number,
+        );
+
+        let results = self.execute_blocks_sql(ctx, sql).await?;
+        if results.num_rows() == 0 {
+            tracing::debug!(block_number = number, "blocks table missing next block");
+            return Ok(None);
+        }
+
+        let next_number = results
+            .column_by_name("_block_num")
+            .and_then(|col| col.as_any().downcast_ref::<UInt64Array>())
+            .map(|arr| arr.value(0))
+            .expect("_block_num column must be UInt64");
+        self.parse_block_row(blocks_table, &results, next_number)
+            .map(Some)
+    }
+
+    /// Executes a SQL query against a blocks table and returns the result batch.
+    async fn execute_blocks_sql(
+        &self,
+        ctx: &ExecContext,
+        sql: String,
+    ) -> Result<RecordBatch, BlocksTableFetchError> {
+        // SAFETY: SQL is constructed from trusted column names and numeric literals.
         let sql_str = SqlStr::new_unchecked(sql);
         let query = crate::sql::parse(&sql_str).map_err(BlocksTableFetchError::ParseSql)?;
         let plan = ctx
             .statement_to_plan(query)
             .await
             .map_err(BlocksTableFetchError::PlanSql)?;
-        let results = ctx
-            .execute_and_concat(plan)
+        ctx.execute_and_concat(plan)
             .await
-            .map_err(BlocksTableFetchError::ExecuteSql)?;
-        if results.num_rows() == 0 {
-            tracing::debug!("blocks table missing block {} {:?}", number, hash);
-            return Ok(None);
-        }
+            .map_err(BlocksTableFetchError::ExecuteSql)
+    }
 
+    /// Parses a `BlockRow` from a single-row result batch.
+    fn parse_block_row(
+        &self,
+        blocks_table: &ResolvedBlocksTable,
+        results: &RecordBatch,
+        number: BlockNum,
+    ) -> Result<BlockRow, BlocksTableFetchError> {
         let hash = blocks_table
-            .get_hash_value(&results)
+            .get_hash_value(results)
             .map_err(BlocksTableFetchError::ExtractHash)?;
         let prev_hash = blocks_table
-            .get_parent_hash_value(&results)
+            .get_parent_hash_value(results)
             .map_err(BlocksTableFetchError::ExtractHash)?;
-        let timestamp = blocks_table.get_timestamp_value(&results);
-        Ok(Some(BlockRow {
+        let timestamp = blocks_table.get_timestamp_value(results);
+        Ok(BlockRow {
             number,
             hash,
             prev_hash,
             timestamp,
-        }))
+        })
     }
 }
 
@@ -1049,6 +1503,13 @@ pub enum StreamingQueryExecutionError {
     /// This occurs when the item cannot be streamed.
     #[error("failed to stream item")]
     StreamItem(#[source] DataFusionError),
+
+    /// A block is missing a required timestamp
+    ///
+    /// This occurs when the `_ts` watermark column is in use (e.g. multi-network
+    /// mode) but a source block does not have a timestamp value.
+    #[error("block is missing required timestamp for watermark computation")]
+    MissingBlockTimestamp(#[source] MissingBlockTimestampError),
 }
 
 impl RetryableErrorExt for StreamingQueryExecutionError {
@@ -1057,7 +1518,8 @@ impl RetryableErrorExt for StreamingQueryExecutionError {
             // Plan-level failures are permanent — the query structure won't change on retry.
             Self::IncrementalizePlan(_)
             | Self::AttachPlan(_)
-            | Self::UnprojectWatermarkColumn(_) => false,
+            | Self::UnprojectWatermarkColumn(_)
+            | Self::MissingBlockTimestamp(_) => false,
 
             // Task-level failures are transient.
             Self::StreamingTaskFailedToJoin(_) | Self::TaskTimeout => true,
@@ -1099,6 +1561,13 @@ pub enum NextMicrobatchRangeError {
     /// This occurs when the next microbatch end cannot be found.
     #[error("failed to get next microbatch end")]
     NextMicrobatchEnd(#[source] NextMicrobatchEndError),
+
+    /// A block is missing a required timestamp
+    ///
+    /// This occurs when the `_ts` watermark column is in use (e.g. multi-network
+    /// mode) but a source block does not have a timestamp value.
+    #[error("block is missing required timestamp for watermark computation")]
+    MissingBlockTimestamp(#[source] MissingBlockTimestampError),
 }
 
 /// Errors that occur when determining the next microbatch start position
@@ -1134,11 +1603,29 @@ pub struct NextMicrobatchEndError(#[source] BlocksTableFetchError);
 
 /// Failed to get the latest source watermark
 ///
-/// This error is returned by `latest_src_watermark()` when checking if blocks
-/// are present in the blocks table fails.
+/// This error is returned by `latest_src_watermark()` and
+/// `latest_src_watermark_multi()` when checking if blocks are present in the
+/// blocks table fails, or when a confirmed block is missing a required
+/// timestamp.
 #[derive(Debug, thiserror::Error)]
-#[error("failed to get latest source watermark")]
-pub struct LatestSrcWatermarkError(#[source] BlocksTableContainsError);
+pub enum LatestSrcWatermarkError {
+    /// Failed to check if the blocks table contains the watermark.
+    #[error("failed to check blocks table")]
+    BlocksTableContains(#[source] BlocksTableContainsError),
+
+    /// A confirmed block is missing a required timestamp.
+    #[error("block is missing required timestamp for watermark computation")]
+    MissingBlockTimestamp(#[source] MissingBlockTimestampError),
+}
+
+/// A block is missing a required timestamp
+///
+/// This occurs when the `_ts` watermark column is in use (e.g. multi-network
+/// mode) but a source block does not have a timestamp value. This typically
+/// indicates the blocks table data was ingested without timestamps.
+#[derive(Debug, thiserror::Error)]
+#[error("block is missing required timestamp for watermark computation")]
+pub struct MissingBlockTimestampError;
 
 /// Errors that occur when finding the reorg base block
 ///
@@ -1404,6 +1891,24 @@ impl ResolvedBlocksTable {
         } else {
             let hex_value = h.encode_hex();
             format!("AND {hash_column} = x'{hex_value}'")
+        }
+    }
+
+    /// Returns a SQL literal for the given timestamp (in seconds) appropriate for
+    /// this chain's timestamp column type.
+    ///
+    /// The literal is cast to `Timestamp(Nanosecond, None)` (no timezone). The
+    /// actual column may carry a timezone (e.g. `+00:00`), but DataFusion
+    /// implicitly casts in the WHERE comparison. See `get_timestamp_value` for
+    /// the corresponding read-side cast.
+    fn timestamp_sql_literal(&self, ts_secs: u64) -> String {
+        if self.dataset_kind.as_str() == "solana" {
+            // Solana's `block_time` is Int64 (seconds).
+            format!("{ts_secs}")
+        } else {
+            // Other chains use Timestamp(Nanosecond, _).
+            let nanos = (ts_secs as i64).saturating_mul(1_000_000_000);
+            format!("arrow_cast({nanos}, 'Timestamp(Nanosecond, None)')")
         }
     }
 

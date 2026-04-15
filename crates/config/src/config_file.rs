@@ -46,7 +46,11 @@ pub const DEFAULT_PROVIDERS_DIRNAME: &str = "providers";
 /// Default manifests directory name - stores dataset manifests
 pub const DEFAULT_MANIFESTS_DIRNAME: &str = "manifests";
 
-/// Default maximum interval for derived dataset dump microbatches (in blocks)
+/// Default maximum interval for streaming microbatches.
+///
+/// In single-network mode this value is a block count. In multi-network mode it
+/// is interpreted as a second-based interval because block numbers are
+/// incomparable across networks.
 pub const DEFAULT_MICROBATCH_MAX_INTERVAL: u64 = 100_000;
 
 /// Default keep-alive interval for streaming server (in seconds)
@@ -173,7 +177,9 @@ pub struct ConfigFile {
     /// Polling interval for new blocks during dump in seconds (default: 1.0)
     #[serde(default)]
     pub poll_interval_secs: ConfigDuration<1>,
-    /// Max interval for microbatches in blocks (default: 100000).
+    /// Max interval for microbatches (default: 100000).
+    /// In single-network mode this is a block count. In multi-network mode it is
+    /// interpreted as seconds because block numbers are not comparable across networks.
     /// Used for derived dataset dumps and as the default for streaming server queries
     /// when the client does not override via the SQL `SETTINGS` clause.
     #[serde(default = "default_microbatch_max_interval")]

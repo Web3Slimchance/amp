@@ -6,8 +6,14 @@ use std::path::PathBuf;
 /// for query execution and streaming.
 #[derive(Debug, Clone)]
 pub struct Config {
-    /// Default maximum interval for streaming microbatches (in blocks).
-    /// Used when the client does not specify `microbatch_max_interval` in the SQL `SETTINGS` clause.
+    /// Default maximum interval for streaming microbatches.
+    ///
+    /// In single-network mode this is a block count. In multi-network mode it is
+    /// interpreted as a second-based interval because block numbers are
+    /// incomparable across networks.
+    ///
+    /// Used when the client does not specify `microbatch_max_interval` in the SQL
+    /// `SETTINGS` clause.
     pub microbatch_max_interval: u64,
     /// Keep-alive interval for streaming server (in seconds)
     pub keep_alive_interval: u64,

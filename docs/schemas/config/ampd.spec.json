@@ -60,7 +60,7 @@
       "minimum": 0
     },
     "microbatch_max_interval": {
-      "description": "Max interval for microbatches in blocks (default: 100000).\nUsed for derived dataset dumps and as the default for streaming server queries\nwhen the client does not override via the SQL `SETTINGS` clause.",
+      "description": "Max interval for microbatches (default: 100000).\nIn single-network mode this is a block count. In multi-network mode it is\ninterpreted as seconds because block numbers are not comparable across networks.\nUsed for derived dataset dumps and as the default for streaming server queries\nwhen the client does not override via the SQL `SETTINGS` clause.",
       "type": "integer",
       "format": "uint64",
       "default": 100000,

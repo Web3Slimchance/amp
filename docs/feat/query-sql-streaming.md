@@ -105,6 +105,8 @@ SELECT * FROM eth.logs SETTINGS stream = true, microbatch_max_interval = 5000
 
 When not specified, the server falls back to the configured `microbatch_max_interval` value.
 
+For single-network queries the interval is measured in blocks. For multi-network queries it is interpreted as seconds, because block numbers from different networks are not comparable.
+
 ### Keep-Alive
 
 During periods with sparse data, the server emits empty record batches at the configured interval to prevent client timeouts.

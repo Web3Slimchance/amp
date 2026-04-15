@@ -35,7 +35,7 @@ manifests_dir = "manifests"
 
 # Operational timing
 # poll_interval_secs = 1.0                 # Polling interval for new blocks during dump in seconds (default: 1.0)
-# microbatch_max_interval = 100000         # Max interval for microbatches in blocks; also the streaming server default (default: 100000)
+# microbatch_max_interval = 100000         # Max interval for microbatches (default: 100000). In single-network mode this is a block count; in multi-network mode it is seconds.
 # keep_alive_interval = 30                 # Keep-alive interval for streaming server in seconds (default: 30, minimum: 30)
 
 # Service addresses

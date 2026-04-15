@@ -33,6 +33,7 @@ mod it_sql_dataset_batch_size;
 mod it_streaming;
 mod it_streaming_distinct;
 mod it_streaming_join;
+mod it_streaming_multi_network;
 mod it_ts;
 mod it_ts_compat;
 mod it_typescript;
