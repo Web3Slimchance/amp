@@ -7,7 +7,7 @@
 use amp_client_admin::{self as client, end_block::EndBlock};
 use amp_job_core::{
     job_id::JobId,
-    retry_strategy::{Backoff, ExponentialParams, MaxAttempts, RetryStrategy},
+    retry_strategy::{Backoff, BaseDelaySecs, ExponentialParams, MaxAttempts, RetryStrategy},
 };
 use datasets_common::reference::Reference;
 
@@ -76,7 +76,7 @@ async fn deploy_with_retry_strategy_persists_in_descriptor() {
 }
 
 #[tokio::test]
-async fn deploy_without_retry_strategy_omits_field() {
+async fn deploy_without_retry_strategy_defaults_to_unless_stopped() {
     //* Given
     let ctx = TestCtx::setup("deploy_retry_omitted").await;
 
@@ -95,10 +95,101 @@ async fn deploy_without_retry_strategy_omits_field() {
         .expect("get job should succeed")
         .expect("job should exist");
 
-    assert!(
-        job.descriptor.get("retry_strategy").is_none(),
-        "retry_strategy should be absent from descriptor"
+    let rs: RetryStrategy = serde_json::from_value(job.descriptor["retry_strategy"].clone())
+        .expect("retry_strategy should deserialize");
+    assert_eq!(
+        rs,
+        RetryStrategy::default(),
+        "default retry_strategy should be UnlessStopped with exponential backoff"
     );
+}
+
+#[tokio::test]
+async fn deploy_with_none_retry_strategy_persists_in_descriptor() {
+    //* Given
+    let ctx = TestCtx::setup("deploy_retry_none").await;
+
+    //* When
+    let job_id = ctx
+        .deploy_dataset_with_retry(Some(EndBlock::Latest), Some(RetryStrategy::None))
+        .await
+        .expect("deployment should succeed");
+
+    //* Then
+    let job = ctx
+        .ampctl_client
+        .jobs()
+        .get(&job_id)
+        .await
+        .expect("get job should succeed")
+        .expect("job should exist");
+
+    let rs: RetryStrategy = serde_json::from_value(job.descriptor["retry_strategy"].clone())
+        .expect("retry_strategy should deserialize");
+    assert_eq!(rs, RetryStrategy::None, "persisted strategy should be None");
+}
+
+#[tokio::test]
+async fn deploy_with_unless_stopped_retry_strategy_persists_in_descriptor() {
+    //* Given
+    let ctx = TestCtx::setup("deploy_retry_unless_stopped").await;
+
+    let retry_strategy = RetryStrategy::UnlessStopped {
+        backoff: Backoff::Fixed {
+            base_delay_secs: BaseDelaySecs::new(10).unwrap(),
+        },
+    };
+
+    //* When
+    let job_id = ctx
+        .deploy_dataset_with_retry(Some(EndBlock::Latest), Some(retry_strategy.clone()))
+        .await
+        .expect("deployment should succeed");
+
+    //* Then
+    let job = ctx
+        .ampctl_client
+        .jobs()
+        .get(&job_id)
+        .await
+        .expect("get job should succeed")
+        .expect("job should exist");
+
+    let rs: RetryStrategy = serde_json::from_value(job.descriptor["retry_strategy"].clone())
+        .expect("retry_strategy should deserialize");
+    assert_eq!(rs, retry_strategy, "persisted strategy should match input");
+}
+
+#[tokio::test]
+async fn deploy_with_exponential_jitter_backoff_persists_in_descriptor() {
+    //* Given
+    let ctx = TestCtx::setup("deploy_retry_exp_jitter").await;
+
+    let retry_strategy = RetryStrategy::Bounded {
+        max_attempts: MaxAttempts::new(5).unwrap(),
+        backoff: Backoff::ExponentialWithJitter {
+            params: ExponentialParams::new(2, 3.0, Some(120)).unwrap(),
+        },
+    };
+
+    //* When
+    let job_id = ctx
+        .deploy_dataset_with_retry(Some(EndBlock::Latest), Some(retry_strategy.clone()))
+        .await
+        .expect("deployment should succeed");
+
+    //* Then
+    let job = ctx
+        .ampctl_client
+        .jobs()
+        .get(&job_id)
+        .await
+        .expect("get job should succeed")
+        .expect("job should exist");
+
+    let rs: RetryStrategy = serde_json::from_value(job.descriptor["retry_strategy"].clone())
+        .expect("retry_strategy should deserialize");
+    assert_eq!(rs, retry_strategy, "persisted strategy should match input");
 }
 
 // --- Test helpers ---

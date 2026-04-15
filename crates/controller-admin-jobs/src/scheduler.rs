@@ -290,7 +290,7 @@ impl JobDescriptor {
         // primitive and string fields whose `Serialize` impls are infallible.
         let raw = serde_json::value::to_raw_value(&Descriptor {
             kind,
-            retry_strategy,
+            retry_strategy: retry_strategy.unwrap_or_default(),
             details,
         })
         .expect("Descriptor serialization is infallible");
@@ -303,8 +303,7 @@ impl JobDescriptor {
 #[derive(serde::Serialize)]
 struct Descriptor<'a, D> {
     kind: &'a str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    retry_strategy: Option<RetryStrategy>,
+    retry_strategy: RetryStrategy,
     #[serde(flatten)]
     details: D,
 }
